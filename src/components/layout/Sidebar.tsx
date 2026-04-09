@@ -1,12 +1,14 @@
+import { NavLink } from "react-router-dom";
+
 const menuItems = [
-  "Dashboard",
-  "Agenda",
-  "Clientes",
-  "Serviços",
-  "Financeiro",
-  "Profissionais",
-  "Usuários",
-  "Configurações",
+  { label: "Dashboard", path: "/dashboard" },
+  { label: "Agenda", path: "/agenda" },
+  { label: "Clientes", path: "/clientes" },
+  { label: "Financeiro", path: "/financeiro" },
+  { label: "Serviços", path: "#" },
+  { label: "Profissionais", path: "#" },
+  { label: "Usuários", path: "#" },
+  { label: "Configurações", path: "#" },
 ];
 
 export default function Sidebar() {
@@ -18,19 +20,30 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-2">
-        {menuItems.map((item, index) => (
-          <a
-            key={item}
-            href="#"
-            className={`block rounded-xl px-4 py-3 text-sm font-medium transition ${
-              index === 0
-                ? "bg-orange-500 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            {item}
-          </a>
-        ))}
+        {menuItems.map((item) =>
+          item.path === "#" ? (
+            <span
+              key={item.label}
+              className="block rounded-xl px-4 py-3 text-sm font-medium text-slate-500 cursor-not-allowed"
+            >
+              {item.label}
+            </span>
+          ) : (
+            <NavLink
+              key={item.label}
+              to={item.path}
+              className={({ isActive }) =>
+                `block rounded-xl px-4 py-3 text-sm font-medium transition ${
+                  isActive
+                    ? "bg-orange-500 text-white"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          )
+        )}
       </nav>
     </aside>
   );
