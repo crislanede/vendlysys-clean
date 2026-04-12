@@ -1,104 +1,159 @@
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
+
+type Agendamento = {
+  id: string;
+  cliente: string;
+  servico: string;
+  horario: string;
+  status: string;
+  data: string;
+  valor: number | null;
+};
+
 export default function DashboardPage() {
+  const [agendamentosHoje, setAgendamentosHoje] = useState(0);
+  const [clientes, setClientes] = useState(0);
+  const [faturamento, setFaturamento] = useState(0);
+  const [servicos, setServicos] = useState(0);
+  const [proximos, setProximos] = useState<Agendamento[]>([]);
+  const [resumo, setResumo] = useState({
+    confirmado: 0,
+    pendente: 0,
+    cancelado: 0,
+  });
+
+  useEffect(() => {
+    carregarDashboard();
+  }, []);
+
+  async function carregarDashboard() {
+    const hoje = new Date().toISOString().split("T")[0];
+    const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      .toISOString()
+      .split("T")[0];
+
+    // AGENDAMENTOS DE HOJE
+    const { data: agHoje } = await supabase
+      .from("agendamentos")
+      .select("*")
+      .eq("data", hoje);
+
+    setAgendamentosHoje(agHoje?.length || 0);
+
+    // CLIENTES
+    const { count: totalClientes } = await supabase
+      .from("clientes")
+      .select("*", { count: "exact", head: true });
+
+    setClientes(totalClientes || 0);
+
+    // SERVIÇOS
+    const { count: totalServicos } = await supabase
+      .from("servicos")
+      .select("*", { count: "exact", head: true });
+
+    setServicos(totalServicos || 0);
+
+    // FATURAMENTO DO MÊS
+    const { data: financeiro } = await supabase
+      .from("financeiro")
+      .select("valor")
+      .gte("data_lancamento", inicioMes);
+
+    const total = financeiro?.reduce((acc, item) => acc + Number(item.valor || 0), 0) || 0;
+    setFaturamento(total);
+
+    // PRÓXIMOS AGENDAMENTOS
+    const { data: proximosData } = await supabase
+      .from("agendamentos")
+      .select("*")
+      .gte("data", hoje)
+      .order("data", { ascending: true })
+      .order("horario", { ascending: true })
+      .limit(4);
+
+    setProximos((proximosData || []) as Agendamento[]);
+
+    // RESUMO
+    const confirmado = agHoje?.filter((a) => a.status === "confirmado").length || 0;
+    const pendente = agHoje?.filter((a) => a.status === "pendente").length || 0;
+    const cancelado = agHoje?.filter((a) => a.status === "cancelado").length || 0;
+
+    setResumo({ confirmado, pendente, cancelado });
+  }
+
+  function formatarMoeda(valor: number) {
+    return valor.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 mt-1">
-            Visão geral do desempenho da operação
-          </p>
-        </div>
-
-        <button className="h-11 px-5 rounded-xl bg-orange-500 text-white font-medium hover:opacity-90 transition">
-          Novo agendamento
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-          <p className="text-sm text-slate-500">Agendamentos hoje</p>
-          <h2 className="text-3xl font-bold text-slate-800 mt-2">18</h2>
-          <p className="text-xs text-emerald-600 mt-3">+12% em relação a ontem</p>
-        </div>
-
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-          <p className="text-sm text-slate-500">Clientes ativos</p>
-          <h2 className="text-3xl font-bold text-slate-800 mt-2">124</h2>
-          <p className="text-xs text-emerald-600 mt-3">Base em crescimento</p>
-        </div>
-
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-          <p className="text-sm text-slate-500">Faturamento do mês</p>
-          <h2 className="text-3xl font-bold text-slate-800 mt-2">R$ 8.420</h2>
-          <p className="text-xs text-emerald-600 mt-3">Meta mensal em 64%</p>
-        </div>
-
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-          <p className="text-sm text-slate-500">Serviços cadastrados</p>
-          <h2 className="text-3xl font-bold text-slate-800 mt-2">27</h2>
-          <p className="text-xs text-slate-500 mt-3">Catálogo atualizado</p>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-slate-500">Visão geral do sistema</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">
-                Próximos agendamentos
-              </h3>
-              <p className="text-sm text-slate-500">
-                Atendimentos previstos para hoje
-              </p>
+      {/* CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card title="Agendamentos hoje" value={agendamentosHoje} />
+        <Card title="Clientes ativos" value={clientes} />
+        <Card title="Faturamento do mês" value={formatarMoeda(faturamento)} />
+        <Card title="Serviços cadastrados" value={servicos} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* PRÓXIMOS */}
+        <div className="col-span-2 bg-white p-4 rounded border">
+          <h2 className="font-bold mb-3">Próximos agendamentos</h2>
+
+          {proximos.map((a) => (
+            <div key={a.id} className="border p-3 rounded mb-2 flex justify-between">
+              <div>
+                <p className="font-semibold">{a.cliente}</p>
+                <p className="text-sm text-gray-500">{a.servico}</p>
+              </div>
+
+              <div className="text-right">
+                <p>{a.horario}</p>
+                <p className="text-xs">{a.status}</p>
+              </div>
             </div>
-          </div>
-
-          <div className="space-y-3">
-            {[
-              { cliente: "Maria Oliveira", servico: "Corte + Escova", horario: "09:00" },
-              { cliente: "Juliana Costa", servico: "Manicure", horario: "10:30" },
-              { cliente: "Fernanda Souza", servico: "Limpeza de pele", horario: "14:00" },
-              { cliente: "Patrícia Lima", servico: "Design de sobrancelha", horario: "15:30" },
-            ].map((item) => (
-              <div
-                key={`${item.cliente}-${item.horario}`}
-                className="flex items-center justify-between border border-slate-200 rounded-xl p-4"
-              >
-                <div>
-                  <p className="font-medium text-slate-800">{item.cliente}</p>
-                  <p className="text-sm text-slate-500">{item.servico}</p>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-slate-800">{item.horario}</p>
-                  <p className="text-xs text-slate-500">Confirmado</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-800 mb-5">Resumo rápido</h3>
+        {/* RESUMO */}
+        <div className="bg-white p-4 rounded border">
+          <h2 className="font-bold mb-3">Resumo</h2>
 
-          <div className="space-y-4">
-            {[
-              { label: "Confirmados", value: "12" },
-              { label: "Pendentes", value: "4" },
-              { label: "Cancelados", value: "2" },
-              { label: "Profissionais", value: "6" },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center justify-between border-b border-slate-100 pb-3"
-              >
-                <span className="text-sm text-slate-500">{item.label}</span>
-                <span className="font-semibold text-slate-800">{item.value}</span>
-              </div>
-            ))}
-          </div>
+          <Item label="Confirmados" value={resumo.confirmado} />
+          <Item label="Pendentes" value={resumo.pendente} />
+          <Item label="Cancelados" value={resumo.cancelado} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function Card({ title, value }: any) {
+  return (
+    <div className="bg-white p-4 rounded border">
+      <p className="text-sm text-gray-500">{title}</p>
+      <h2 className="text-2xl font-bold">{value}</h2>
+    </div>
+  );
+}
+
+function Item({ label, value }: any) {
+  return (
+    <div className="flex justify-between py-2 border-b">
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }

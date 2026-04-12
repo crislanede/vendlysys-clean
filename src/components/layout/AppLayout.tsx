@@ -1,10 +1,13 @@
 import Sidebar from "./Sidebar";
+import { useAuth } from "../../context/AuthContext";
 
 type AppLayoutProps = {
   children: React.ReactNode;
 };
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  const { profile, signOut } = useAuth();
+
   return (
     <div className="min-h-screen bg-slate-100 flex">
       <Sidebar />
@@ -21,9 +24,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
               Notificações
             </button>
 
-            <div className="h-10 w-10 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold">
-              C
+            <div className="h-10 px-3 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold">
+              {profile?.nome?.charAt(0).toUpperCase() || "U"}
             </div>
+
+            <button
+              onClick={signOut}
+              className="h-10 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-medium hover:bg-slate-50 transition"
+            >
+              Sair
+            </button>
           </div>
         </header>
 
