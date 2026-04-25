@@ -1,30 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useAuth } from "../context/AuthContext";
+import PageHeader from "../components/ui/PageHeader";
+import PrimaryButton from "../components/ui/PrimaryButton";
+import SecondaryButton from "../components/ui/SecondaryButton";
+import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
+import {
+  buscarAlertasAnamneseCliente,
+  type AlertaAnamneseItem,
+} from "../lib/anamneseAlerta";
 
-type Agendamento = {
+type Cliente = {
   id: string;
-  cliente: string;
-  profissional: string;
-  servico: string;
-  horario: string;
-  status: string;
-  data: string;
-  valor: number | null;
-  status_atendimento: string | null;
-  finalizado_em: string | null;
+  nome: string;
+  telefone?: string | null;
+  email?: string | null;
 };
 
 type Servico = {
   id: string;
   nome: string;
-  categoria: string | null;
-  preco: number | null;
-  preco_promocional: number | null;
-  preco_descricao: string | null;
-  duracao_padrao_minutos: number;
-  ativo: boolean;
+  valor?: number | null;
+  preco?: number | null;
+  descricao?: string | null;
+  duracao?: number | null;
 };
 
 type Profissional = {
@@ -32,768 +30,1104 @@ type Profissional = {
   nome: string;
 };
 
-type Cliente = {
+type Agendamento = {
   id: string;
-  nome: string;
+  cliente_id?: string | null;
+  profissional_id?: string | null;
+  servico_id?: string | null;
+  cliente?: string | null;
+  profissional?: string | null;
+  servico?: string | null;
+  data: string;
+  horario: string;
+  status?: string | null;
+  observacoes?: string | null;
+  no_show?: boolean | null;
+  created_at?: string | null;
 };
 
-const horariosDisponiveis = [
-  "08:00",
-  "08:30",
-  "09:00",
-  "09:30",
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "13:00",
-  "13:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-  "17:00",
-  "17:30",
-  "18:00",
+type PacoteDisponivel = {
+  saldo_id: string;
+  cliente_pacote_id: string;
+  pacote_id: string | null;
+  pacote_nome: string;
+  servico_id: string;
+  quantidade_total: number;
+  quantidade_usada: number;
+  restante: number;
+  data_fim: string | null;
+};
+
+const HORARIOS = Array.from({ length: 13 }, (_, index) => {
+  const hour = index + 8;
+  return `${String(hour).padStart(2, "0")}:00`;
+});
+
+const STATUS_OPTIONS = [
+  { label: "Todos", value: "todos" },
+  { label: "Agendado", value: "agendado" },
+  { label: "Confirmado", value: "confirmado" },
+  { label: "Finalizado", value: "finalizado" },
+  { label: "Cancelado", value: "cancelado" },
 ];
 
+const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+});
+
+const headerDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
+  month: "long",
+  year: "numeric",
+});
+
+function getTodayString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseTimeToMinutes(value?: string | null) {
+  if (!value || !value.includes(":")) return 0;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function formatDisplayDate(dateValue: string) {
+  if (!dateValue) return "";
+  const date = new Date(`${dateValue}T00:00:00`);
+  const weekday = weekdayFormatter.format(date);
+  const fullDate = headerDateFormatter.format(date);
+  return `${fullDate} · ${weekday.charAt(0).toUpperCase() + weekday.slice(1)}`;
+}
+
+function classByStatus(status?: string | null) {
+  switch ((status || "").toLowerCase()) {
+    case "finalizado":
+      return {
+        bg: "#dcfce7",
+        border: "#86efac",
+        text: "#166534",
+      };
+    case "cancelado":
+      return {
+        bg: "#fee2e2",
+        border: "#fca5a5",
+        text: "#991b1b",
+      };
+    case "confirmado":
+      return {
+        bg: "#dbeafe",
+        border: "#93c5fd",
+        text: "#1d4ed8",
+      };
+    default:
+      return {
+        bg: "#fef3c7",
+        border: "#fcd34d",
+        text: "#92400e",
+      };
+  }
+}
+
+function MiniCalendar({
+  selectedDate,
+  onSelect,
+}: {
+  selectedDate: string;
+  onSelect: (date: string) => void;
+}) {
+  const selected = new Date(`${selectedDate}T00:00:00`);
+  const year = selected.getFullYear();
+  const month = selected.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = lastDay.getDate();
+
+  const days: Array<number | null> = [];
+  for (let i = 0; i < startOffset; i += 1) days.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) days.push(day);
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold capitalize text-slate-800">
+          {monthFormatter.format(selected)}
+        </p>
+      </div>
+
+      <div className="mb-2 grid grid-cols-7 text-center text-[11px] uppercase tracking-wide text-slate-400">
+        {['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day, index) => {
+          if (!day) {
+            return <div key={`empty-${index}`} className="h-9" />;
+          }
+
+          const date = new Date(year, month, day);
+          const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}-${String(date.getDate()).padStart(2, "0")}`;
+          const isSelected = iso === selectedDate;
+          const isToday = iso === getTodayString();
+
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => onSelect(iso)}
+              className="flex h-9 items-center justify-center rounded-xl text-sm transition"
+              style={{
+                backgroundColor: isSelected
+                  ? "var(--color-primary)"
+                  : isToday
+                  ? "rgba(249, 115, 22, 0.12)"
+                  : "transparent",
+                color: isSelected
+                  ? "#fff"
+                  : isToday
+                  ? "var(--color-primary)"
+                  : "#0f172a",
+                fontWeight: isSelected || isToday ? 700 : 500,
+              }}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function AgendaPage() {
-  const navigate = useNavigate();
-  const { profile } = useAuth();
+  // Controle temporário: deixe true apenas para perfil administrador.
+  const isAdmin = false;
 
-  const isAdmin = profile?.perfil === "admin";
-  const podeFinalizar = profile?.perfil === "admin" || profile?.perfil === "agenda";
-
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [loadingServicos, setLoadingServicos] = useState(true);
-  const [loadingProfissionais, setLoadingProfissionais] = useState(true);
-  const [loadingClientes, setLoadingClientes] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(getTodayString());
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [profissionalFilter, setProfissionalFilter] = useState("todos");
 
   const [cliente, setCliente] = useState("");
-  const [profissional, setProfissional] = useState("");
   const [servico, setServico] = useState("");
-  const [horario, setHorario] = useState("");
-  const [status, setStatus] = useState("pendente");
-  const [data, setData] = useState("");
+  const [profissional, setProfissional] = useState("");
+  const [data, setData] = useState(getTodayString());
+  const [hora, setHora] = useState("09:00");
+  const [observacoes, setObservacoes] = useState("");
 
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [alertas, setAlertas] = useState<AlertaAnamneseItem[]>([]);
+  const [confirmou, setConfirmou] = useState(false);
+  const [loadingAlerta, setLoadingAlerta] = useState(false);
 
-  const [editandoFinalizacaoId, setEditandoFinalizacaoId] = useState<string | null>(null);
-  const [dataHoraFinalizacao, setDataHoraFinalizacao] = useState("");
+  const [modalNovoAberto, setModalNovoAberto] = useState(false);
+  const [loadingSalvar, setLoadingSalvar] = useState(false);
 
-  async function carregarAgendamentos() {
-    setLoading(true);
+  const [modalFinalizarAberto, setModalFinalizarAberto] = useState(false);
+  const [agendamentoSelecionado, setAgendamentoSelecionado] =
+    useState<Agendamento | null>(null);
+  const [valorPagamento, setValorPagamento] = useState("");
+  const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [statusPagamento, setStatusPagamento] = useState("pago");
+  const [loadingFinalizar, setLoadingFinalizar] = useState(false);
 
-    const { data, error } = await supabase
-      .from("agendamentos")
-      .select("*")
-      .order("data", { ascending: true })
-      .order("horario", { ascending: true });
-
-    if (error) {
-      console.error("Erro ao carregar agendamentos:", error);
-      setAgendamentos([]);
-      setLoading(false);
-      return;
-    }
-
-    setAgendamentos((data || []) as Agendamento[]);
-    setLoading(false);
-  }
-
-  async function carregarServicos() {
-    setLoadingServicos(true);
-
-    const { data, error } = await supabase
-      .from("servicos")
-      .select(
-        "id, nome, categoria, preco, preco_promocional, preco_descricao, duracao_padrao_minutos, ativo"
-      )
-      .eq("ativo", true)
-      .order("nome", { ascending: true });
-
-    if (error) {
-      console.error("Erro ao carregar serviços:", error);
-      setServicos([]);
-      setLoadingServicos(false);
-      return;
-    }
-
-    setServicos((data || []) as Servico[]);
-    setLoadingServicos(false);
-  }
-
-  async function carregarProfissionais() {
-    setLoadingProfissionais(true);
-
-    const { data, error } = await supabase
-      .from("profissionais")
-      .select("id, nome")
-      .order("nome", { ascending: true });
-
-    if (error) {
-      console.error("Erro ao carregar profissionais:", error);
-      setProfissionais([]);
-      setLoadingProfissionais(false);
-      return;
-    }
-
-    setProfissionais((data || []) as Profissional[]);
-    setLoadingProfissionais(false);
-  }
-
-  async function carregarClientes() {
-    setLoadingClientes(true);
-
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("id, nome")
-      .order("nome", { ascending: true });
-
-    if (error) {
-      console.error("Erro ao carregar clientes:", error);
-      setClientes([]);
-      setLoadingClientes(false);
-      return;
-    }
-
-    setClientes((data || []) as Cliente[]);
-    setLoadingClientes(false);
-  }
+  const [pacotesDisponiveis, setPacotesDisponiveis] = useState<PacoteDisponivel[]>([]);
+  const [usarPacote, setUsarPacote] = useState(false);
+  const [saldoPacoteSelecionadoId, setSaldoPacoteSelecionadoId] = useState("");
 
   useEffect(() => {
-    carregarAgendamentos();
-    carregarServicos();
-    carregarProfissionais();
-    carregarClientes();
+    void carregarTudo();
   }, []);
+
+  async function carregarTudo() {
+    const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
+      await Promise.all([
+        supabase.from("clientes").select("*").order("nome"),
+        supabase.from("servicos").select("*").order("nome"),
+        supabase.from("profissionais").select("*").order("nome"),
+        supabase
+          .from("agendamentos")
+          .select("*")
+          .neq("status", "cancelado")
+          .order("data", { ascending: true })
+          .order("horario", { ascending: true }),
+      ]);
+
+    setClientes((clientesRes.data || []) as Cliente[]);
+    setServicos((servicosRes.data || []) as Servico[]);
+    setProfissionais((profissionaisRes.data || []) as Profissional[]);
+    setAgendamentos((agendamentosRes.data || []) as Agendamento[]);
+  }
+
+  async function carregarAlertas(nomeCliente: string) {
+    const clienteEncontrado = clientes.find((item) => item.nome === nomeCliente);
+    if (!clienteEncontrado) {
+      setAlertas([]);
+      return;
+    }
+
+    setLoadingAlerta(true);
+    const dados = await buscarAlertasAnamneseCliente({
+      id: clienteEncontrado.id,
+      nome: clienteEncontrado.nome,
+    });
+    setAlertas(dados);
+    setConfirmou(false);
+    setLoadingAlerta(false);
+  }
 
   function limparFormulario() {
     setCliente("");
-    setProfissional("");
     setServico("");
-    setHorario("");
-    setStatus("pendente");
-    setData("");
-    setEditandoId(null);
-    setMostrarFormulario(false);
+    setProfissional("");
+    setData(selectedDate);
+    setHora("09:00");
+    setObservacoes("");
+    setAlertas([]);
+    setConfirmou(false);
   }
 
-  function getServico(servicoNome: string) {
-    return servicos.find((s) => s.nome === servicoNome);
-  }
-
-  function getDuracao(servicoNome: string) {
-    const servicoEncontrado = getServico(servicoNome);
-    return servicoEncontrado?.duracao_padrao_minutos || 30;
-  }
-
-  function getPreco(servicoNome: string) {
-    const s = getServico(servicoNome);
-
-    if (!s) return 0;
-
-    if (s.preco_promocional && Number(s.preco_promocional) > 0) {
-      return Number(s.preco_promocional);
-    }
-
-    return Number(s.preco || 0);
-  }
-
-  function getPrecoLabel(servicoItem: Servico) {
-    const valor = servicoItem.preco_promocional || servicoItem.preco || 0;
-    return Number(valor).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  }
-
-  function formatarMoeda(valor: number | null | undefined) {
-    return Number(valor || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  }
-
-  function horaParaMinutos(h: string) {
-    const [hora, min] = h.split(":").map(Number);
-    return hora * 60 + min;
-  }
-
-  function minutosParaHora(totalMinutos: number) {
-    const hora = Math.floor(totalMinutos / 60);
-    const min = totalMinutos % 60;
-    return `${String(hora).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
-  }
-
-  function calcularHorarioTermino(horarioInicio: string, servicoNome: string) {
-    if (!horarioInicio || !servicoNome) return "";
-    const inicio = horaParaMinutos(horarioInicio);
-    const duracao = getDuracao(servicoNome);
-    return minutosParaHora(inicio + duracao);
-  }
-
-  function horarioConflito(horarioNovo: string) {
-    if (!data || !servico || !horarioNovo || !profissional) return false;
-
-    const inicioNovo = horaParaMinutos(horarioNovo);
-    const duracaoNovo = getDuracao(servico);
-    const fimNovo = inicioNovo + duracaoNovo;
-
-    return agendamentos.some((item) => {
-      if (item.data !== data) return false;
-      if (item.profissional !== profissional) return false;
-      if (item.id === editandoId) return false;
-      if (item.status === "cancelado") return false;
-
-      const inicioExistente = horaParaMinutos(item.horario);
-      const duracaoExistente = getDuracao(item.servico);
-      const fimExistente = inicioExistente + duracaoExistente;
-
-      return inicioNovo < fimExistente && fimNovo > inicioExistente;
-    });
-  }
-
-  async function salvarAgendamento(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!cliente || !profissional || !servico || !horario || !data) {
-      alert("Preencha todos os campos.");
+  async function salvarAgendamento() {
+    if (!cliente || !servico || !data || !hora) {
+      alert("Preencha cliente, serviço, data e horário.");
       return;
     }
 
-    if (horarioConflito(horario)) {
-      alert("Esse horário já está ocupado para esse profissional.");
+    if (alertas.length > 0 && !confirmou) {
+      alert("Confirme a leitura dos alertas da anamnese antes de salvar.");
       return;
     }
 
-    const valorCalculado = getPreco(servico);
+    setLoadingSalvar(true);
 
-    if (editandoId) {
-      const { error } = await supabase
-        .from("agendamentos")
-        .update({
-          cliente,
-          profissional,
-          servico,
-          horario,
-          status,
-          data,
-          valor: valorCalculado,
-        })
-        .eq("id", editandoId);
-
-      if (error) {
-        console.error("Erro ao editar agendamento:", error);
-        alert("Erro ao editar agendamento.");
-        return;
-      }
-
-      limparFormulario();
-      await carregarAgendamentos();
-      return;
-    }
+    const clienteItem = clientes.find((item) => item.nome === cliente);
+    const servicoItem = servicos.find((item) => item.nome === servico);
+    const profissionalItem = profissionais.find((item) => item.nome === profissional);
 
     const { error } = await supabase.from("agendamentos").insert([
       {
         cliente,
-        profissional,
         servico,
-        horario,
-        status,
+        profissional,
+        cliente_id: clienteItem?.id || null,
+        servico_id: servicoItem?.id || null,
+        profissional_id: profissionalItem?.id || null,
         data,
-        valor: valorCalculado,
-        status_atendimento: "em_andamento",
+        horario: hora,
+        observacoes: observacoes || null,
+        status: "agendado",
+        no_show: false,
       },
     ]);
 
+    setLoadingSalvar(false);
+
     if (error) {
-      console.error("Erro ao salvar agendamento:", error);
-      alert("Erro ao salvar agendamento.");
+      alert(`Erro ao salvar agendamento: ${error.message}`);
       return;
     }
 
     limparFormulario();
-    await carregarAgendamentos();
-  }
-
-  function editarAgendamento(item: Agendamento) {
-    setCliente(item.cliente || "");
-    setProfissional(item.profissional || "");
-    setServico(item.servico || "");
-    setHorario(item.horario || "");
-    setStatus(item.status || "pendente");
-    setData(item.data || "");
-    setEditandoId(item.id);
-    setMostrarFormulario(true);
+    setModalNovoAberto(false);
+    setSelectedDate(data);
+    await carregarTudo();
   }
 
   async function cancelarAgendamento(id: string) {
-    const confirmar = window.confirm("Cancelar agendamento?");
-    if (!confirmar) return;
-
     const { error } = await supabase
       .from("agendamentos")
       .update({ status: "cancelado" })
       .eq("id", id);
 
     if (error) {
-      console.error("Erro ao cancelar agendamento:", error);
-      alert("Erro ao cancelar agendamento.");
+      alert(`Erro ao cancelar: ${error.message}`);
       return;
     }
 
-    await carregarAgendamentos();
+    await carregarTudo();
   }
 
-  async function gerarFinanceiro(item: Agendamento) {
-    const confirmar = window.confirm(
-      "Gerar lançamento financeiro para este agendamento?"
+  function valorPadraoDoAgendamento(agendamento: Agendamento) {
+    let valor = "";
+
+    if (agendamento.servico_id) {
+      const servicoBanco = servicos.find((item) => item.id === agendamento.servico_id);
+      valor = String(servicoBanco?.valor ?? servicoBanco?.preco ?? "");
+    }
+
+    if (!valor && agendamento.servico) {
+      const servicoPorNome = servicos.find((item) => item.nome === agendamento.servico);
+      valor = String(servicoPorNome?.valor ?? servicoPorNome?.preco ?? "");
+    }
+
+    return valor && valor !== "undefined" ? valor : "";
+  }
+
+  async function abrirModalFinalizar(agendamento: Agendamento) {
+    setAgendamentoSelecionado(agendamento);
+    setFormaPagamento("pix");
+    setStatusPagamento("pago");
+    setUsarPacote(false);
+    setSaldoPacoteSelecionadoId("");
+    setPacotesDisponiveis([]);
+    setValorPagamento(valorPadraoDoAgendamento(agendamento));
+
+    const pacotes = await buscarPacotesDisponiveis(agendamento);
+    setPacotesDisponiveis(pacotes);
+    if (pacotes.length > 0) {
+      setSaldoPacoteSelecionadoId(pacotes[0].saldo_id);
+    }
+
+    setModalFinalizarAberto(true);
+  }
+
+  async function buscarPacotesDisponiveis(agendamento: Agendamento): Promise<PacoteDisponivel[]> {
+    const clienteId = agendamento.cliente_id || clientes.find((item) => item.nome === agendamento.cliente)?.id;
+    const servicoId = agendamento.servico_id || servicos.find((item) => item.nome === agendamento.servico)?.id;
+
+    if (!clienteId || !servicoId) return [];
+
+    const { data: clientePacotes, error: erroClientePacotes } = await supabase
+      .from("cliente_pacotes")
+      .select("id, pacote_id, data_fim, status")
+      .eq("cliente_id", clienteId)
+      .eq("status", "ativo");
+
+    if (erroClientePacotes) {
+      console.error("Erro ao buscar pacotes do cliente:", erroClientePacotes);
+      return [];
+    }
+
+    const hoje = getTodayString();
+    const pacotesAtivos = (clientePacotes || []).filter((item: any) => {
+      return !item.data_fim || item.data_fim >= hoje;
+    });
+
+    if (pacotesAtivos.length === 0) return [];
+
+    const clientePacoteIds = pacotesAtivos.map((item: any) => item.id);
+
+    const { data: saldos, error: erroSaldos } = await supabase
+      .from("cliente_pacote_saldos")
+      .select("id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada")
+      .in("cliente_pacote_id", clientePacoteIds)
+      .eq("servico_id", servicoId);
+
+    if (erroSaldos) {
+      console.error("Erro ao buscar saldos de pacote:", erroSaldos);
+      return [];
+    }
+
+    const saldosDisponiveis = (saldos || []).filter((saldo: any) => {
+      return Number(saldo.quantidade_total || 0) - Number(saldo.quantidade_usada || 0) > 0;
+    });
+
+    if (saldosDisponiveis.length === 0) return [];
+
+    const pacoteIds = pacotesAtivos.map((item: any) => item.pacote_id).filter(Boolean);
+
+    const pacotesBase = pacoteIds.length
+      ? (await supabase.from("marketing_pacotes").select("id, nome").in("id", pacoteIds)).data || []
+      : [];
+
+    return saldosDisponiveis.map((saldo: any) => {
+      const clientePacote = pacotesAtivos.find((item: any) => item.id === saldo.cliente_pacote_id);
+      const pacoteBase = pacotesBase.find((item: any) => item.id === clientePacote?.pacote_id);
+      const total = Number(saldo.quantidade_total || 0);
+      const usada = Number(saldo.quantidade_usada || 0);
+
+      return {
+        saldo_id: saldo.id,
+        cliente_pacote_id: saldo.cliente_pacote_id,
+        pacote_id: clientePacote?.pacote_id || null,
+        pacote_nome: pacoteBase?.nome || "Pacote do cliente",
+        servico_id: saldo.servico_id,
+        quantidade_total: total,
+        quantidade_usada: usada,
+        restante: total - usada,
+        data_fim: clientePacote?.data_fim || null,
+      };
+    });
+  }
+
+  async function finalizarComPagamento() {
+    if (!agendamentoSelecionado) return;
+
+    const pacoteSelecionado = pacotesDisponiveis.find(
+      (item) => item.saldo_id === saldoPacoteSelecionadoId
     );
-    if (!confirmar) return;
+
+    if (usarPacote && !pacoteSelecionado) {
+      alert("Selecione um pacote válido para usar neste atendimento.");
+      return;
+    }
+
+    if (!usarPacote && !valorPagamento) {
+      alert("Informe o valor do atendimento.");
+      return;
+    }
+
+    setLoadingFinalizar(true);
+
+    if (usarPacote && pacoteSelecionado) {
+      const { error: erroSaldo } = await supabase
+        .from("cliente_pacote_saldos")
+        .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
+        .eq("id", pacoteSelecionado.saldo_id);
+
+      if (erroSaldo) {
+        alert(`Erro ao baixar saldo do pacote: ${erroSaldo.message}`);
+        setLoadingFinalizar(false);
+        return;
+      }
+
+      const { error: erroUso } = await supabase.from("cliente_pacote_usos").insert([
+        {
+          cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
+          agendamento_id: agendamentoSelecionado.id,
+          servico_id: pacoteSelecionado.servico_id,
+          quantidade_usada: 1,
+        },
+      ]);
+
+      if (erroUso) {
+        alert(`Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`);
+        setLoadingFinalizar(false);
+        return;
+      }
+    }
+
+    const valorFinal = usarPacote ? 0 : Number(valorPagamento);
+
+    const payloadFinanceiro = {
+      tipo: "entrada",
+      descricao:
+        usarPacote && pacoteSelecionado
+          ? `Atendimento via pacote: ${pacoteSelecionado.pacote_nome} - ${agendamentoSelecionado.servico || "Serviço"}`
+          : `Atendimento: ${agendamentoSelecionado.servico || "Serviço"}`,
+      valor: valorFinal,
+      data_lancamento: selectedDate,
+      status: usarPacote ? "pago" : statusPagamento,
+      cliente: agendamentoSelecionado.cliente || "",
+      profissional: agendamentoSelecionado.profissional || "",
+      servico: agendamentoSelecionado.servico || "",
+      agendamento_id: agendamentoSelecionado.id,
+      forma_pagamento: usarPacote ? "pacote" : formaPagamento,
+      data_pagamento: usarPacote || statusPagamento === "pago" ? new Date().toISOString() : null,
+      observacoes:
+        usarPacote && pacoteSelecionado
+          ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
+          : null,
+    };
 
     const { data: existente, error: erroBusca } = await supabase
       .from("financeiro")
       .select("id")
-      .eq("agendamento_id", item.id)
-      .limit(1);
+      .eq("agendamento_id", agendamentoSelecionado.id)
+      .maybeSingle();
 
     if (erroBusca) {
-      console.error("Erro ao verificar financeiro existente:", erroBusca);
-      alert("Erro ao verificar financeiro.");
+      alert(`Erro ao verificar financeiro: ${erroBusca.message}`);
+      setLoadingFinalizar(false);
       return;
     }
 
-    if (existente && existente.length > 0) {
-      alert("Este agendamento já possui lançamento financeiro.");
+    const respostaFinanceiro = existente?.id
+      ? await supabase
+          .from("financeiro")
+          .update(payloadFinanceiro)
+          .eq("id", existente.id)
+      : await supabase.from("financeiro").insert([payloadFinanceiro]);
+
+    if (respostaFinanceiro.error) {
+      alert(`Erro ao salvar no financeiro: ${respostaFinanceiro.error.message}`);
+      setLoadingFinalizar(false);
       return;
     }
 
-    const valorLancamento = Number(item.valor || getPreco(item.servico));
-
-    const { error } = await supabase.from("financeiro").insert([
-      {
-        tipo: "entrada",
-        descricao: item.servico,
-        valor: valorLancamento,
-        data_lancamento: item.data,
-        status: "pendente",
-        cliente: item.cliente,
-        profissional: item.profissional,
-        servico: item.servico,
-        agendamento_id: item.id,
-      },
-    ]);
-
-    if (error) {
-      console.error("Erro ao gerar financeiro:", error);
-      alert("Erro ao gerar lançamento financeiro.");
-      return;
-    }
-
-    alert("Lançamento financeiro criado com sucesso.");
-  }
-
-  async function finalizarAtendimento(item: Agendamento) {
-    if (!podeFinalizar) {
-      alert("Você não tem permissão para finalizar atendimento.");
-      return;
-    }
-
-    const confirmar = window.confirm("Finalizar atendimento agora?");
-    if (!confirmar) return;
-
-    const agora = new Date().toISOString();
-
-    const { error } = await supabase
+    const { error: erroAgendamento } = await supabase
       .from("agendamentos")
-      .update({
-        status_atendimento: "finalizado",
-        finalizado_em: agora,
+      .update({ status: "finalizado", no_show: false })
+      .eq("id", agendamentoSelecionado.id);
+
+    setLoadingFinalizar(false);
+
+    if (erroAgendamento) {
+      alert(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
+      return;
+    }
+
+    setModalFinalizarAberto(false);
+    setAgendamentoSelecionado(null);
+    setPacotesDisponiveis([]);
+    setSaldoPacoteSelecionadoId("");
+    setUsarPacote(false);
+    await carregarTudo();
+  }
+
+  const agendamentosDoDia = useMemo(() => {
+    return agendamentos
+      .filter((item) => (item.status || "").toLowerCase() !== "cancelado")
+      .filter((item) => item.data === selectedDate)
+      .filter((item) =>
+        statusFilter === "todos" ? true : (item.status || "") === statusFilter
+      )
+      .filter((item) =>
+        profissionalFilter === "todos"
+          ? true
+          : (item.profissional_id || item.profissional || "") === profissionalFilter ||
+            (item.profissional || "") === profissionalFilter
+      )
+      .filter((item) => {
+        const term = search.trim().toLowerCase();
+        if (!term) return true;
+        return [item.cliente, item.servico, item.profissional]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term));
       })
-      .eq("id", item.id);
+      .sort((a, b) => parseTimeToMinutes(a.horario) - parseTimeToMinutes(b.horario));
+  }, [agendamentos, selectedDate, statusFilter, profissionalFilter, search]);
 
-    if (error) {
-      console.error("Erro ao finalizar atendimento:", error);
-      alert("Erro ao finalizar atendimento.");
-      return;
-    }
+  const totaisDia = useMemo(() => {
+    return {
+      total: agendamentosDoDia.length,
+      confirmados: agendamentosDoDia.filter((item) => item.status === "confirmado").length,
+      finalizados: agendamentosDoDia.filter((item) => item.status === "finalizado").length,
+      cancelados: agendamentosDoDia.filter((item) => item.status === "cancelado").length,
+    };
+  }, [agendamentosDoDia]);
 
-    await carregarAgendamentos();
+  function moveDate(days: number) {
+    const current = new Date(`${selectedDate}T00:00:00`);
+    current.setDate(current.getDate() + days);
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, "0");
+    const day = String(current.getDate()).padStart(2, "0");
+    const next = `${year}-${month}-${day}`;
+    setSelectedDate(next);
+    setData(next);
   }
 
-  function abrirEdicaoFinalizacao(item: Agendamento) {
-    if (!isAdmin) {
-      alert("Apenas admin pode editar a finalização.");
-      return;
-    }
+  const currentMinutes = (() => {
+    if (selectedDate !== getTodayString()) return null;
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  })();
 
-    const valorInicial = item.finalizado_em
-      ? item.finalizado_em.slice(0, 16)
-      : new Date().toISOString().slice(0, 16);
-
-    setEditandoFinalizacaoId(item.id);
-    setDataHoraFinalizacao(valorInicial);
-  }
-
-  async function salvarFinalizacaoManual() {
-    if (!isAdmin) {
-      alert("Apenas admin pode salvar a finalização manual.");
-      return;
-    }
-
-    if (!editandoFinalizacaoId || !dataHoraFinalizacao) {
-      alert("Informe a data e hora de finalização.");
-      return;
-    }
-
-    const iso = new Date(dataHoraFinalizacao).toISOString();
-
-    const { error } = await supabase
-      .from("agendamentos")
-      .update({
-        status_atendimento: "finalizado",
-        finalizado_em: iso,
-      })
-      .eq("id", editandoFinalizacaoId);
-
-    if (error) {
-      console.error("Erro ao salvar finalização manual:", error);
-      alert("Erro ao salvar finalização manual.");
-      return;
-    }
-
-    setEditandoFinalizacaoId(null);
-    setDataHoraFinalizacao("");
-    await carregarAgendamentos();
-  }
-
-  const statusStyle: Record<string, string> = {
-    confirmado: "bg-green-100 text-green-700",
-    pendente: "bg-yellow-100 text-yellow-700",
-    cancelado: "bg-red-100 text-red-700",
-  };
-
-  const statusAtendimentoStyle: Record<string, string> = {
-    em_andamento: "bg-blue-100 text-blue-700",
-    finalizado: "bg-emerald-100 text-emerald-700",
-  };
-
-  const valorSelecionado = useMemo(() => {
-    if (!servico) return 0;
-    return getPreco(servico);
-  }, [servico, servicos]);
-
-  const terminoSelecionado = useMemo(() => {
-    if (!servico || !horario) return "";
-    return calcularHorarioTermino(horario, servico);
-  }, [horario, servico, servicos]);
-
-  function formatarDataHora(dataHora?: string | null) {
-    if (!dataHora) return "";
-    return new Date(dataHora).toLocaleString("pt-BR");
-  }
+  const topNowLine =
+    currentMinutes !== null
+      ? ((currentMinutes - 8 * 60) / 60) * 88
+      : null;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Agenda</h1>
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => navigate("/clientes")}
-            className="border px-4 py-2 rounded text-slate-700"
-          >
-            Novo cliente
-          </button>
-
-          <button
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Agenda inteligente"
+        title="Agenda"
+        description="Visual diário com filtros, horários e cards de atendimento no estilo clínica/salão."
+        action={
+          <PrimaryButton
             onClick={() => {
-              if (mostrarFormulario) {
-                limparFormulario();
-              } else {
-                setMostrarFormulario(true);
-              }
+              setData(selectedDate);
+              setModalNovoAberto(true);
             }}
-            className="bg-orange-500 text-white px-4 py-2 rounded"
           >
-            {mostrarFormulario ? "Fechar" : "Novo agendamento"}
-          </button>
-        </div>
-      </div>
+            + Agendar
+          </PrimaryButton>
+        }
+      />
 
-      {mostrarFormulario && (
-        <form
-          onSubmit={salvarAgendamento}
-          className="space-y-3 bg-white p-4 rounded-lg border"
-        >
-          <select
-            value={cliente}
-            onChange={(e) => setCliente(e.target.value)}
-            className="border p-2 w-full rounded"
-            disabled={loadingClientes}
-          >
-            <option value="">
-              {loadingClientes ? "Carregando clientes..." : "Selecione o cliente"}
-            </option>
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="space-y-4">
+          <MiniCalendar selectedDate={selectedDate} onSelect={(date) => {
+            setSelectedDate(date);
+            setData(date);
+          }} />
 
-            {clientes.map((c) => (
-              <option key={c.id} value={c.nome}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-800">Busca rápida</p>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar cliente, serviço ou profissional"
+              className="mt-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-orange-300"
+            />
+          </div>
 
-          <select
-            value={profissional}
-            onChange={(e) => {
-              setProfissional(e.target.value);
-              setHorario("");
-            }}
-            className="border p-2 w-full rounded"
-            disabled={loadingProfissionais}
-          >
-            <option value="">
-              {loadingProfissionais
-                ? "Carregando profissionais..."
-                : "Selecione o profissional"}
-            </option>
-
-            {profissionais.map((p) => (
-              <option key={p.id} value={p.nome}>
-                {p.nome}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={servico}
-            onChange={(e) => {
-              setServico(e.target.value);
-              setHorario("");
-            }}
-            className="border p-2 w-full rounded"
-            disabled={loadingServicos}
-          >
-            <option value="">
-              {loadingServicos ? "Carregando serviços..." : "Selecione o serviço"}
-            </option>
-
-            {servicos.map((s) => (
-              <option key={s.id} value={s.nome}>
-                {s.nome} - {getPrecoLabel(s)} ({s.duracao_padrao_minutos} min)
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="date"
-            value={data}
-            onChange={(e) => {
-              setData(e.target.value);
-              setHorario("");
-            }}
-            className="border p-2 w-full rounded"
-          />
-
-          <select
-            value={horario}
-            onChange={(e) => setHorario(e.target.value)}
-            className="border p-2 w-full rounded"
-            disabled={!data || !servico || !profissional}
-          >
-            <option value="">
-              {!data || !servico || !profissional
-                ? "Selecione cliente, profissional, data e serviço primeiro"
-                : "Selecione o horário"}
-            </option>
-
-            {horariosDisponiveis.map((h) => {
-              const ocupado = horarioConflito(h);
-
-              return (
-                <option key={h} value={h} disabled={ocupado}>
-                  {h} {ocupado ? "❌ ocupado" : ""}
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-800">Profissional</p>
+            <select
+              value={profissionalFilter}
+              onChange={(e) => setProfissionalFilter(e.target.value)}
+              className="mt-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-orange-300"
+            >
+              <option value="todos">Todos</option>
+              {profissionais.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nome}
                 </option>
-              );
-            })}
-          </select>
+              ))}
+              {profissionais.map((item) => (
+                <option key={`${item.id}-nome`} value={item.nome}>
+                  {item.nome} (nome)
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="border p-2 w-full rounded"
-          >
-            <option value="pendente">pendente</option>
-            <option value="confirmado">confirmado</option>
-            <option value="cancelado">cancelado</option>
-          </select>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="border rounded p-3 bg-slate-50">
-              <p className="text-sm text-slate-500">Valor do serviço</p>
-              <p className="font-semibold text-slate-800">
-                {formatarMoeda(valorSelecionado)}
-              </p>
-            </div>
-
-            <div className="border rounded p-3 bg-slate-50">
-              <p className="text-sm text-slate-500">Horário de término previsto</p>
-              <p className="font-semibold text-slate-800">
-                {terminoSelecionado || "--:--"}
-              </p>
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-800">Status</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {STATUS_OPTIONS.map((item) => {
+                const active = statusFilter === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setStatusFilter(item.value)}
+                    className="rounded-full px-3 py-2 text-xs font-semibold transition"
+                    style={{
+                      backgroundColor: active ? "var(--color-primary)" : "#f8fafc",
+                      color: active ? "#fff" : "#334155",
+                      border: active ? "none" : "1px solid rgba(148, 163, 184, 0.24)",
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <button className="bg-black text-white px-4 py-2 rounded">
-            {editandoId ? "Atualizar" : "Salvar"}
-          </button>
-        </form>
-      )}
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-800">Resumo do dia</p>
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-xs text-slate-500">Total</p>
+                <p className="text-2xl font-bold text-slate-900">{totaisDia.total}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-blue-50 px-3 py-3 text-center">
+                  <p className="text-xs text-blue-600">Confirmados</p>
+                  <p className="text-lg font-bold text-blue-700">{totaisDia.confirmados}</p>
+                </div>
+                <div className="rounded-2xl bg-emerald-50 px-3 py-3 text-center">
+                  <p className="text-xs text-emerald-600">Finalizados</p>
+                  <p className="text-lg font-bold text-emerald-700">{totaisDia.finalizados}</p>
+                </div>
+                <div className="rounded-2xl bg-rose-50 px-3 py-3 text-center">
+                  <p className="text-xs text-rose-600">Cancelados</p>
+                  <p className="text-lg font-bold text-rose-700">{totaisDia.cancelados}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
 
-      {isAdmin && editandoFinalizacaoId && (
-        <div className="bg-white border rounded-lg p-4 space-y-3">
-          <h2 className="font-semibold">Editar finalização real</h2>
+        <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => moveDate(-1)}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-lg text-slate-700"
+              >
+                ←
+              </button>
 
-          <input
-            type="datetime-local"
-            value={dataHoraFinalizacao}
-            onChange={(e) => setDataHoraFinalizacao(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{formatDisplayDate(selectedDate)}</p>
+                <p className="text-xs text-slate-500">Visão diária da agenda</p>
+              </div>
 
-          <div className="flex gap-2">
-            <button
-              onClick={salvarFinalizacaoManual}
-              className="bg-black text-white px-4 py-2 rounded"
-            >
-              Salvar finalização
-            </button>
+              <button
+                type="button"
+                onClick={() => moveDate(1)}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-lg text-slate-700"
+              >
+                →
+              </button>
+            </div>
 
-            <button
-              onClick={() => {
-                setEditandoFinalizacaoId(null);
-                setDataHoraFinalizacao("");
-              }}
-              className="border px-4 py-2 rounded"
-            >
-              Cancelar
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <SecondaryButton onClick={() => {
+                const today = getTodayString();
+                setSelectedDate(today);
+                setData(today);
+              }}>
+                Hoje
+              </SecondaryButton>
+
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setData(e.target.value);
+                }}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[72px_minmax(0,1fr)]">
+            <div className="border-r border-slate-200 bg-slate-50">
+              <div className="h-14 border-b border-slate-200" />
+              {HORARIOS.map((horario) => (
+                <div
+                  key={horario}
+                  className="flex h-[88px] items-start justify-center border-b border-slate-100 pt-2 text-xs font-medium text-slate-500"
+                >
+                  {horario}
+                </div>
+              ))}
+            </div>
+
+            <div className="relative">
+              <div className="flex h-14 items-center border-b border-slate-200 px-5">
+                <p className="text-sm font-semibold text-slate-700">
+                  {agendamentosDoDia.length} agendamento(s) neste dia
+                </p>
+              </div>
+
+              <div className="relative">
+                {HORARIOS.map((horario) => (
+                  <div
+                    key={horario}
+                    className="h-[88px] border-b border-slate-100"
+                  />
+                ))}
+
+                {typeof topNowLine === "number" && topNowLine >= 0 && topNowLine <= HORARIOS.length * 88 && (
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 z-10"
+                    style={{ top: `${topNowLine}px` }}
+                  >
+                    <div className="flex items-center">
+                      <span className="ml-2 h-3 w-3 rounded-full bg-rose-500" />
+                      <div className="h-[2px] flex-1 bg-rose-500" />
+                    </div>
+                  </div>
+                )}
+
+                {agendamentosDoDia.map((item) => {
+                  const mins = parseTimeToMinutes(item.horario);
+                  const top = ((mins - 8 * 60) / 60) * 88 + 8;
+                  const visual = classByStatus(item.status);
+
+                  if (mins < 8 * 60 || mins > 20 * 60 + 59) return null;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="absolute left-3 right-3 rounded-2xl border px-4 py-3 shadow-sm"
+                      style={{
+                        top: `${top}px`,
+                        backgroundColor: visual.bg,
+                        borderColor: visual.border,
+                        color: visual.text,
+                      }}
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold">{item.cliente || "Sem cliente"}</p>
+                            <span className="rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
+                              {item.status || "agendado"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm font-medium">{item.servico || "Serviço"}</p>
+                          <p className="text-xs opacity-80">
+                            {item.horario} · {item.profissional || "Sem profissional"}
+                          </p>
+                          {item.observacoes && (
+                            <p className="mt-2 text-xs opacity-80">{item.observacoes}</p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          {item.status !== "finalizado" && item.status !== "cancelado" && (
+                            <PrimaryButton onClick={() => void abrirModalFinalizar(item)}>
+                              Finalizar
+                            </PrimaryButton>
+                          )}
+
+                          {isAdmin && item.status !== "cancelado" && (
+                            <SecondaryButton onClick={() => void cancelarAgendamento(item.id)}>
+                              Cancelar
+                            </SecondaryButton>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {modalNovoAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-orange-600">Novo atendimento</p>
+                <h2 className="text-2xl font-bold text-slate-900">Agendar cliente</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Preencha os dados abaixo para inserir um novo horário na agenda.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalNovoAberto(false)}
+                className="rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <select
+                value={cliente}
+                onChange={(e) => {
+                  setCliente(e.target.value);
+                  void carregarAlertas(e.target.value);
+                }}
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              >
+                <option value="">Selecione o cliente</option>
+                {clientes.map((item) => (
+                  <option key={item.id} value={item.nome}>
+                    {item.nome}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={servico}
+                onChange={(e) => setServico(e.target.value)}
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              >
+                <option value="">Selecione o serviço</option>
+                {servicos.map((item) => (
+                  <option key={item.id} value={item.nome}>
+                    {item.nome}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={profissional}
+                onChange={(e) => setProfissional(e.target.value)}
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              >
+                <option value="">Selecione o profissional</option>
+                {profissionais.map((item) => (
+                  <option key={item.id} value={item.nome}>
+                    {item.nome}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="date"
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              />
+
+              <input
+                type="time"
+                value={hora}
+                onChange={(e) => setHora(e.target.value)}
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              />
+
+              <input
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                placeholder="Observações do atendimento"
+                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              />
+
+              <div className="md:col-span-2">
+                <AlertaAnamneseAgenda alertas={alertas} loading={loadingAlerta} />
+              </div>
+
+              {alertas.length > 0 && (
+                <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={confirmou}
+                      onChange={(e) => setConfirmou(e.target.checked)}
+                    />
+                    Confirmo que li os alertas da anamnese antes de prosseguir.
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <PrimaryButton onClick={() => void salvarAgendamento()}>
+                {loadingSalvar ? "Salvando..." : "Salvar agendamento"}
+              </PrimaryButton>
+              <SecondaryButton onClick={limparFormulario}>Limpar</SecondaryButton>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="space-y-2">
-        {loading ? (
-          <p>Carregando...</p>
-        ) : agendamentos.length === 0 ? (
-          <p>Nenhum agendamento encontrado.</p>
-        ) : (
-          agendamentos.map((item) => (
-            <div
-              key={item.id}
-              className="border p-3 rounded flex justify-between items-start"
-            >
-              <div>
-                <p className="font-bold">{item.cliente}</p>
-                <p>{item.profissional}</p>
-                <p>{item.servico}</p>
-                <p className="text-sm text-gray-500">
-                  {new Date(item.data).toLocaleDateString("pt-BR")}
+      {modalFinalizarAberto && agendamentoSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="mb-5">
+              <h2 className="text-2xl font-bold text-slate-900">Finalizar atendimento</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Confirme os dados antes de concluir e lançar no financeiro.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
+              <p><strong>Cliente:</strong> {agendamentoSelecionado.cliente}</p>
+              <p><strong>Serviço:</strong> {agendamentoSelecionado.servico}</p>
+              <p><strong>Profissional:</strong> {agendamentoSelecionado.profissional || "Não informado"}</p>
+              <p><strong>Data:</strong> {agendamentoSelecionado.data} às {agendamentoSelecionado.horario}</p>
+            </div>
+
+            {pacotesDisponiveis.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm font-bold text-emerald-900">
+                  Cliente possui pacote disponível para este serviço
                 </p>
+
+                <div className="mt-3 grid gap-3">
+                  <select
+                    value={saldoPacoteSelecionadoId}
+                    onChange={(e) => setSaldoPacoteSelecionadoId(e.target.value)}
+                    className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 outline-none"
+                  >
+                    {pacotesDisponiveis.map((pacote) => (
+                      <option key={pacote.saldo_id} value={pacote.saldo_id}>
+                        {pacote.pacote_nome} — saldo {pacote.restante}/{pacote.quantidade_total}
+                        {pacote.data_fim ? ` — válido até ${pacote.data_fim}` : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                    <input
+                      type="checkbox"
+                      checked={usarPacote}
+                      onChange={(e) => {
+                        const marcado = e.target.checked;
+                        setUsarPacote(marcado);
+                        if (marcado) {
+                          setValorPagamento("0");
+                          setFormaPagamento("pacote");
+                          setStatusPagamento("pago");
+                        } else {
+                          setValorPagamento(valorPadraoDoAgendamento(agendamentoSelecionado));
+                          setFormaPagamento("pix");
+                          setStatusPagamento("pago");
+                        }
+                      }}
+                    />
+                    Usar pacote do cliente e baixar 1 unidade do saldo
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {pacotesDisponiveis.length === 0 && (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                Nenhum pacote ativo com saldo disponível para este serviço.
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Valor</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={valorPagamento}
+                  onChange={(e) => setValorPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
+                  placeholder="0,00"
+                />
+                {usarPacote && (
+                  <p className="mt-1 text-xs font-semibold text-emerald-700">
+                    Valor zerado porque o atendimento será baixado do pacote.
+                  </p>
+                )}
               </div>
 
-              <div className="text-right space-y-1">
-                <p>
-                  {item.horario} - {calcularHorarioTermino(item.horario, item.servico)}
-                </p>
-
-                <p className="text-sm font-semibold text-slate-700">
-                  {formatarMoeda(item.valor)}
-                </p>
-
-                <span
-                  className={`text-xs px-2 py-1 rounded ${
-                    statusStyle[item.status] || "bg-gray-100 text-gray-700"
-                  }`}
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Forma de pagamento</label>
+                <select
+                  value={formaPagamento}
+                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
                 >
-                  {item.status}
-                </span>
+                  <option value="pix">Pix</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao_credito">Cartão de crédito</option>
+                  <option value="cartao_debito">Cartão de débito</option>
+                  <option value="pacote">Pacote</option>
+                </select>
+              </div>
 
-                <div>
-                  <span
-                    className={`text-xs px-2 py-1 rounded ${
-                      statusAtendimentoStyle[item.status_atendimento || "em_andamento"] ||
-                      "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {item.status_atendimento || "em_andamento"}
-                  </span>
-                </div>
-
-                <p className="text-xs text-slate-500">
-                  Finalizado em: {item.finalizado_em ? formatarDataHora(item.finalizado_em) : "--"}
-                </p>
-
-                <div className="flex gap-2 mt-2 justify-end flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => editarAgendamento(item)}
-                    className="text-blue-600"
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => cancelarAgendamento(item.id)}
-                    className="text-red-600"
-                  >
-                    Cancelar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => gerarFinanceiro(item)}
-                    className="text-green-600"
-                  >
-                    Gerar financeiro
-                  </button>
-
-                  {podeFinalizar && item.status_atendimento !== "finalizado" && (
-                    <button
-                      type="button"
-                      onClick={() => finalizarAtendimento(item)}
-                      className="text-emerald-700"
-                    >
-                      Finalizar atendimento
-                    </button>
-                  )}
-
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => abrirEdicaoFinalizacao(item)}
-                      className="text-slate-700"
-                    >
-                      Editar finalização
-                    </button>
-                  )}
-                </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Status do pagamento</label>
+                <select
+                  value={statusPagamento}
+                  onChange={(e) => setStatusPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
+                >
+                  <option value="pago">Pago</option>
+                  <option value="pendente">Pendente</option>
+                </select>
               </div>
             </div>
-          ))
-        )}
-      </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <SecondaryButton onClick={() => setModalFinalizarAberto(false)}>
+                Cancelar
+              </SecondaryButton>
+              <PrimaryButton onClick={() => void finalizarComPagamento()}>
+                {loadingFinalizar ? "Salvando..." : "Confirmar finalização"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

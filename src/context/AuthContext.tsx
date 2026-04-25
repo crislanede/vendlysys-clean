@@ -33,54 +33,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   async function carregarProfile(userId: string) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, nome, email, perfil, ativo")
-      .eq("id", userId)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, nome, email, perfil, ativo")
+        .eq("id", userId)
+        .single();
 
-    if (error) {
-      console.error("Erro ao carregar profile:", error);
+      console.log("PROFILE QUERY:", { data, error });
+
+      if (error) {
+        setProfile(null);
+        return;
+      }
+
+      setProfile(data as Profile);
+    } catch (err) {
+      console.error("Erro ao carregar profile:", err);
       setProfile(null);
-      return;
     }
-
-    setProfile(data as Profile);
   }
 
   async function refreshProfile() {
-    const {
-      data: { user: currentUser },
-      error,
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
 
-    if (error || !currentUser) {
+      const currentUser = session?.user ?? null;
+
+      console.log("REFRESH SESSION:", { currentUser, error });
+
+      if (error || !currentUser) {
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+
+      setUser(currentUser);
+      await carregarProfile(currentUser.id);
+    } catch (err) {
+      console.error("Erro ao atualizar profile:", err);
       setUser(null);
       setProfile(null);
-      return;
     }
-
-    setUser(currentUser);
-    await carregarProfile(currentUser.id);
   }
 
   async function iniciar() {
-    setLoading(true);
+    try {
+      setLoading(true);
+      console.log("AUTH INICIAR");
 
-    const {
-      data: { user: currentUser },
-      error,
-    } = await supabase.auth.getUser();
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
 
-    if (!error && currentUser) {
+      const currentUser = session?.user ?? null;
+
+      console.log("SESSION:", { session, currentUser, error });
+
+      if (error || !currentUser) {
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+
       setUser(currentUser);
       await carregarProfile(currentUser.id);
-    } else {
+    } catch (err) {
+      console.error("Erro ao iniciar autenticação:", err);
       setUser(null);
       setProfile(null);
+    } finally {
+      console.log("AUTH LOADING FALSE");
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -88,8 +117,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async () => {
-      await iniciar();
+    } = supabase.auth.onAuthStateChange(() => {
+      iniciar();
     });
 
     return () => {

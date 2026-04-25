@@ -1,6 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = "https://uurezyecsaxchobklixb.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1cmV6eWVjc2F4Y2hvYmtsaXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2OTk2MTAsImV4cCI6MjA5MTI3NTYxMH0.IXJdLprXw0sBfp_W0YgjB5FFeoi_svMCT7gmlLi7IAg";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+console.log('URL SUPABASE:', supabaseUrl)
+console.log('KEY EXISTE:', !!supabaseKey)
+console.log('KEY COMEÇA COM:', supabaseKey?.slice(0, 20))
+
+export const supabase = createClient(supabaseUrl, supabaseKey)

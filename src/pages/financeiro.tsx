@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
+import PageHeader from "../components/ui/PageHeader";
+import SectionCard from "../components/ui/SectionCard";
+import PrimaryButton from "../components/ui/PrimaryButton";
+import SecondaryButton from "../components/ui/SecondaryButton";
+import EmptyState from "../components/ui/EmptyState";
+import StatusBadge from "../components/ui/StatusBadge";
+
 type Lancamento = {
   id: string;
   tipo: string;
@@ -13,11 +20,26 @@ type Lancamento = {
   servico: string | null;
   agendamento_id: string | null;
   observacoes: string | null;
+  forma_pagamento?: string | null;
+  data_pagamento?: string | null;
   created_at?: string;
+};
+
+type Despesa = {
+  id: string;
+  descricao: string;
+  valor: number;
+  categoria: string | null;
+  data?: string | null;
+  data_lancamento?: string | null;
+  observacao?: string | null;
+  observacoes?: string | null;
+  status?: string | null;
 };
 
 export default function FinanceiroPage() {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
+  const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [tipo, setTipo] = useState("entrada");
@@ -25,6 +47,7 @@ export default function FinanceiroPage() {
   const [valor, setValor] = useState("");
   const [dataLancamento, setDataLancamento] = useState("");
   const [status, setStatus] = useState("pendente");
+  const [formaPagamento, setFormaPagamento] = useState("");
   const [cliente, setCliente] = useState("");
   const [profissional, setProfissional] = useState("");
   const [servico, setServico] = useState("");
@@ -33,33 +56,46 @@ export default function FinanceiroPage() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  const [filtroData, setFiltroData] = useState("");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
 
-  async function carregarLancamentos() {
+  useEffect(() => {
+    carregarDados();
+  }, []);
+
+  async function carregarDados() {
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data: dataFinanceiro, error: errorFinanceiro } = await supabase
       .from("financeiro")
       .select("*")
       .order("data_lancamento", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Erro ao carregar financeiro:", error);
+    const { data: dataDespesas, error: errorDespesas } = await supabase
+      .from("despesas")
+      .select("*")
+      .order("data_lancamento", { ascending: false });
+
+    if (errorFinanceiro) {
+      console.error("Erro ao carregar financeiro:", errorFinanceiro);
+      alert("Erro ao carregar financeiro: " + errorFinanceiro.message);
       setLancamentos([]);
-      setLoading(false);
-      return;
+    } else {
+      setLancamentos((dataFinanceiro || []) as Lancamento[]);
     }
 
-    setLancamentos((data || []) as Lancamento[]);
+    if (errorDespesas) {
+      console.warn("Erro ao carregar despesas:", errorDespesas);
+      setDespesas([]);
+    } else {
+      setDespesas((dataDespesas || []) as Despesa[]);
+    }
+
     setLoading(false);
   }
-
-  useEffect(() => {
-    carregarLancamentos();
-  }, []);
 
   function limparFormulario() {
     setTipo("entrada");
@@ -67,6 +103,7 @@ export default function FinanceiroPage() {
     setValor("");
     setDataLancamento("");
     setStatus("pendente");
+    setFormaPagamento("");
     setCliente("");
     setProfissional("");
     setServico("");
@@ -75,382 +112,461 @@ export default function FinanceiroPage() {
     setMostrarFormulario(false);
   }
 
+  function normalizarNumero(valorDigitado: string) {
+    if (!valorDigitado) return null;
+
+    const numero = Number(String(valorDigitado).replace(",", "."));
+
+    if (Number.isNaN(numero)) return null;
+
+    return numero;
+  }
+
   async function salvarLancamento(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!descricao || !valor || !dataLancamento) {
-      alert("Preencha descrição, valor e data.");
+    const valorNormalizado = normalizarNumero(valor);
+
+    if (!descricao.trim()) {
+      alert("Preencha a descrição.");
+      return;
+    }
+
+    if (valorNormalizado === null || valorNormalizado < 0) {
+      alert("Informe um valor válido.");
+      return;
+    }
+
+    if (!dataLancamento) {
+      alert("Informe a data do lançamento.");
       return;
     }
 
     const payload = {
       tipo,
-      descricao,
-      valor: Number(valor),
+      descricao: descricao.trim(),
+      valor: valorNormalizado,
       data_lancamento: dataLancamento,
       status,
-      cliente: cliente || null,
-      profissional: profissional || null,
-      servico: servico || null,
-      observacoes: observacoes || null,
+      forma_pagamento: formaPagamento || null,
+      data_pagamento: status === "pago" ? new Date().toISOString() : null,
+      cliente: cliente.trim() || null,
+      profissional: profissional.trim() || null,
+      servico: servico.trim() || null,
+      observacoes: observacoes.trim() || null,
     };
 
-    if (editandoId) {
-      const { error } = await supabase
-        .from("financeiro")
-        .update(payload)
-        .eq("id", editandoId);
+    const resposta = editandoId
+      ? await supabase.from("financeiro").update(payload).eq("id", editandoId)
+      : await supabase.from("financeiro").insert([payload]);
 
-      if (error) {
-        console.error("Erro ao atualizar lançamento:", error);
-        alert("Erro ao atualizar lançamento.");
-        return;
-      }
-
-      limparFormulario();
-      carregarLancamentos();
-      return;
-    }
-
-    const { error } = await supabase.from("financeiro").insert([payload]);
-
-    if (error) {
-      console.error("Erro ao salvar lançamento:", error);
-      alert("Erro ao salvar lançamento.");
+    if (resposta.error) {
+      console.error("Erro ao salvar lançamento:", resposta.error);
+      alert("Erro ao salvar lançamento: " + resposta.error.message);
       return;
     }
 
     limparFormulario();
-    carregarLancamentos();
+    await carregarDados();
   }
 
   function editarLancamento(item: Lancamento) {
-    setTipo(item.tipo);
-    setDescricao(item.descricao);
-    setValor(String(item.valor));
-    setDataLancamento(item.data_lancamento);
-    setStatus(item.status);
+    setTipo(item.tipo || "entrada");
+    setDescricao(item.descricao || "");
+    setValor(String(item.valor || ""));
+    setDataLancamento(item.data_lancamento || "");
+    setStatus(item.status || "pendente");
+    setFormaPagamento(item.forma_pagamento || "");
     setCliente(item.cliente || "");
     setProfissional(item.profissional || "");
     setServico(item.servico || "");
     setObservacoes(item.observacoes || "");
     setEditandoId(item.id);
     setMostrarFormulario(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function excluirLancamento(id: string) {
-    const confirmar = window.confirm("Excluir lançamento?");
+    const confirmar = window.confirm("Deseja excluir este lançamento?");
     if (!confirmar) return;
 
     const { error } = await supabase.from("financeiro").delete().eq("id", id);
 
     if (error) {
       console.error("Erro ao excluir lançamento:", error);
-      alert("Erro ao excluir lançamento.");
+      alert("Erro ao excluir lançamento: " + error.message);
       return;
     }
 
-    carregarLancamentos();
+    await carregarDados();
   }
 
   async function marcarComoPago(id: string) {
     const { error } = await supabase
       .from("financeiro")
-      .update({ status: "pago" })
+      .update({
+        status: "pago",
+        data_pagamento: new Date().toISOString(),
+      })
       .eq("id", id);
 
     if (error) {
       console.error("Erro ao marcar como pago:", error);
-      alert("Erro ao marcar como pago.");
+      alert("Erro ao marcar como pago: " + error.message);
       return;
     }
 
-    carregarLancamentos();
+    await carregarDados();
+  }
+
+  async function cancelarLancamento(id: string) {
+    const confirmar = window.confirm("Deseja cancelar este lançamento?");
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("financeiro")
+      .update({ status: "cancelado" })
+      .eq("id", id);
+
+    if (error) {
+      alert("Erro ao cancelar lançamento: " + error.message);
+      return;
+    }
+
+    await carregarDados();
+  }
+
+  function dataDespesa(item: Despesa) {
+    return item.data_lancamento || item.data || "";
+  }
+
+  function dentroDoPeriodo(dataStr: string) {
+    if (!dataStr) return true;
+    if (filtroDataInicio && dataStr < filtroDataInicio) return false;
+    if (filtroDataFim && dataStr > filtroDataFim) return false;
+    return true;
   }
 
   const lancamentosFiltrados = useMemo(() => {
     return lancamentos.filter((item) => {
-      const bateData = filtroData ? item.data_lancamento === filtroData : true;
+      const batePeriodo = dentroDoPeriodo(item.data_lancamento);
       const bateTipo = filtroTipo ? item.tipo === filtroTipo : true;
       const bateStatus = filtroStatus ? item.status === filtroStatus : true;
 
-      return bateData && bateTipo && bateStatus;
+      return batePeriodo && bateTipo && bateStatus;
     });
-  }, [lancamentos, filtroData, filtroTipo, filtroStatus]);
+  }, [lancamentos, filtroDataInicio, filtroDataFim, filtroTipo, filtroStatus]);
 
-  const totalEntradas = lancamentosFiltrados
+  const despesasFiltradas = useMemo(() => {
+    return despesas.filter((item) => dentroDoPeriodo(dataDespesa(item)));
+  }, [despesas, filtroDataInicio, filtroDataFim]);
+
+  const totalReceitas = lancamentosFiltrados
     .filter((item) => item.tipo === "entrada" && item.status !== "cancelado")
-    .reduce((acc, item) => acc + Number(item.valor), 0);
+    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
-  const totalSaidas = lancamentosFiltrados
+  const totalSaidasFinanceiro = lancamentosFiltrados
     .filter((item) => item.tipo === "saida" && item.status !== "cancelado")
-    .reduce((acc, item) => acc + Number(item.valor), 0);
+    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
-  const saldo = totalEntradas - totalSaidas;
+  const totalDespesas = despesasFiltradas
+    .filter((item) => item.status !== "cancelado")
+    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
+
+  const lucroLiquido = totalReceitas - totalSaidasFinanceiro - totalDespesas;
 
   function formatarMoeda(valor: number) {
-    return valor.toLocaleString("pt-BR", {
+    return Number(valor || 0).toLocaleString("pt-BR", {
       style: "currency",
       currency: "BRL",
     });
   }
 
-  function formatarData(data: string) {
-    return new Date(data).toLocaleDateString("pt-BR");
+  function formatarData(data?: string | null) {
+    if (!data) return "-";
+    return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
   }
 
   function limparFiltros() {
-    setFiltroData("");
+    setFiltroDataInicio("");
+    setFiltroDataFim("");
     setFiltroTipo("");
     setFiltroStatus("");
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Financeiro</h1>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Gestão"
+        title="Financeiro"
+        description="Controle receitas, saídas, despesas, pagamentos vindos da agenda e lucro líquido."
+        action={
+          <PrimaryButton
+            type="button"
+            onClick={() => {
+              if (mostrarFormulario) {
+                limparFormulario();
+              } else {
+                setMostrarFormulario(true);
+              }
+            }}
+          >
+            {mostrarFormulario ? "Fechar" : "+ Novo lançamento"}
+          </PrimaryButton>
+        }
+      />
 
-        <button
-          onClick={() => {
-            if (mostrarFormulario) {
-              limparFormulario();
-            } else {
-              setMostrarFormulario(true);
-            }
-          }}
-          className="bg-orange-500 text-white px-4 py-2 rounded"
-        >
-          {mostrarFormulario ? "Fechar" : "Novo lançamento"}
-        </button>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <ResumoCard title="Receitas" value={formatarMoeda(totalReceitas)} valueClassName="text-emerald-600" />
+        <ResumoCard title="Saídas financeiras" value={formatarMoeda(totalSaidasFinanceiro)} valueClassName="text-orange-600" />
+        <ResumoCard title="Despesas" value={formatarMoeda(totalDespesas)} valueClassName="text-red-600" />
+        <ResumoCard
+          title="Lucro líquido"
+          value={formatarMoeda(lucroLiquido)}
+          valueClassName={lucroLiquido >= 0 ? "text-emerald-700" : "text-red-700"}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border rounded-lg p-4">
-          <p className="text-sm text-slate-500">Entradas</p>
-          <p className="text-2xl font-bold text-green-600">
-            {formatarMoeda(totalEntradas)}
-          </p>
-        </div>
-
-        <div className="bg-white border rounded-lg p-4">
-          <p className="text-sm text-slate-500">Saídas</p>
-          <p className="text-2xl font-bold text-red-600">
-            {formatarMoeda(totalSaidas)}
-          </p>
-        </div>
-
-        <div className="bg-white border rounded-lg p-4">
-          <p className="text-sm text-slate-500">Saldo</p>
-          <p className="text-2xl font-bold text-slate-800">
-            {formatarMoeda(saldo)}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white border rounded-lg p-4 space-y-3">
-        <h2 className="font-semibold">Filtros</h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <SectionCard title="Filtros" description="Refine a visualização por período, tipo e status">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <input
             type="date"
-            value={filtroData}
-            onChange={(e) => setFiltroData(e.target.value)}
-            className="border p-2 rounded"
+            value={filtroDataInicio}
+            onChange={(e) => setFiltroDataInicio(e.target.value)}
+            className="rounded-2xl border border-slate-200 p-3"
+          />
+
+          <input
+            type="date"
+            value={filtroDataFim}
+            onChange={(e) => setFiltroDataFim(e.target.value)}
+            className="rounded-2xl border border-slate-200 p-3"
           />
 
           <select
             value={filtroTipo}
             onChange={(e) => setFiltroTipo(e.target.value)}
-            className="border p-2 rounded"
+            className="rounded-2xl border border-slate-200 p-3"
           >
             <option value="">Todos os tipos</option>
-            <option value="entrada">entrada</option>
-            <option value="saida">saida</option>
+            <option value="entrada">Entrada</option>
+            <option value="saida">Saída</option>
           </select>
 
           <select
             value={filtroStatus}
             onChange={(e) => setFiltroStatus(e.target.value)}
-            className="border p-2 rounded"
+            className="rounded-2xl border border-slate-200 p-3"
           >
             <option value="">Todos os status</option>
-            <option value="pendente">pendente</option>
-            <option value="pago">pago</option>
-            <option value="cancelado">cancelado</option>
+            <option value="pendente">Pendente</option>
+            <option value="pago">Pago</option>
+            <option value="cancelado">Cancelado</option>
           </select>
 
-          <button
-            onClick={limparFiltros}
-            className="border px-4 py-2 rounded text-slate-700"
-          >
+          <SecondaryButton type="button" onClick={limparFiltros}>
             Limpar filtros
-          </button>
+          </SecondaryButton>
         </div>
-      </div>
+      </SectionCard>
 
       {mostrarFormulario && (
-        <form
-          onSubmit={salvarLancamento}
-          className="bg-white border rounded-lg p-4 space-y-3"
+        <SectionCard
+          title={editandoId ? "Editar lançamento" : "Novo lançamento"}
+          description="Cadastre manualmente entradas ou saídas financeiras."
         >
-          <select
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            className="border p-2 w-full rounded"
-          >
-            <option value="entrada">entrada</option>
-            <option value="saida">saida</option>
-          </select>
+          <form onSubmit={salvarLancamento} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="rounded-2xl border border-slate-200 p-3">
+              <option value="entrada">Entrada</option>
+              <option value="saida">Saída</option>
+            </select>
 
-          <input
-            placeholder="Descrição"
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <input
+              placeholder="Descrição"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            />
 
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Valor"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Valor"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            />
 
-          <input
-            type="date"
-            value={dataLancamento}
-            onChange={(e) => setDataLancamento(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <input
+              type="date"
+              value={dataLancamento}
+              onChange={(e) => setDataLancamento(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            />
 
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="border p-2 w-full rounded"
-          >
-            <option value="pendente">pendente</option>
-            <option value="pago">pago</option>
-            <option value="cancelado">cancelado</option>
-          </select>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-2xl border border-slate-200 p-3">
+              <option value="pendente">Pendente</option>
+              <option value="pago">Pago</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
 
-          <input
-            placeholder="Cliente"
-            value={cliente}
-            onChange={(e) => setCliente(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <select
+              value={formaPagamento}
+              onChange={(e) => setFormaPagamento(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            >
+              <option value="">Forma de pagamento</option>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="debito">Débito</option>
+              <option value="credito">Crédito</option>
+              <option value="pacote">Pacote</option>
+              <option value="outro">Outro</option>
+            </select>
 
-          <input
-            placeholder="Profissional"
-            value={profissional}
-            onChange={(e) => setProfissional(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <input placeholder="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} className="rounded-2xl border border-slate-200 p-3" />
+            <input placeholder="Profissional" value={profissional} onChange={(e) => setProfissional(e.target.value)} className="rounded-2xl border border-slate-200 p-3" />
+            <input placeholder="Serviço" value={servico} onChange={(e) => setServico(e.target.value)} className="rounded-2xl border border-slate-200 p-3 md:col-span-2" />
 
-          <input
-            placeholder="Serviço"
-            value={servico}
-            onChange={(e) => setServico(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <textarea
+              placeholder="Observações"
+              value={observacoes}
+              onChange={(e) => setObservacoes(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
+            />
 
-          <textarea
-            placeholder="Observações"
-            value={observacoes}
-            onChange={(e) => setObservacoes(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
+            <div className="flex flex-wrap gap-2 md:col-span-2">
+              <PrimaryButton type="submit">
+                {editandoId ? "Atualizar" : "Salvar"}
+              </PrimaryButton>
 
-          <button className="bg-black text-white px-4 py-2 rounded">
-            {editandoId ? "Atualizar" : "Salvar"}
-          </button>
-        </form>
+              <SecondaryButton type="button" onClick={limparFormulario}>
+                Cancelar
+              </SecondaryButton>
+            </div>
+          </form>
+        </SectionCard>
       )}
 
-      <div className="space-y-2">
+      <SectionCard title="Receitas e lançamentos" description="Movimentações registradas no financeiro">
         {loading ? (
           <p>Carregando...</p>
         ) : lancamentosFiltrados.length === 0 ? (
-          <p>Nenhum lançamento encontrado.</p>
+          <EmptyState title="Nenhum lançamento encontrado" description="Os lançamentos filtrados aparecerão aqui." />
         ) : (
-          lancamentosFiltrados.map((item) => (
-            <div
-              key={item.id}
-              className="border rounded-lg p-4 flex justify-between gap-4"
-            >
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-bold">{item.descricao}</p>
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="text-left text-sm text-white" style={{ backgroundColor: "var(--color-primary)" }}>
+                  <th className="px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Descrição</th>
+                  <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">Serviço</th>
+                  <th className="px-4 py-3">Forma</th>
+                  <th className="px-4 py-3 text-right">Valor</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
 
-                  {item.agendamento_id && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                      vindo da agenda
-                    </span>
-                  )}
-                </div>
+              <tbody>
+                {lancamentosFiltrados.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100 odd:bg-white even:bg-slate-50">
+                    <td className="px-4 py-3 text-sm text-slate-700">{formatarData(item.data_lancamento)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      <div className="font-bold text-slate-900">{item.descricao}</div>
+                      {item.agendamento_id && (
+                        <span className="mt-1 inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">
+                          vindo da agenda
+                        </span>
+                      )}
+                      {item.observacoes && <div className="mt-1 text-xs text-slate-500">{item.observacoes}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{item.cliente || "-"}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{item.servico || "-"}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{item.forma_pagamento || "-"}</td>
+                    <td className={`px-4 py-3 text-right text-sm font-extrabold ${item.tipo === "entrada" ? "text-emerald-600" : "text-orange-600"}`}>
+                      {item.tipo === "entrada" ? "+" : "-"} {formatarMoeda(Number(item.valor))}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <StatusBadge status={item.status} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {item.status !== "pago" && item.status !== "cancelado" && (
+                          <button type="button" onClick={() => marcarComoPago(item.id)} className="text-sm font-bold text-emerald-600 hover:underline">
+                            Pago
+                          </button>
+                        )}
 
-                <p className="text-sm text-slate-500">
-                  {item.cliente || "-"} • {item.profissional || "-"} •{" "}
-                  {item.servico || "-"}
-                </p>
+                        <button type="button" onClick={() => editarLancamento(item)} className="text-sm font-bold text-blue-600 hover:underline">
+                          Editar
+                        </button>
 
-                <p className="text-sm text-slate-500">
-                  {formatarData(item.data_lancamento)}
-                </p>
+                        {item.status !== "cancelado" && (
+                          <button type="button" onClick={() => cancelarLancamento(item.id)} className="text-sm font-bold text-orange-600 hover:underline">
+                            Cancelar
+                          </button>
+                        )}
 
-                {item.observacoes && (
-                  <p className="text-sm text-slate-400 mt-1">
-                    {item.observacoes}
-                  </p>
-                )}
-              </div>
-
-              <div className="text-right">
-                <p
-                  className={`font-bold ${
-                    item.tipo === "entrada" ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {item.tipo === "entrada" ? "+" : "-"}{" "}
-                  {formatarMoeda(Number(item.valor))}
-                </p>
-
-                <p className="text-xs text-slate-500">{item.status}</p>
-
-                <div className="flex gap-2 mt-2 justify-end flex-wrap">
-                  {item.status !== "pago" && (
-                    <button
-                      type="button"
-                      onClick={() => marcarComoPago(item.id)}
-                      className="text-green-600"
-                    >
-                      Marcar como pago
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => editarLancamento(item)}
-                    className="text-blue-600"
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => excluirLancamento(item.id)}
-                    className="text-red-600"
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
+                        <button type="button" onClick={() => excluirLancamento(item.id)} className="text-sm font-bold text-red-600 hover:underline">
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </SectionCard>
+
+      <SectionCard title="Despesas do período" description="Itens vindos da tabela despesas">
+        {loading ? (
+          <p>Carregando...</p>
+        ) : despesasFiltradas.length === 0 ? (
+          <EmptyState title="Nenhuma despesa encontrada" description="As despesas do período aparecerão aqui." />
+        ) : (
+          <div className="space-y-3">
+            {despesasFiltradas.map((item) => (
+              <div key={item.id} className="flex justify-between gap-4 rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <p className="font-bold text-slate-800">{item.descricao}</p>
+                  <p className="text-sm text-slate-500">{item.categoria || "Sem categoria"}</p>
+                  <p className="text-sm text-slate-500">{formatarData(dataDespesa(item))}</p>
+                  {(item.observacao || item.observacoes) && (
+                    <p className="mt-1 text-sm text-slate-400">{item.observacao || item.observacoes}</p>
+                  )}
+                </div>
+
+                <div className="text-right">
+                  <p className="font-extrabold text-red-600">- {formatarMoeda(Number(item.valor))}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+function ResumoCard({
+  title,
+  value,
+  valueClassName,
+}: {
+  title: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-semibold text-slate-500">{title}</p>
+      <p className={`mt-2 text-3xl font-extrabold ${valueClassName || "text-slate-800"}`}>
+        {value}
+      </p>
     </div>
   );
 }
