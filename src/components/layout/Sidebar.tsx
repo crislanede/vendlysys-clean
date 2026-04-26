@@ -40,8 +40,7 @@ const menuGrupos: MenuGrupo[] = [
     titulo: "Operação",
     itens: [
       { label: "Financeiro", to: "/financeiro" },
-      { label: "Marketing", to: "/marketing" },
-      { label: "Pacotes", to: "/marketing" },
+      { label: "Pacotes", to: "/marketing-pacotes" },
       { label: "Pagamentos", to: "/pagamentos" },
       { label: "Despesas", to: "/despesas" },
       { label: "Caixa", to: "/caixa" },
@@ -68,10 +67,7 @@ const menuGrupos: MenuGrupo[] = [
 ];
 
 function grupoContemRota(grupo: MenuGrupo, pathname: string) {
-  return grupo.itens.some((item) => {
-    if (item.to === "/") return pathname === "/";
-    return pathname === item.to || pathname.startsWith(`${item.to}/`);
-  });
+  return grupo.itens.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
 }
 
 export default function Sidebar() {
@@ -85,9 +81,7 @@ export default function Sidebar() {
       abertos[grupo.titulo] = grupoContemRota(grupo, location.pathname);
     });
 
-    const algumAberto = Object.values(abertos).some(Boolean);
-
-    if (!algumAberto) {
+    if (!Object.values(abertos).some(Boolean)) {
       abertos.Principal = true;
     }
 
@@ -122,12 +116,9 @@ export default function Sidebar() {
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error("Erro ao carregar configurações da sidebar:", error);
-      return;
+    if (!error) {
+      setConfiguracao(data || null);
     }
-
-    setConfiguracao(data || null);
   }
 
   function alternarGrupo(titulo: string) {
@@ -184,9 +175,7 @@ export default function Sidebar() {
 
                   <span
                     className="text-lg leading-none transition-transform"
-                    style={{
-                      transform: aberto ? "rotate(90deg)" : "rotate(0deg)",
-                    }}
+                    style={{ transform: aberto ? "rotate(90deg)" : "rotate(0deg)" }}
                   >
                     ›
                   </span>

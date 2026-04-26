@@ -1,41 +1,72 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import AppLayout from "./components/layout/AppLayout"; // ✅ correto
+import AppLayout from "./components/layout/AppLayout";
+import ThemeLoader from "./components/theme/ThemeLoader";
 
-// Páginas
 import Dashboard from "./pages/dashboard";
 import Agenda from "./pages/agenda";
+import ConsultaAgendamentos from "./pages/consulta-agendamentos";
 import Clientes from "./pages/clientes";
+import Profissionais from "./pages/profissionais";
+import Servicos from "./pages/servicos";
+import Produtos from "./pages/produtos";
+import Usuarios from "./pages/usuarios";
+import Financeiro from "./pages/financeiro";
+import Pagamentos from "./pages/pagamentos";
+import Despesas from "./pages/despesas";
+import Caixa from "./pages/caixa";
+import Comissoes from "./pages/comissoes";
+import MarketingPacotes from "./pages/marketing-pacotes";
+import Relatorios from "./pages/relatorios";
+import Bloqueios from "./pages/bloqueios";
+import Configuracoes from "./pages/configuracoes";
+import AnamneseConfiguracao from "./pages/anamnese-configuracao";
+
 import Whatsapp from "./pages/whatsapp";
 import WhatsappCampanha from "./pages/whatsapp-campanha";
 import WhatsappMensagens from "./pages/whatsapp-mensagens";
+
 import MeuEspaco from "./pages/meu-espaco";
-import Login from "./pages/login";
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeLoader />
+
       <Routes>
-        {/* Área do cliente */}
         <Route path="/meu-espaco" element={<MeuEspaco />} />
 
-        {/* Login */}
-        <Route path="/login" element={<Login />} />
-
-        {/* Sistema */}
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agenda" element={<Agenda />} />
-          <Route path="clientes" element={<Clientes />} />
+          <Route path="consulta-agendamentos" element={<ConsultaAgendamentos />} />
 
-          {/* WhatsApp */}
+          <Route path="clientes" element={<Clientes />} />
+          <Route path="profissionais" element={<Profissionais />} />
+          <Route path="servicos" element={<Servicos />} />
+          <Route path="produtos" element={<Produtos />} />
+          <Route path="usuarios" element={<Usuarios />} />
+
+          <Route path="financeiro" element={<Financeiro />} />
+          <Route path="pagamentos" element={<Pagamentos />} />
+          <Route path="despesas" element={<Despesas />} />
+          <Route path="caixa" element={<Caixa />} />
+          <Route path="comissoes" element={<Comissoes />} />
+
+          <Route path="marketing-pacotes" element={<MarketingPacotes />} />
+
           <Route path="whatsapp" element={<Whatsapp />} />
           <Route path="whatsapp-campanha" element={<WhatsappCampanha />} />
           <Route path="whatsapp-mensagens" element={<WhatsappMensagens />} />
+
+          <Route path="anamnese-configuracao" element={<AnamneseConfiguracao />} />
+          <Route path="bloqueios" element={<Bloqueios />} />
+          <Route path="relatorios" element={<Relatorios />} />
+          <Route path="configuracoes" element={<Configuracoes />} />
         </Route>
       </Routes>
     </BrowserRouter>
   );
-} 
+}

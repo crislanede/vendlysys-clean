@@ -5,6 +5,11 @@ import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 import {
+  montarLinkMeuEspaco,
+  montarMensagemAgradecimento,
+  normalizarTelefoneWhatsapp,
+} from "../lib/whatsapp";
+import {
   buscarAlertasAnamneseCliente,
   type AlertaAnamneseItem,
 } from "../lib/anamneseAlerta";
@@ -43,6 +48,14 @@ type Agendamento = {
   status?: string | null;
   observacoes?: string | null;
   no_show?: boolean | null;
+  valor?: number | null;
+  valor_pago?: number | null;
+  forma_pagamento?: string | null;
+  status_pagamento?: string | null;
+  finalizado_em?: string | null;
+  telefone?: string | null;
+  token?: string | null;
+  token_cliente?: string | null;
   created_at?: string | null;
 };
 
@@ -99,6 +112,7 @@ function parseTimeToMinutes(value?: string | null) {
   const [hours, minutes] = value.split(":").map(Number);
   return hours * 60 + minutes;
 }
+
 
 function formatDisplayDate(dateValue: string) {
   if (!dateValue) return "";
@@ -267,7 +281,6 @@ export default function AgendaPage() {
         supabase
           .from("agendamentos")
           .select("*")
-          .neq("status", "cancelado")
           .order("data", { ascending: true })
           .order("horario", { ascending: true }),
       ]);
@@ -469,6 +482,45 @@ export default function AgendaPage() {
     });
   }
 
+  function telefoneDoAgendamento(agendamento: Agendamento) {
+    if (agendamento.telefone) return agendamento.telefone;
+
+    const clienteBanco = clientes.find((item) => {
+      if (agendamento.cliente_id && item.id === agendamento.cliente_id) return true;
+      return item.nome === agendamento.cliente;
+    });
+
+    return clienteBanco?.telefone || "";
+  }
+
+  async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
+    const telefone = telefoneDoAgendamento(agendamento);
+
+    if (!telefone) {
+      alert("Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.");
+      return;
+    }
+
+    const token = agendamento.token_cliente || agendamento.token || "";
+
+    const mensagem = montarMensagemAgradecimento({
+      empresa: "Seu estabelecimento",
+      cliente: agendamento.cliente || "",
+      profissional: agendamento.profissional || "",
+      servico: agendamento.servico || "",
+      data: agendamento.data,
+      horario: agendamento.horario,
+      valor: usarPacote ? 0 : Number(valorPagamento || 0),
+      linkMeuEspaco: montarLinkMeuEspaco(token),
+    });
+
+    const numero = normalizarTelefoneWhatsapp(telefone);
+    const texto = encodeURIComponent(mensagem);
+
+    // Usar href evita bloqueio de pop-up depois que a finalização salva no banco.
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+  }
+
   async function finalizarComPagamento() {
     if (!agendamentoSelecionado) return;
 
@@ -486,107 +538,141 @@ export default function AgendaPage() {
       return;
     }
 
+    const confirmar = window.confirm(
+      "Deseja finalizar este atendimento? Esta ação vai registrar o pagamento e, se selecionado, baixar o saldo do combo."
+    );
+
+    if (!confirmar) return;
+
     setLoadingFinalizar(true);
 
-    if (usarPacote && pacoteSelecionado) {
-      const { error: erroSaldo } = await supabase
-        .from("cliente_pacote_saldos")
-        .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
-        .eq("id", pacoteSelecionado.saldo_id);
+    try {
+      if (usarPacote && pacoteSelecionado) {
+        const { error: erroSaldo } = await supabase
+          .from("cliente_pacote_saldos")
+          .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
+          .eq("id", pacoteSelecionado.saldo_id);
 
-      if (erroSaldo) {
-        alert(`Erro ao baixar saldo do pacote: ${erroSaldo.message}`);
-        setLoadingFinalizar(false);
-        return;
+        if (erroSaldo) {
+          throw new Error(`Erro ao baixar saldo do pacote: ${erroSaldo.message}`);
+        }
+
+        const { error: erroUso } = await supabase.from("cliente_pacote_usos").insert([
+          {
+            cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
+            agendamento_id: agendamentoSelecionado.id,
+            servico_id: pacoteSelecionado.servico_id,
+            quantidade_usada: 1,
+          },
+        ]);
+
+        if (erroUso) {
+          throw new Error(`Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`);
+        }
       }
 
-      const { error: erroUso } = await supabase.from("cliente_pacote_usos").insert([
+      const valorFinal = usarPacote ? 0 : Number(valorPagamento || 0);
+      const formaFinal = usarPacote ? "pacote" : formaPagamento;
+      const statusFinal = usarPacote ? "pago" : statusPagamento;
+      const agora = new Date().toISOString();
+
+      const payloadFinanceiro = {
+        tipo: "entrada",
+        descricao:
+          usarPacote && pacoteSelecionado
+            ? `Atendimento via pacote: ${pacoteSelecionado.pacote_nome} - ${agendamentoSelecionado.servico || "Serviço"}`
+            : `Atendimento: ${agendamentoSelecionado.servico || "Serviço"}`,
+        valor: valorFinal,
+        data_lancamento: selectedDate,
+        status: statusFinal,
+        cliente: agendamentoSelecionado.cliente || "",
+        profissional: agendamentoSelecionado.profissional || "",
+        servico: agendamentoSelecionado.servico || "",
+        agendamento_id: agendamentoSelecionado.id,
+        forma_pagamento: formaFinal,
+        data_pagamento: statusFinal === "pago" ? agora : null,
+        observacoes:
+          usarPacote && pacoteSelecionado
+            ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
+            : null,
+      };
+
+      const { data: existente, error: erroBusca } = await supabase
+        .from("financeiro")
+        .select("id")
+        .eq("agendamento_id", agendamentoSelecionado.id)
+        .maybeSingle();
+
+      if (erroBusca) {
+        throw new Error(`Erro ao verificar financeiro: ${erroBusca.message}`);
+      }
+
+      const respostaFinanceiro = existente?.id
+        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id)
+        : await supabase.from("financeiro").insert([payloadFinanceiro]);
+
+      if (respostaFinanceiro.error) {
+        throw new Error(`Erro ao salvar no financeiro: ${respostaFinanceiro.error.message}`);
+      }
+
+      const { error: erroPagamento } = await supabase.from("pagamentos").insert([
         {
-          cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
           agendamento_id: agendamentoSelecionado.id,
-          servico_id: pacoteSelecionado.servico_id,
-          quantidade_usada: 1,
+          valor: valorFinal,
+          forma_pagamento: formaFinal,
+          status: statusFinal,
+          data_pagamento: statusFinal === "pago" ? agora : null,
+          observacao:
+            usarPacote && pacoteSelecionado
+              ? `Pagamento via pacote ${pacoteSelecionado.pacote_nome}`
+              : null,
         },
       ]);
 
-      if (erroUso) {
-        alert(`Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`);
-        setLoadingFinalizar(false);
-        return;
+      if (erroPagamento) {
+        throw new Error(`Financeiro salvo, mas houve erro ao registrar pagamento: ${erroPagamento.message}`);
       }
-    }
 
-    const valorFinal = usarPacote ? 0 : Number(valorPagamento);
+      const { error: erroAgendamento } = await supabase
+        .from("agendamentos")
+        .update({
+          status: "finalizado",
+          status_atendimento: "finalizado",
+          finalizado_em: agora,
+          forma_pagamento: formaFinal,
+          valor_pago: valorFinal,
+          status_pagamento: statusFinal,
+          no_show: false,
+        })
+        .eq("id", agendamentoSelecionado.id);
 
-    const payloadFinanceiro = {
-      tipo: "entrada",
-      descricao:
-        usarPacote && pacoteSelecionado
-          ? `Atendimento via pacote: ${pacoteSelecionado.pacote_nome} - ${agendamentoSelecionado.servico || "Serviço"}`
-          : `Atendimento: ${agendamentoSelecionado.servico || "Serviço"}`,
-      valor: valorFinal,
-      data_lancamento: selectedDate,
-      status: usarPacote ? "pago" : statusPagamento,
-      cliente: agendamentoSelecionado.cliente || "",
-      profissional: agendamentoSelecionado.profissional || "",
-      servico: agendamentoSelecionado.servico || "",
-      agendamento_id: agendamentoSelecionado.id,
-      forma_pagamento: usarPacote ? "pacote" : formaPagamento,
-      data_pagamento: usarPacote || statusPagamento === "pago" ? new Date().toISOString() : null,
-      observacoes:
-        usarPacote && pacoteSelecionado
-          ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
-          : null,
-    };
+      if (erroAgendamento) {
+        throw new Error(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
+      }
 
-    const { data: existente, error: erroBusca } = await supabase
-      .from("financeiro")
-      .select("id")
-      .eq("agendamento_id", agendamentoSelecionado.id)
-      .maybeSingle();
+      alert("Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.");
 
-    if (erroBusca) {
-      alert(`Erro ao verificar financeiro: ${erroBusca.message}`);
+      await enviarAgradecimentoWhatsapp(agendamentoSelecionado);
+
+      setModalFinalizarAberto(false);
+      setAgendamentoSelecionado(null);
+      setPacotesDisponiveis([]);
+      setSaldoPacoteSelecionadoId("");
+      setUsarPacote(false);
+      setValorPagamento("");
+      setFormaPagamento("pix");
+      setStatusPagamento("pago");
+      await carregarTudo();
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || "Erro ao finalizar atendimento.");
+    } finally {
       setLoadingFinalizar(false);
-      return;
     }
-
-    const respostaFinanceiro = existente?.id
-      ? await supabase
-          .from("financeiro")
-          .update(payloadFinanceiro)
-          .eq("id", existente.id)
-      : await supabase.from("financeiro").insert([payloadFinanceiro]);
-
-    if (respostaFinanceiro.error) {
-      alert(`Erro ao salvar no financeiro: ${respostaFinanceiro.error.message}`);
-      setLoadingFinalizar(false);
-      return;
-    }
-
-    const { error: erroAgendamento } = await supabase
-      .from("agendamentos")
-      .update({ status: "finalizado", no_show: false })
-      .eq("id", agendamentoSelecionado.id);
-
-    setLoadingFinalizar(false);
-
-    if (erroAgendamento) {
-      alert(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
-      return;
-    }
-
-    setModalFinalizarAberto(false);
-    setAgendamentoSelecionado(null);
-    setPacotesDisponiveis([]);
-    setSaldoPacoteSelecionadoId("");
-    setUsarPacote(false);
-    await carregarTudo();
   }
 
   const agendamentosDoDia = useMemo(() => {
     return agendamentos
-      .filter((item) => (item.status || "").toLowerCase() !== "cancelado")
       .filter((item) => item.data === selectedDate)
       .filter((item) =>
         statusFilter === "todos" ? true : (item.status || "") === statusFilter

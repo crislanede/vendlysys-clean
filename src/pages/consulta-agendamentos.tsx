@@ -1,549 +1,378 @@
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
-
-import PageHeader from "../components/ui/PageHeader";
-import SectionCard from "../components/ui/SectionCard";
-import PrimaryButton from "../components/ui/PrimaryButton";
-import EmptyState from "../components/ui/EmptyState";
 
 type Agendamento = {
   id: string;
-  cliente_id: string | null;
-  profissional_id: string | null;
-  servico_id: string | null;
-  cliente: string | null;
-  profissional: string | null;
-  servico: string | null;
-  data: string | null;
-  horario: string | null;
-  status: string | null;
-  observacoes: string | null;
-  no_show: boolean | null;
-  created_at: string | null;
-};
-
-type Cliente = {
-  id: string;
-  nome: string;
+  cliente?: string | null;
   telefone?: string | null;
-};
-
-type Profissional = {
-  id: string;
-  nome: string;
-};
-
-type Servico = {
-  id: string;
-  nome: string;
-  categoria?: string | null;
-  preco?: number | null;
+  servico?: string | null;
+  profissional?: string | null;
+  data?: string | null;
+  horario?: string | null;
+  status?: string | null;
   valor?: number | null;
-  duracao_padrao_minutos?: number | null;
-  duracao?: number | null;
+  observacoes?: string | null;
+  token?: string | null;
+  token_cliente?: string | null;
+  created_at?: string | null;
 };
 
-const hoje = new Date();
+type StatusFiltro =
+  | "todos"
+  | "agendado"
+  | "confirmado"
+  | "finalizado"
+  | "cancelado";
 
-function dataIso(date: Date) {
-  return date.toISOString().slice(0, 10);
+function formatarData(data?: string | null) {
+  if (!data) return "-";
+
+  const partes = data.split("-");
+
+  if (partes.length !== 3) return data;
+
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
 
-function adicionarDias(date: Date, dias: number) {
-  const nova = new Date(date);
-  nova.setDate(nova.getDate() + dias);
-  return nova;
+function formatarValor(valor?: number | null) {
+  return Number(valor || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function normalizarTexto(valor?: string | null) {
+  return String(valor || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function statusBadgeClass(status?: string | null) {
+  const statusNormalizado = normalizarTexto(status);
+
+  if (statusNormalizado === "confirmado") {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  if (statusNormalizado === "finalizado" || statusNormalizado === "pago") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+
+  if (statusNormalizado === "cancelado") {
+    return "bg-red-100 text-red-700";
+  }
+
+  return "bg-orange-100 text-orange-700";
+}
+
+function statusLabel(status?: string | null) {
+  return status || "agendado";
 }
 
 export default function ConsultaAgendamentos() {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
-  const [servicos, setServicos] = useState<Servico[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const [dataInicio, setDataInicio] = useState(dataIso(hoje));
-  const [dataFim, setDataFim] = useState(dataIso(adicionarDias(hoje, 10)));
-  const [clienteId, setClienteId] = useState("");
-  const [clienteBusca, setClienteBusca] = useState("");
-  const [categoria, setCategoria] = useState("");
-  const [servicoId, setServicoId] = useState("");
-  const [profissionalId, setProfissionalId] = useState("");
-  const [status, setStatus] = useState("");
-  const [agendadoPor, setAgendadoPor] = useState("Todos");
-  const [somenteRecorrentes, setSomenteRecorrentes] = useState(false);
-
-  const [pesquisou, setPesquisou] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [status, setStatus] = useState<StatusFiltro>("todos");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    carregarFiltros();
+    void carregarAgendamentos();
   }, []);
 
-  async function carregarFiltros() {
-    const [clientesResp, profissionaisResp, servicosResp] = await Promise.all([
-      supabase.from("clientes").select("id, nome, telefone").order("nome", { ascending: true }),
-      supabase.from("profissionais").select("id, nome").order("nome", { ascending: true }),
-      supabase.from("servicos").select("*").order("nome", { ascending: true }),
-    ]);
-
-    if (!clientesResp.error) setClientes(clientesResp.data || []);
-    if (!profissionaisResp.error) setProfissionais(profissionaisResp.data || []);
-    if (!servicosResp.error) setServicos(servicosResp.data || []);
-  }
-
-  async function pesquisar() {
+  async function carregarAgendamentos() {
     setLoading(true);
-    setPesquisou(true);
 
-    let query = supabase
+    const { data, error } = await supabase
       .from("agendamentos")
       .select("*")
-      .order("data", { ascending: true })
-      .order("horario", { ascending: true });
-
-    if (dataInicio) query = query.gte("data", dataInicio);
-    if (dataFim) query = query.lte("data", dataFim);
-    if (profissionalId) query = query.eq("profissional_id", profissionalId);
-    if (servicoId) query = query.eq("servico_id", servicoId);
-    if (status) query = query.eq("status", status);
-
-    if (clienteId) {
-      query = query.eq("cliente_id", clienteId);
-    }
-
-    const { data, error } = await query;
+      .order("data", { ascending: false })
+      .order("horario", { ascending: false })
+      .limit(500);
 
     if (error) {
-      alert("Erro ao consultar agendamentos: " + error.message);
+      console.error("Erro ao carregar agendamentos:", error);
+      alert("Erro ao carregar agendamentos: " + error.message);
       setAgendamentos([]);
       setLoading(false);
       return;
     }
 
-    let resultado = (data || []) as Agendamento[];
-
-    if (!clienteId && clienteBusca.trim()) {
-      const termo = clienteBusca.toLowerCase().trim();
-
-      resultado = resultado.filter((item) => {
-        const clienteTexto = `${item.cliente || ""}`.toLowerCase();
-        return clienteTexto.includes(termo);
-      });
-    }
-
-    if (categoria) {
-      const servicosDaCategoria = servicos
-        .filter((servico) => servico.categoria === categoria)
-        .map((servico) => servico.id);
-
-      resultado = resultado.filter((item) => item.servico_id && servicosDaCategoria.includes(item.servico_id));
-    }
-
-    if (somenteRecorrentes) {
-      // Campo de recorrência ainda não existe no banco. Mantido como filtro futuro.
-      resultado = [];
-    }
-
-    setAgendamentos(resultado);
+    setAgendamentos((data || []) as Agendamento[]);
     setLoading(false);
   }
 
-  function limpar() {
-    setDataInicio(dataIso(hoje));
-    setDataFim(dataIso(adicionarDias(hoje, 10)));
-    setClienteId("");
-    setClienteBusca("");
-    setCategoria("");
-    setServicoId("");
-    setProfissionalId("");
-    setStatus("");
-    setAgendadoPor("Todos");
-    setSomenteRecorrentes(false);
-    setAgendamentos([]);
-    setPesquisou(false);
+  function limparFiltros() {
+    setBusca("");
+    setStatus("todos");
+    setDataInicio("");
+    setDataFim("");
   }
 
-  function formatarData(valor?: string | null) {
-    if (!valor) return "-";
-    const [ano, mes, dia] = valor.split("-");
-    return `${dia}/${mes}/${ano}`;
-  }
+  const filtrados = useMemo(() => {
+    const termo = normalizarTexto(busca);
 
-  function formatarDataHora(valor?: string | null) {
-    if (!valor) return "-";
-    const data = new Date(valor);
-    if (Number.isNaN(data.getTime())) return valor;
-    return data.toLocaleString("pt-BR");
-  }
+    return agendamentos.filter((agendamento) => {
+      const texto = normalizarTexto(
+        `${agendamento.cliente || ""} ${agendamento.telefone || ""} ${
+          agendamento.servico || ""
+        } ${agendamento.profissional || ""} ${agendamento.status || ""}`
+      );
 
-  function formatarMoeda(valor: number | null | undefined) {
-    return Number(valor || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
+      const bateBusca = !termo || texto.includes(termo);
+
+      const statusAtual = normalizarTexto(agendamento.status || "agendado");
+      const bateStatus = status === "todos" || statusAtual === status;
+
+      const data = agendamento.data || "";
+      const bateInicio = !dataInicio || data >= dataInicio;
+      const bateFim = !dataFim || data <= dataFim;
+
+      return bateBusca && bateStatus && bateInicio && bateFim;
     });
+  }, [agendamentos, busca, status, dataInicio, dataFim]);
+
+  const resumo = useMemo(() => {
+    return {
+      total: filtrados.length,
+      agendados: filtrados.filter(
+        (item) => normalizarTexto(item.status || "agendado") === "agendado"
+      ).length,
+      confirmados: filtrados.filter(
+        (item) => normalizarTexto(item.status) === "confirmado"
+      ).length,
+      finalizados: filtrados.filter(
+        (item) => normalizarTexto(item.status) === "finalizado"
+      ).length,
+      cancelados: filtrados.filter(
+        (item) => normalizarTexto(item.status) === "cancelado"
+      ).length,
+    };
+  }, [filtrados]);
+
+  function abrirMeuEspaco(agendamento: Agendamento) {
+    const token = agendamento.token_cliente || agendamento.token;
+
+    if (!token) {
+      alert("Este agendamento não possui token do cliente.");
+      return;
+    }
+
+    window.open(`${window.location.origin}/meu-espaco?token=${token}`, "_blank");
   }
-
-  function valorDoServico(agendamento: Agendamento) {
-    const servico = servicos.find((item) => item.id === agendamento.servico_id);
-
-    if (!servico) return null;
-
-    return servico.preco ?? servico.valor ?? null;
-  }
-
-  function duracaoDoServico(agendamento: Agendamento) {
-    const servico = servicos.find((item) => item.id === agendamento.servico_id);
-
-    if (!servico) return null;
-
-    return servico.duracao_padrao_minutos ?? servico.duracao ?? null;
-  }
-
-  function exportar() {
-    const linhas = agendamentos.map((item) => ({
-      Data: formatarData(item.data),
-      Hora: item.horario || "",
-      Profissional: item.profissional || "",
-      Servico: item.servico || "",
-      Duracao: duracaoDoServico(item) || "",
-      Cliente: item.cliente || "",
-      Valor: valorDoServico(item) || "",
-      Status: item.status || "",
-      Observacoes: item.observacoes || "",
-      Cadastro: formatarDataHora(item.created_at),
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(linhas);
-    const workbook = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Agendamentos");
-    XLSX.writeFile(workbook, "consulta_agendamentos.xlsx");
-  }
-
-  const categorias = useMemo(() => {
-    const set = new Set<string>();
-
-    servicos.forEach((servico) => {
-      if (servico.categoria) set.add(servico.categoria);
-    });
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [servicos]);
-
-  const servicosFiltrados = useMemo(() => {
-    if (!categoria) return servicos;
-    return servicos.filter((servico) => servico.categoria === categoria);
-  }, [servicos, categoria]);
-
-  const clientesFiltrados = useMemo(() => {
-    const termo = clienteBusca.toLowerCase().trim();
-
-    if (!termo) return clientes;
-
-    return clientes.filter((cliente) => {
-      const texto = `${cliente.nome || ""} ${cliente.telefone || ""}`.toLowerCase();
-      return texto.includes(termo);
-    });
-  }, [clientes, clienteBusca]);
-
-  const totalValor = useMemo(() => {
-    return agendamentos.reduce((total, item) => total + Number(valorDoServico(item) || 0), 0);
-  }, [agendamentos, servicos]);
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Agenda"
-        title="Consulta de Agendamentos"
-        description="Consulte, filtre e exporte agendamentos por período, cliente, serviço, profissional e status."
-      />
+      <div>
+        <p
+          className="text-xs font-extrabold uppercase tracking-wide"
+          style={{ color: "var(--color-primary)" }}
+        >
+          Agenda
+        </p>
 
-      <SectionCard>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_1fr_40px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Datas:</label>
+        <h1 className="mt-1 text-3xl font-extrabold text-slate-950">
+          Consulta de Agendamentos
+        </h1>
 
-              <input
-                type="date"
-                value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              />
+        <p className="mt-1 text-sm font-semibold text-slate-500">
+          Pesquise, filtre e acompanhe todos os agendamentos cadastrados.
+        </p>
+      </div>
 
-              <span className="text-center font-bold text-slate-600">até</span>
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-5">
+        <ResumoCard label="Total" valor={resumo.total} />
+        <ResumoCard label="Agendados" valor={resumo.agendados} />
+        <ResumoCard label="Confirmados" valor={resumo.confirmados} />
+        <ResumoCard label="Finalizados" valor={resumo.finalizados} />
+        <ResumoCard label="Cancelados" valor={resumo.cancelados} destaque="danger" />
+      </section>
 
-              <input
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              />
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-950">Filtros</h2>
+            <p className="text-sm font-semibold text-slate-500">
+              Combine busca, status e período.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={limparFiltros}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50"
+            >
+              Limpar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void carregarAgendamentos()}
+              className="rounded-2xl px-4 py-3 text-sm font-extrabold text-white transition disabled:opacity-50"
+              style={{ backgroundColor: "var(--color-primary)" }}
+              disabled={loading}
+            >
+              {loading ? "Atualizando..." : "Atualizar"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_220px_180px_180px]">
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[var(--color-primary)]"
+            placeholder="Buscar por cliente, telefone, serviço ou profissional"
+          />
+
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as StatusFiltro)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 outline-none transition focus:border-[var(--color-primary)]"
+          >
+            <option value="todos">Todos os status</option>
+            <option value="agendado">Agendado</option>
+            <option value="confirmado">Confirmado</option>
+            <option value="finalizado">Finalizado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+
+          <input
+            type="date"
+            value={dataInicio}
+            onChange={(e) => setDataInicio(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[var(--color-primary)]"
+          />
+
+          <input
+            type="date"
+            value={dataFim}
+            onChange={(e) => setDataFim(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[var(--color-primary)]"
+          />
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-950">
+              Resultado
+            </h2>
+            <p className="text-sm font-semibold text-slate-500">
+              {filtrados.length} agendamento(s) encontrado(s)
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="rounded-2xl bg-slate-50 p-5 text-sm font-semibold text-slate-500">
+            Carregando agendamentos...
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div className="rounded-2xl bg-orange-50 p-5 text-sm font-semibold text-orange-700">
+            Nenhum agendamento encontrado para os filtros informados.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-3xl border border-slate-200">
+            <div className="hidden grid-cols-[1.2fr_1.2fr_1fr_130px_130px_150px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase text-slate-500 xl:grid">
+              <span>Cliente</span>
+              <span>Serviço</span>
+              <span>Profissional</span>
+              <span>Data</span>
+              <span>Status</span>
+              <span className="text-right">Ações</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Cliente</label>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr]">
-                <input
-                  value={clienteBusca}
-                  onChange={(e) => {
-                    setClienteBusca(e.target.value);
-                    setClienteId("");
-                  }}
-                  placeholder="Digite nome ou telefone"
-                  className="rounded-xl border border-slate-300 p-3"
-                />
-
-                <select
-                  value={clienteId}
-                  onChange={(e) => setClienteId(e.target.value)}
-                  className="rounded-xl border border-slate-300 p-3"
+            <div className="divide-y divide-slate-200">
+              {filtrados.map((agendamento) => (
+                <div
+                  key={agendamento.id}
+                  className="grid grid-cols-1 gap-3 px-4 py-4 transition hover:bg-slate-50 xl:grid-cols-[1.2fr_1.2fr_1fr_130px_130px_150px] xl:items-center"
                 >
-                  <option value="">Todos os clientes</option>
-                  {clientesFiltrados.map((cliente) => (
-                    <option key={cliente.id} value={cliente.id}>
-                      {cliente.nome} {cliente.telefone ? `- ${cliente.telefone}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                  <div>
+                    <p className="font-extrabold text-slate-950">
+                      {agendamento.cliente || "Cliente não informado"}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {agendamento.telefone || "Sem telefone"}
+                    </p>
+                  </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Categoria</label>
+                  <div>
+                    <p className="font-bold text-slate-800">
+                      {agendamento.servico || "Serviço não informado"}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {agendamento.valor ? formatarValor(agendamento.valor) : ""}
+                    </p>
+                  </div>
 
-              <select
-                value={categoria}
-                onChange={(e) => {
-                  setCategoria(e.target.value);
-                  setServicoId("");
-                }}
-                className="rounded-xl border border-slate-300 p-3"
-              >
-                <option value="">-- Selecione --</option>
-                {categorias.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
+                  <div className="text-sm font-semibold text-slate-600">
+                    {agendamento.profissional || "-"}
+                  </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Serviço</label>
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {formatarData(agendamento.data)}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {agendamento.horario || "-"}
+                    </p>
+                  </div>
 
-              <select
-                value={servicoId}
-                onChange={(e) => setServicoId(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              >
-                <option value="">-- Selecione --</option>
-                {servicosFiltrados.map((servico) => (
-                  <option key={servico.id} value={servico.id}>
-                    {servico.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
+                  <div>
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${statusBadgeClass(
+                        agendamento.status
+                      )}`}
+                    >
+                      {statusLabel(agendamento.status)}
+                    </span>
+                  </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[120px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Agendado por</label>
-
-              <select
-                value={agendadoPor}
-                onChange={(e) => setAgendadoPor(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              >
-                <option value="Todos">Todos</option>
-                <option value="Sistema">Sistema</option>
-                <option value="Cliente">Cliente</option>
-              </select>
+                  <div className="flex justify-start gap-2 xl:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => abrirMeuEspaco(agendamento)}
+                      className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Meu Espaço
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+        )}
+      </section>
+    </div>
+  );
+}
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[150px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Profissional</label>
-
-              <select
-                value={profissionalId}
-                onChange={(e) => setProfissionalId(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              >
-                <option value="">-- Selecione --</option>
-                {profissionais.map((profissional) => (
-                  <option key={profissional.id} value={profissional.id}>
-                    {profissional.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[150px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Status</label>
-
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="rounded-xl border border-slate-300 p-3"
-              >
-                <option value="">-- Selecione --</option>
-                <option value="agendado">Agendado</option>
-                <option value="confirmado">Confirmado</option>
-                <option value="finalizado">Finalizado</option>
-                <option value="cancelado">Cancelado</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[150px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Fechamento Conta</label>
-
-              <select className="rounded-xl border border-slate-300 p-3" disabled>
-                <option>-- Selecione --</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[150px_1fr] md:items-center">
-              <label className="font-bold text-slate-700 md:text-right">Serviços com Fotos</label>
-
-              <select className="rounded-xl border border-slate-300 p-3" disabled>
-                <option>Indiferente</option>
-              </select>
-            </div>
-
-            <label className="ml-0 flex items-center gap-2 text-sm font-bold text-slate-700 md:ml-[150px]">
-              <input
-                type="checkbox"
-                checked={somenteRecorrentes}
-                onChange={(e) => setSomenteRecorrentes(e.target.checked)}
-              />
-              Somente agendamentos recorrentes
-            </label>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <PrimaryButton type="button" onClick={pesquisar}>
-                {loading ? "Pesquisando..." : "Pesquisar"}
-              </PrimaryButton>
-
-              <button
-                type="button"
-                onClick={exportar}
-                disabled={agendamentos.length === 0}
-                className="rounded-2xl bg-orange-600 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Exportar
-              </button>
-
-              <button
-                type="button"
-                onClick={limpar}
-                className="rounded-2xl bg-slate-300 px-5 py-3 text-sm font-bold text-slate-700"
-              >
-                Limpar
-              </button>
-            </div>
-          </div>
-        </div>
-      </SectionCard>
-
-      {pesquisou && (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-          <p className="italic">
-            Agendamentos de <strong>{formatarData(dataInicio)}</strong> a <strong>{formatarData(dataFim)}</strong>
-          </p>
-
-          <p className="italic">
-            Relatório gerado em <strong>{new Date().toLocaleString("pt-BR")}</strong>
-          </p>
-        </div>
-      )}
-
-      {loading ? (
-        <SectionCard>
-          <p>Carregando agendamentos...</p>
-        </SectionCard>
-      ) : !pesquisou ? (
-        <SectionCard>
-          <p className="text-sm text-slate-500">
-            Use os filtros acima e clique em <strong>Pesquisar</strong>.
-          </p>
-        </SectionCard>
-      ) : agendamentos.length === 0 ? (
-        <EmptyState
-          title="Nenhum agendamento encontrado"
-          description="Ajuste os filtros ou selecione outro período."
-        />
-      ) : (
-        <SectionCard>
-          <div className="mb-4 flex flex-wrap justify-between gap-3">
-            <div>
-              <p className="text-sm text-slate-500">Total de registros</p>
-              <p className="text-2xl font-extrabold text-slate-900">{agendamentos.length}</p>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Valor estimado</p>
-              <p className="text-2xl font-extrabold text-orange-600">{formatarMoeda(totalValor)}</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-orange-500 text-left text-sm text-white">
-                  <th className="px-3 py-3">Data</th>
-                  <th className="px-3 py-3">Hora</th>
-                  <th className="px-3 py-3">Ações</th>
-                  <th className="px-3 py-3">Profissional</th>
-                  <th className="px-3 py-3">Serviço</th>
-                  <th className="px-3 py-3">Duração</th>
-                  <th className="px-3 py-3">Cliente</th>
-                  <th className="px-3 py-3 text-right">Valor</th>
-                  <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Observações</th>
-                  <th className="px-3 py-3">Serviço com Foto</th>
-                  <th className="px-3 py-3">Cadastro</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {agendamentos.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 odd:bg-white even:bg-slate-50">
-                    <td className="px-3 py-3 text-sm text-slate-700">{formatarData(item.data)}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{item.horario || "-"}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">
-                      <span title="Ações">⚙️</span>
-                    </td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{item.profissional || "-"}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{item.servico || "-"}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">
-                      {duracaoDoServico(item) ? `${duracaoDoServico(item)} min` : "-"}
-                    </td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{item.cliente || "-"}</td>
-                    <td className="px-3 py-3 text-right text-sm font-bold text-slate-900">
-                      {formatarMoeda(valorDoServico(item))}
-                    </td>
-                    <td className="px-3 py-3 text-sm">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                        {item.status || "-"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-sm text-slate-700">
-                      {item.observacoes ? "💬" : "-"}
-                    </td>
-                    <td className="px-3 py-3 text-sm text-slate-700">Não</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">
-                      {formatarDataHora(item.created_at)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-      )}
+function ResumoCard({
+  label,
+  valor,
+  destaque,
+}: {
+  label: string;
+  valor: number;
+  destaque?: "danger";
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-extrabold uppercase text-slate-500">{label}</p>
+      <p
+        className={`mt-2 text-3xl font-extrabold ${
+          destaque === "danger" ? "text-red-600" : "text-slate-950"
+        }`}
+      >
+        {valor}
+      </p>
     </div>
   );
 }
