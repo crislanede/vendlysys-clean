@@ -13,7 +13,7 @@ const STORAGE_KEY = "vendlysys_empresa_ativa_id";
 export function useEmpresa() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [empresaNome, setEmpresaNome] = useState("");
-  const [corPrimaria, setCorPrimaria] = useState("#0f766e"); // fallback
+  const [corPrimaria, setCorPrimaria] = useState("#4b2f3f"); // 🔥 cor padrão sistema
   const [empresas, setEmpresas] = useState<EmpresaUsuario[]>([]);
   const [carregandoEmpresa, setCarregandoEmpresa] = useState(true);
 
@@ -34,7 +34,7 @@ export function useEmpresa() {
 
     let lista: EmpresaUsuario[] = [];
 
-    // 🔗 busca vínculo correto
+    // 🔗 busca vínculos (multiempresa)
     const { data: vinculos } = await supabase
       .from("usuarios_empresas")
       .select(`
@@ -55,7 +55,7 @@ export function useEmpresa() {
         .filter(Boolean);
     }
 
-    // fallback (empresa criada direto)
+    // 🔁 fallback (empresa criada direto sem vínculo)
     if (lista.length === 0) {
       const { data: empresaDireta } = await supabase
         .from("empresas")
@@ -79,8 +79,8 @@ export function useEmpresa() {
     setEmpresaId(ativa.id);
     setEmpresaNome(ativa.nome);
 
-    // 🔥 AQUI ESTAVA O PROBLEMA
-    setCorPrimaria(ativa.cor_primaria || "#0f766e");
+    // 🎨 aplica cor da empresa
+    setCorPrimaria(ativa.cor_primaria || "#4b2f3f");
 
     setCarregandoEmpresa(false);
   }
@@ -95,17 +95,19 @@ export function useEmpresa() {
     setEmpresaId(empresa.id);
     setEmpresaNome(empresa.nome);
 
-    // 🔥 aplica cor na troca também
-    setCorPrimaria(empresa.cor_primaria || "#0f766e");
+    // 🎨 aplica cor ao trocar
+    setCorPrimaria(empresa.cor_primaria || "#4b2f3f");
 
+    // 🔄 recarrega layout com nova empresa
     window.location.reload();
   }
 
   function finalizarSemEmpresa() {
     localStorage.removeItem(STORAGE_KEY);
+
     setEmpresaId(null);
     setEmpresaNome("");
-    setCorPrimaria("#0f766e");
+    setCorPrimaria("#4b2f3f");
     setEmpresas([]);
     setCarregandoEmpresa(false);
   }
