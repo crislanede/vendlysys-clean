@@ -5,13 +5,13 @@ import AdminLayout from "./components/admin/AdminLayout";
 import AdminRoute from "./components/AdminRoute";
 import ThemeLoader from "./components/theme/ThemeLoader";
 import BloqueioTrial from "./components/BloqueioTrial";
-import NovaEmpresa from "./pages/NovaEmpresa";
-import UsuariosEmpresa from "./pages/usuarios-empresa";
 
 import Login from "./pages/login";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 import Licencas from "./pages/licencas";
 import AdminEmpresas from "./pages/admin-empresas";
+import NovaEmpresa from "./pages/NovaEmpresa";
+import UsuariosEmpresa from "./pages/usuarios-empresa";
 
 import Dashboard from "./pages/dashboard";
 import Agenda from "./pages/agenda";
@@ -20,7 +20,6 @@ import Clientes from "./pages/clientes";
 import Profissionais from "./pages/profissionais";
 import Servicos from "./pages/servicos";
 import Produtos from "./pages/produtos";
-import Usuarios from "./pages/usuarios";
 import Financeiro from "./pages/financeiro";
 import Pagamentos from "./pages/pagamentos";
 import Despesas from "./pages/despesas";
@@ -50,7 +49,6 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
-        <Route path="usuarios" element={<UsuariosEmpresa />} />
 
         <Route
           path="/admin"
@@ -60,7 +58,6 @@ export default function App() {
             </AdminRoute>
           }
         >
-          <Route path="nova-empresa" element={<NovaEmpresa />} />
           <Route index element={<Navigate to="/admin/licencas" replace />} />
           <Route path="licencas" element={<Licencas />} />
           <Route path="empresas" element={<AdminEmpresas />} />
@@ -77,7 +74,7 @@ export default function App() {
           <Route path="profissionais" element={<Profissionais />} />
           <Route path="servicos" element={<Servicos />} />
           <Route path="produtos" element={<Produtos />} />
-          <Route path="usuarios" element={<Usuarios />} />
+          <Route path="usuarios" element={<UsuariosEmpresa />} />
 
           <Route path="financeiro" element={<Financeiro />} />
           <Route path="pagamentos" element={<Pagamentos />} />
@@ -97,6 +94,8 @@ export default function App() {
           <Route path="relatorios" element={<Relatorios />} />
           <Route path="relatorios-retorno" element={<RelatoriosRetorno />} />
           <Route path="configuracoes" element={<Configuracoes />} />
+
+          <Route path="nova-empresa" element={<NovaEmpresa />} />
         </Route>
       </Routes>
     </BrowserRouter>
