@@ -1,38 +1,61 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export type Configuracao = {
-  nome_empresa: string | null;
-  nome_fantasia: string | null;
-  cor_primaria: string | null;
-  cor_secundaria: string | null;
-  cor_fundo: string | null;
+type Empresa = {
+  id: string;
+  nome: string;
+  slug: string | null;
+  email: string | null;
+  plano: string | null;
+  status_assinatura: string | null;
+  trial_fim: string | null;
+  licenca_vitalicia: boolean | null;
+  bloqueada: boolean | null;
 };
 
-export function useConfiguracao() {
-  const [config, setConfig] = useState<Configuracao | null>(null);
-  const [loading, setLoading] = useState(true);
+export function useEmpresa() {
+  const [empresa, setEmpresa] = useState<Empresa | null>(null);
+  const [carregandoEmpresa, setCarregandoEmpresa] = useState(true);
 
   useEffect(() => {
-    void carregar();
+    carregarEmpresa();
   }, []);
 
-  async function carregar() {
-    const { data, error } = await supabase
-      .from("configuracoes")
-      .select("*")
-      .limit(1)
-      .maybeSingle();
+  async function carregarEmpresa() {
+    setCarregandoEmpresa(true);
 
-    if (error) {
-      console.error("Erro ao carregar config:", error);
-      setLoading(false);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+
+    if (!userId) {
+      setEmpresa(null);
+      setCarregandoEmpresa(false);
       return;
     }
 
-    setConfig(data);
-    setLoading(false);
+    const { data, error } = await supabase
+      .from("empresas")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error || !data) {
+      setEmpresa(null);
+      setCarregandoEmpresa(false);
+      return;
+    }
+
+    localStorage.setItem("empresa_id", data.id);
+    localStorage.setItem("empresa_slug", data.slug || "");
+
+    setEmpresa(data);
+    setCarregandoEmpresa(false);
   }
 
-  return { config, loading };
+  return {
+    empresa,
+    empresaId: empresa?.id || null,
+    carregandoEmpresa,
+    recarregarEmpresa: carregarEmpresa,
+  };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -23,6 +24,7 @@ type Lancamento = {
   forma_pagamento?: string | null;
   data_pagamento?: string | null;
   created_at?: string;
+  empresa_id?: string | null;
 };
 
 type Despesa = {
@@ -35,9 +37,12 @@ type Despesa = {
   observacao?: string | null;
   observacoes?: string | null;
   status?: string | null;
+  empresa_id?: string | null;
 };
 
 export default function FinanceiroPage() {
+  const { empresaId, carregandoEmpresa } = useEmpresa();
+
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,21 +67,30 @@ export default function FinanceiroPage() {
   const [filtroStatus, setFiltroStatus] = useState("");
 
   useEffect(() => {
-    carregarDados();
-  }, []);
+    if (empresaId) carregarDados();
+  }, [empresaId]);
 
   async function carregarDados() {
     setLoading(true);
 
+    if (!empresaId) {
+      setLancamentos([]);
+      setDespesas([]);
+      setLoading(false);
+      return;
+    }
+
     const { data: dataFinanceiro, error: errorFinanceiro } = await supabase
       .from("financeiro")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("data_lancamento", { ascending: false })
       .order("created_at", { ascending: false });
 
     const { data: dataDespesas, error: errorDespesas } = await supabase
       .from("despesas")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("data_lancamento", { ascending: false });
 
     if (errorFinanceiro) {
@@ -154,10 +168,15 @@ export default function FinanceiroPage() {
       profissional: profissional.trim() || null,
       servico: servico.trim() || null,
       observacoes: observacoes.trim() || null,
+      empresa_id: empresaId,
     };
 
     const resposta = editandoId
-      ? await supabase.from("financeiro").update(payload).eq("id", editandoId)
+      ? await supabase
+          .from("financeiro")
+          .update(payload)
+          .eq("id", editandoId)
+          .eq("empresa_id", empresaId)
       : await supabase.from("financeiro").insert([payload]);
 
     if (resposta.error) {
@@ -190,7 +209,11 @@ export default function FinanceiroPage() {
     const confirmar = window.confirm("Deseja excluir este lançamento?");
     if (!confirmar) return;
 
-    const { error } = await supabase.from("financeiro").delete().eq("id", id);
+    const { error } = await supabase
+      .from("financeiro")
+      .delete()
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao excluir lançamento:", error);
@@ -208,7 +231,8 @@ export default function FinanceiroPage() {
         status: "pago",
         data_pagamento: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao marcar como pago:", error);
@@ -226,7 +250,8 @@ export default function FinanceiroPage() {
     const { error } = await supabase
       .from("financeiro")
       .update({ status: "cancelado" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       alert("Erro ao cancelar lançamento: " + error.message);
@@ -292,6 +317,14 @@ export default function FinanceiroPage() {
     setFiltroDataFim("");
     setFiltroTipo("");
     setFiltroStatus("");
+  }
+
+  if (carregandoEmpresa) {
+    return <div className="p-6">Carregando empresa...</div>;
+  }
+
+  if (!empresaId) {
+    return <div className="p-6">Empresa não encontrada para este usuário.</div>;
   }
 
   return (

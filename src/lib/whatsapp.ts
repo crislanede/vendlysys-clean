@@ -1,94 +1,71 @@
-import { supabase } from "./supabase";
+export function normalizarTelefoneWhatsapp(telefone: string) {
+  const numeroLimpo = String(telefone || "").replace(/\D/g, "");
 
-export type TipoMensagemWhatsapp =
-  | "confirmacao_agendamento"
-  | "cancelamento_agendamento"
-  | "lembrete_agendamento"
-  | "agradecimento_atendimento"
-  | "pdf_anamnese"
-  | "novo_agendamento_cliente"
-  | "reagendamento_agendamento"
-  | "campanha";
+  if (!numeroLimpo) return "";
 
-export type DadosMensagemWhatsapp = {
-  empresa?: string | null;
+  if (numeroLimpo.startsWith("55")) {
+    return numeroLimpo;
+  }
+
+  return `55${numeroLimpo}`;
+}
+
+export function abrirWhatsapp(telefone: string, mensagem: string) {
+  const numeroFinal = normalizarTelefoneWhatsapp(telefone);
+  const texto = encodeURIComponent(mensagem || "");
+
+  if (!numeroFinal) {
+    alert("Telefone inválido para WhatsApp.");
+    return;
+  }
+
+  window.open(`https://wa.me/${numeroFinal}?text=${texto}`, "_blank");
+}
+
+export function montarLinkMeuEspaco(token?: string | null) {
+  const baseUrl = window.location.origin;
+  return token
+    ? `${baseUrl}/meu-espaco?token=${token}`
+    : `${baseUrl}/meu-espaco`;
+}
+
+/**
+ * 🔥 Compatível com versão antiga e nova
+ */
+type DadosMensagem = {
   cliente?: string | null;
+  empresa?: string | null;
   profissional?: string | null;
   servico?: string | null;
   data?: string | null;
   horario?: string | null;
-  novaData?: string | null;
-  novoHorario?: string | null;
-  valor?: string | number | null;
+  valor?: number | string | null;
+  token?: string | null;
+
+  // NOVO PADRÃO
+  link_meu_espaco?: string | null;
+  pdf_url?: string | null;
+
+  // LEGADO (evita quebrar telas antigas)
   linkMeuEspaco?: string | null;
   pdfUrl?: string | null;
-  telefoneEmpresa?: string | null;
 
   titulo?: string | null;
-  descricao?: string | null; // 👈 ADICIONA AQUI
+  descricao?: string | null;
   mensagem?: string | null;
 };
-
-type ConfigMensagemWhatsapp = {
-  id?: string;
-  tipo: TipoMensagemWhatsapp;
-  titulo?: string | null;
-  mensagem?: string | null;
-  ativo?: boolean | null;
-};
-
-function somenteNumeros(valor?: string | null) {
-  return String(valor || "").replace(/\D/g, "");
-}
-
-export function normalizarTelefoneWhatsapp(telefone?: string | null) {
-  const numeroOriginal = somenteNumeros(telefone);
-
-  if (!numeroOriginal) return "";
-
-  if (numeroOriginal.startsWith("55")) return numeroOriginal;
-
-  if (numeroOriginal.length === 10 || numeroOriginal.length === 11) {
-    return `55${numeroOriginal}`;
-  }
-
-  return numeroOriginal;
-}
-
-export function abrirWhatsapp(telefone?: string | null, mensagem?: string | null) {
-  const numero = normalizarTelefoneWhatsapp(telefone);
-  const texto = encodeURIComponent(mensagem || "");
-
-  if (!numero) {
-    window.open(`https://wa.me/?text=${texto}`, "_blank");
-    return;
-  }
-
-  window.open(`https://wa.me/${numero}?text=${texto}`, "_blank");
-}
-
-export function montarLinkMeuEspaco(token?: string | null) {
-  if (!token) return "";
-
-  return `${window.location.origin}/meu-espaco?token=${token}`;
-}
 
 function formatarData(data?: string | null) {
   if (!data) return "";
-
-  const partes = String(data).split("-");
-
-  if (partes.length !== 3) return String(data);
-
-  return `${partes[2]}/${partes[1]}/${partes[0]}`;
+  try {
+    return new Date(data + "T00:00:00").toLocaleDateString("pt-BR");
+  } catch {
+    return data;
+  }
 }
 
-function formatarValor(valor?: string | number | null) {
-  if (valor === null || valor === undefined || valor === "") return "";
-
-  const numero = Number(valor);
-
-  if (Number.isNaN(numero)) return String(valor);
+function formatarValor(valor?: number | string | null) {
+  const numero = Number(valor || 0);
 
   return numero.toLocaleString("pt-BR", {
     style: "currency",
@@ -96,230 +73,56 @@ function formatarValor(valor?: string | number | null) {
   });
 }
 
-function aplicarVariaveis(template: string, dados: DadosMensagemWhatsapp) {
-  const variaveis: Record<string, string> = {
-    empresa: dados.empresa || "nosso espaço",
-    cliente: dados.cliente || "cliente",
-    profissional: dados.profissional || "",
-    servico: dados.servico || "",
-    data: formatarData(dados.data),
-    horario: dados.horario || "",
-    nova_data: formatarData(dados.novaData),
-    novo_horario: dados.novoHorario || "",
-    valor: formatarValor(dados.valor),
-    link_meu_espaco: dados.linkMeuEspaco || "",
-    pdf_url: dados.pdfUrl || "",
-    telefone_empresa: dados.telefoneEmpresa || "",
-    titulo: dados.titulo || "",
-    mensagem: dados.mensagem || "",
-  };
-
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, chave) => {
-    return variaveis[chave] ?? "";
-  });
-}
-
-export const mensagensWhatsappPadrao: Record<TipoMensagemWhatsapp, string> = {
-  confirmacao_agendamento:
-    "Olá, {{cliente}}! 💜\n\nVocê tem um agendamento em {{empresa}}.\n\n📌 Serviço: {{servico}}\n👩‍💼 Profissional: {{profissional}}\n📅 Data: {{data}}\n⏰ Horário: {{horario}}\n\nPara confirmar ou cancelar sua presença, acesse:\n{{link_meu_espaco}}\n\nAté breve!",
-
-  cancelamento_agendamento:
-    "Olá, {{cliente}}! Seu agendamento em {{empresa}} foi cancelado.\n\n📌 Serviço: {{servico}}\n📅 Data: {{data}}\n⏰ Horário: {{horario}}\n\nCaso queira reagendar, acesse:\n{{link_meu_espaco}}",
-
-  lembrete_agendamento:
-    "Oi, {{cliente}}! Passando para lembrar do seu agendamento em {{empresa}}. 💜\n\n📌 Serviço: {{servico}}\n👩‍💼 Profissional: {{profissional}}\n📅 Data: {{data}}\n⏰ Horário: {{horario}}\n\nConfirme sua presença pelo link:\n{{link_meu_espaco}}",
-
-  agradecimento_atendimento:
-    "Olá, {{cliente}}! 💜\n\nObrigada por realizar seu atendimento em {{empresa}}.\n\nFoi um prazer cuidar de você!\n\nEsperamos te ver novamente em breve. Para acompanhar seus dados, histórico ou agendar um novo horário, acesse:\n{{link_meu_espaco}}",
-
-  pdf_anamnese:
-    "Olá, {{cliente}}! 💜\n\nSegue o PDF da sua ficha de anamnese preenchida em {{empresa}}:\n{{pdf_url}}\n\nGuarde esse documento para consulta sempre que precisar.",
-
-  novo_agendamento_cliente:
-    "Olá, {{cliente}}! Seu novo agendamento foi solicitado em {{empresa}}. 💜\n\n📌 Serviço: {{servico}}\n👩‍💼 Profissional: {{profissional}}\n📅 Data: {{data}}\n⏰ Horário: {{horario}}\n\nAcompanhe pelo link:\n{{link_meu_espaco}}",
-
-  reagendamento_agendamento:
-    "Olá, {{cliente}}! Seu agendamento em {{empresa}} foi reagendado. 💜\n\n📌 Serviço: {{servico}}\n👩‍💼 Profissional: {{profissional}}\n📅 Nova data: {{nova_data}}\n⏰ Novo horário: {{novo_horario}}\n\nAcompanhe pelo link:\n{{link_meu_espaco}}",
-
-  campanha:
-    "Olá, {{cliente}}! 💜\n\n{{titulo}}\n\n{{mensagem}}",
-};
-
-export function montarMensagemWhatsappLocal(
-  tipo: TipoMensagemWhatsapp,
-  dados: DadosMensagemWhatsapp
+/**
+ * 🔥 MOTOR PRINCIPAL DE TEMPLATE
+ */
+export function aplicarVariaveisWhatsapp(
+  modelo: string,
+  dados: DadosMensagem
 ) {
-  return aplicarVariaveis(mensagensWhatsappPadrao[tipo], dados);
+  const linkMeuEspaco =
+    dados.link_meu_espaco ||
+    dados.linkMeuEspaco ||
+    montarLinkMeuEspaco(dados.token);
+
+  const pdfUrl = dados.pdf_url || dados.pdfUrl || "";
+
+  return String(modelo || "")
+    .replaceAll("{{cliente}}", dados.cliente || "")
+    .replaceAll("{{empresa}}", dados.empresa || "VendlySys")
+    .replaceAll("{{profissional}}", dados.profissional || "")
+    .replaceAll("{{servico}}", dados.servico || "")
+    .replaceAll("{{data}}", formatarData(dados.data))
+    .replaceAll("{{horario}}", dados.horario || "")
+    .replaceAll("{{hora}}", dados.horario || "")
+    .replaceAll("{{valor}}", formatarValor(dados.valor))
+    .replaceAll("{{link_meu_espaco}}", linkMeuEspaco)
+    .replaceAll("{{pdf_url}}", pdfUrl)
+    .replaceAll("{{titulo}}", dados.titulo || "")
+    .replaceAll("{{descricao}}", dados.descricao || "")
+    .replaceAll("{{mensagem}}", dados.mensagem || "");
 }
 
-export async function buscarMensagemWhatsapp(tipo: TipoMensagemWhatsapp): Promise<string> {
-  const { data, error } = await supabase
-    .from("whatsapp_mensagens")
-    .select("tipo, mensagem, ativo")
-    .eq("tipo", tipo)
-    .eq("ativo", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.warn("Erro ao buscar mensagem de WhatsApp:", error);
-    return mensagensWhatsappPadrao[tipo];
-  }
-
-  const configuracao = data as ConfigMensagemWhatsapp | null;
-
-  return configuracao?.mensagem || mensagensWhatsappPadrao[tipo];
-}
-
-export async function montarMensagemWhatsappEditavel(
-  tipo: TipoMensagemWhatsapp,
-  dados: DadosMensagemWhatsapp
-) {
-  const template = await buscarMensagemWhatsapp(tipo);
-
-  return aplicarVariaveis(template, dados);
-}
-
-export async function enviarWhatsappPorTipo(
-  telefone: string | null | undefined,
-  tipo: TipoMensagemWhatsapp,
-  dados: DadosMensagemWhatsapp
-) {
-  const mensagem = await montarMensagemWhatsappEditavel(tipo, dados);
-  abrirWhatsapp(telefone, mensagem);
-}
-
-export async function enviarWhatsapp(
-  telefone: string | null | undefined,
-  tipo: TipoMensagemWhatsapp,
-  dados: DadosMensagemWhatsapp
-) {
-  return enviarWhatsappPorTipo(telefone, tipo, dados);
-}
-
-export function montarMensagemConfirmacaoAgendamento(dados: DadosMensagemWhatsapp) {
-  return montarMensagemWhatsappLocal("confirmacao_agendamento", dados);
-}
-
-export function montarMensagemLembreteAgendamento(dados: DadosMensagemWhatsapp) {
-  return montarMensagemWhatsappLocal("lembrete_agendamento", dados);
-}
-
-export function montarMensagemCancelamentoAgendamento(dados: DadosMensagemWhatsapp) {
-  return montarMensagemWhatsappLocal("cancelamento_agendamento", dados);
-}
-
-export function montarMensagemAgradecimentoAtendimento(dados: DadosMensagemWhatsapp) {
-  return montarMensagemWhatsappLocal("agradecimento_atendimento", dados);
-}
-
-export function montarMensagemReagendamento(dados: DadosMensagemWhatsapp) {
-  return montarMensagemWhatsappLocal("reagendamento_agendamento", dados);
-}
-
-export function montarMensagemCampanha(
-  clienteOuDados?: string | DadosMensagemWhatsapp | null,
-  mensagemCampanha?: string | null
-) {
-  if (typeof clienteOuDados === "object" && clienteOuDados !== null) {
-    return montarMensagemWhatsappLocal("campanha", clienteOuDados);
-  }
-
-  return montarMensagemWhatsappLocal("campanha", {
-    cliente: clienteOuDados || "",
-    mensagem: mensagemCampanha || "",
-  });
-}
-
-export function montarMensagemPdfAnamnese({
-  cliente,
-  empresa,
-  pdfUrl,
-}: {
-  cliente: string;
-  empresa: string;
-  pdfUrl: string;
-}) {
-  return montarMensagemWhatsappLocal("pdf_anamnese", {
-    cliente,
-    empresa,
-    pdfUrl,
-  });
-}
-
-export async function salvarMensagemWhatsapp({
-  tipo,
-  titulo,
-  mensagem,
-}: {
-  tipo: TipoMensagemWhatsapp;
-  titulo?: string;
-  mensagem: string;
-}) {
-  const { data: existente } = await supabase
-    .from("whatsapp_mensagens")
-    .select("id")
-    .eq("tipo", tipo)
-    .limit(1)
-    .maybeSingle();
-
-  if (existente?.id) {
-    const { error } = await supabase
-      .from("whatsapp_mensagens")
-      .update({
-        titulo: titulo || tipo,
-        mensagem,
-        ativo: true,
-        atualizado_em: new Date().toISOString(),
-      })
-      .eq("id", existente.id);
-
-    if (error) throw error;
-
-    return;
-  }
-
-  const { error } = await supabase.from("whatsapp_mensagens").insert({
-    tipo,
-    titulo: titulo || tipo,
-    mensagem,
-    ativo: true,
-  });
-
-  if (error) throw error;
-}
-
-export async function criarMensagensWhatsappPadraoSeNaoExistirem() {
-  const registros = Object.entries(mensagensWhatsappPadrao).map(
-    ([tipo, mensagem]) => ({
-      tipo,
-      titulo: tipo,
-      mensagem,
-      ativo: true,
-    })
+/**
+ * 🔹 Mensagens prontas (fallback)
+ */
+export function montarMensagemAgradecimento(dados: DadosMensagem) {
+  return aplicarVariaveisWhatsapp(
+    "Olá, {{cliente}}! Obrigada pela preferência. Foi um prazer atender você na {{empresa}} 💖\n\nAcesse seu espaço: {{link_meu_espaco}}",
+    dados
   );
-
-  for (const registro of registros) {
-    const { data } = await supabase
-      .from("whatsapp_mensagens")
-      .select("id")
-      .eq("tipo", registro.tipo)
-      .limit(1)
-      .maybeSingle();
-
-    if (!data?.id) {
-      const { error } = await supabase.from("whatsapp_mensagens").insert(registro);
-
-      if (error) {
-        console.warn("Erro ao criar mensagem padrão:", registro.tipo, error);
-      }
-    }
-  }
 }
 
-/* Compatibilidade com nomes antigos usados no sistema */
-export const montarMensagemWhatsapp = montarMensagemWhatsappLocal;
-export const montarMensagemCancelamento = montarMensagemCancelamentoAgendamento;
-export const montarMensagemConfirmacao = montarMensagemConfirmacaoAgendamento;
-export const montarMensagemLembrete = montarMensagemLembreteAgendamento;
-export const montarMensagemAgradecimento = montarMensagemAgradecimentoAtendimento;
+export function montarMensagemPdfAnamnese(dados: DadosMensagem) {
+  return aplicarVariaveisWhatsapp(
+    "Olá, {{cliente}}! Segue o PDF da sua anamnese da {{empresa}}:\n{{pdf_url}}",
+    dados
+  );
+}
+
+export function montarMensagemCampanha(dados: DadosMensagem) {
+  return aplicarVariaveisWhatsapp(
+    "{{titulo}}\n\nOlá, {{cliente}}!\n\n{{mensagem}}\n\n{{descricao}}",
+    dados
+  );
+}

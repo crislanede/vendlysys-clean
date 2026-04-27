@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 import PageHeader from "../components/ui/PageHeader";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
@@ -28,6 +29,7 @@ type Servico = {
   preco?: number | null;
   descricao?: string | null;
   duracao?: number | null;
+  duracao_padrao_minutos?: number | null;
 };
 
 type Profissional = {
@@ -56,7 +58,9 @@ type Agendamento = {
   telefone?: string | null;
   token?: string | null;
   token_cliente?: string | null;
+  duracao_minutos?: number | null;
   created_at?: string | null;
+  empresa_id?: string | null;
 };
 
 type PacoteDisponivel = {
@@ -71,10 +75,29 @@ type PacoteDisponivel = {
   data_fim: string | null;
 };
 
-const HORARIOS = Array.from({ length: 13 }, (_, index) => {
-  const hour = index + 8;
-  return `${String(hour).padStart(2, "0")}:00`;
-});
+const HORARIOS = [
+  "08:00",
+  "08:30",
+  "09:00",
+  "09:30",
+  "10:00",
+  "10:30",
+  "11:00",
+  "11:30",
+  "12:00",
+  "12:30",
+  "13:00",
+  "13:30",
+  "14:00",
+  "14:30",
+  "15:00",
+  "15:30",
+  "16:00",
+  "16:30",
+  "17:00",
+  "17:30",
+  "18:00",
+];
 
 const STATUS_OPTIONS = [
   { label: "Todos", value: "todos" },
@@ -113,6 +136,15 @@ function parseTimeToMinutes(value?: string | null) {
   return hours * 60 + minutes;
 }
 
+function somarMinutos(horario: string, minutos: number) {
+  const [hours, minutes] = horario.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes + minutos, 0, 0);
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes()
+  ).padStart(2, "0")}`;
+}
 
 function formatDisplayDate(dateValue: string) {
   if (!dateValue) return "";
@@ -231,6 +263,7 @@ function MiniCalendar({
 export default function AgendaPage() {
   // Controle temporário: deixe true apenas para perfil administrador.
   const isAdmin = false;
+  const { empresaId, carregandoEmpresa } = useEmpresa();
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
@@ -269,18 +302,20 @@ export default function AgendaPage() {
   const [saldoPacoteSelecionadoId, setSaldoPacoteSelecionadoId] = useState("");
 
   useEffect(() => {
-    void carregarTudo();
-  }, []);
+    if (empresaId) void carregarTudo();
+  }, [empresaId]);
 
   async function carregarTudo() {
+    if (!empresaId) return;
     const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
       await Promise.all([
-        supabase.from("clientes").select("*").order("nome"),
-        supabase.from("servicos").select("*").order("nome"),
-        supabase.from("profissionais").select("*").order("nome"),
+        supabase.from("clientes").select("*").eq("empresa_id", empresaId).order("nome"),
+        supabase.from("servicos").select("*").eq("empresa_id", empresaId).order("nome"),
+        supabase.from("profissionais").select("*").eq("empresa_id", empresaId).order("nome"),
         supabase
           .from("agendamentos")
           .select("*")
+          .eq("empresa_id", empresaId)
           .order("data", { ascending: true })
           .order("horario", { ascending: true }),
       ]);
@@ -320,8 +355,13 @@ export default function AgendaPage() {
   }
 
   async function salvarAgendamento() {
-    if (!cliente || !servico || !data || !hora) {
-      alert("Preencha cliente, serviço, data e horário.");
+    if (!empresaId) {
+      alert("Empresa não encontrada. Faça login novamente.");
+      return;
+    }
+
+    if (!cliente || !servico || !profissional || !data || !hora) {
+      alert("Preencha cliente, serviço, profissional, data e horário.");
       return;
     }
 
@@ -330,11 +370,48 @@ export default function AgendaPage() {
       return;
     }
 
-    setLoadingSalvar(true);
-
     const clienteItem = clientes.find((item) => item.nome === cliente);
     const servicoItem = servicos.find((item) => item.nome === servico);
     const profissionalItem = profissionais.find((item) => item.nome === profissional);
+
+    if (!profissionalItem) {
+      alert("Selecione um profissional válido.");
+      return;
+    }
+
+    if (!servicoItem) {
+      alert("Selecione um serviço válido.");
+      return;
+    }
+
+    const duracaoBase =
+      servicoItem.duracao_padrao_minutos || servicoItem.duracao || 60;
+
+    const duracaoTotal = duracaoBase + 10;
+    const horarioFim = somarMinutos(hora, duracaoTotal);
+
+    const conflito = agendamentos.some((item) => {
+      if (item.status === "cancelado") return false;
+      if (item.profissional_id !== profissionalItem.id) return false;
+      if (item.data !== data) return false;
+
+      const inicioExistente = item.horario;
+      const fimExistente = somarMinutos(
+        item.horario,
+        item.duracao_minutos || 60
+      );
+
+      return hora < fimExistente && horarioFim > inicioExistente;
+    });
+
+    if (conflito) {
+      alert(
+        "Já existe um agendamento nesse horário para esse profissional. Escolha outro horário."
+      );
+      return;
+    }
+
+    setLoadingSalvar(true);
 
     const { error } = await supabase.from("agendamentos").insert([
       {
@@ -342,13 +419,15 @@ export default function AgendaPage() {
         servico,
         profissional,
         cliente_id: clienteItem?.id || null,
-        servico_id: servicoItem?.id || null,
-        profissional_id: profissionalItem?.id || null,
+        servico_id: servicoItem.id,
+        profissional_id: profissionalItem.id,
         data,
         horario: hora,
         observacoes: observacoes || null,
+        duracao_minutos: duracaoTotal,
         status: "agendado",
         no_show: false,
+        empresa_id: empresaId,
       },
     ]);
 
@@ -369,7 +448,8 @@ export default function AgendaPage() {
     const { error } = await supabase
       .from("agendamentos")
       .update({ status: "cancelado" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       alert(`Erro ao cancelar: ${error.message}`);
@@ -523,6 +603,10 @@ export default function AgendaPage() {
 
   async function finalizarComPagamento() {
     if (!agendamentoSelecionado) return;
+    if (!empresaId) {
+      alert("Empresa não encontrada. Faça login novamente.");
+      return;
+    }
 
     const pacoteSelecionado = pacotesDisponiveis.find(
       (item) => item.saldo_id === saldoPacoteSelecionadoId
@@ -595,12 +679,14 @@ export default function AgendaPage() {
           usarPacote && pacoteSelecionado
             ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
             : null,
+        empresa_id: empresaId,
       };
 
       const { data: existente, error: erroBusca } = await supabase
         .from("financeiro")
         .select("id")
         .eq("agendamento_id", agendamentoSelecionado.id)
+        .eq("empresa_id", empresaId)
         .maybeSingle();
 
       if (erroBusca) {
@@ -608,7 +694,7 @@ export default function AgendaPage() {
       }
 
       const respostaFinanceiro = existente?.id
-        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id)
+        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id).eq("empresa_id", empresaId)
         : await supabase.from("financeiro").insert([payloadFinanceiro]);
 
       if (respostaFinanceiro.error) {
@@ -644,7 +730,8 @@ export default function AgendaPage() {
           status_pagamento: statusFinal,
           no_show: false,
         })
-        .eq("id", agendamentoSelecionado.id);
+        .eq("id", agendamentoSelecionado.id)
+        .eq("empresa_id", empresaId);
 
       if (erroAgendamento) {
         throw new Error(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
@@ -723,6 +810,23 @@ export default function AgendaPage() {
     currentMinutes !== null
       ? ((currentMinutes - 8 * 60) / 60) * 88
       : null;
+
+  if (carregandoEmpresa) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <p className="text-sm font-semibold text-slate-500">Carregando empresa...</p>
+      </div>
+    );
+  }
+
+  if (!empresaId) {
+    return (
+      <div className="rounded-3xl border border-red-200 bg-red-50 p-8 text-center shadow-sm">
+        <p className="text-lg font-bold text-red-700">Empresa não encontrada</p>
+        <p className="mt-2 text-sm text-red-600">Faça login novamente para carregar sua agenda.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1044,12 +1148,18 @@ export default function AgendaPage() {
                 className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
               />
 
-              <input
-                type="time"
+              <select
                 value={hora}
                 onChange={(e) => setHora(e.target.value)}
                 className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
-              />
+              >
+                <option value="">Selecione o horário</option>
+                {HORARIOS.map((horarioOpcao) => (
+                  <option key={horarioOpcao} value={horarioOpcao}>
+                    {horarioOpcao}
+                  </option>
+                ))}
+              </select>
 
               <input
                 value={observacoes}

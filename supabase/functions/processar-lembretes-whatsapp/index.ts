@@ -1,173 +1,89 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
-
-function limparTelefone(telefone: string) {
-  const numero = (telefone || "").replace(/\D/g, "");
-
-  if (!numero) return "";
-
-  if (numero.startsWith("55")) return numero;
-
-  return `55${numero}`;
-}
-
-function formatarDataBR(data: string) {
-  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-type AgendamentoWhatsapp = {
-  id: string;
-  cliente: string;
-  profissional: string;
-  servico: string;
-  data: string;
-  horario: string;
-  status?: string;
-  telefone?: string;
-  nome_fantasia?: string;
-  data_hora_agendamento: string;
-};
-
-function montarMensagemLembrete(item: AgendamentoWhatsapp) {
-  const empresa = item.nome_fantasia || "nossa equipe";
-
-  return `Olá, ${item.cliente}! 😊
-
-Passando para lembrar do seu atendimento.
-
-📅 Data: ${formatarDataBR(item.data)}
-🕒 Horário: ${item.horario}
-💼 Serviço: ${item.servico}
-👩‍🔧 Profissional: ${item.profissional}
-
-Aguardamos você.
-${empresa}`;
-}
-
-Deno.serve(async () => {
-  const debug: Record<string, unknown> = {
-    etapa: "inicio",
-    agora: new Date().toISOString(),
-  };
-
+serve(async (req) => {
   try {
-    const agora = new Date();
+    const body = await req.json();
 
-    // janela ampla para teste
-    const inicio = new Date(agora.getTime() - 24 * 60 * 60 * 1000);
-    const fim = new Date(agora.getTime() + 24 * 60 * 60 * 1000);
+    const paymentId =
+      body?.data?.id ||
+      body?.id ||
+      new URL(req.url).searchParams.get("data.id") ||
+      new URL(req.url).searchParams.get("id");
 
-    debug["janela_teste"] = {
-      inicio: inicio.toISOString(),
-      fim: fim.toISOString(),
-    };
+    if (!paymentId) {
+      return new Response(JSON.stringify({ ok: true, message: "Sem payment id" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
-    const { data: agendamentos, error } = await supabase
-      .from("vw_agendamentos_whatsapp_pendentes")
-      .select("*")
-      .gte("data_hora_agendamento", inicio.toISOString())
-      .lt("data_hora_agendamento", fim.toISOString());
+    const mpToken = Deno.env.get("MP_ACCESS_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (error) {
-      debug["erro"] = error.message;
-
-      return new Response(JSON.stringify(debug, null, 2), {
+    if (!mpToken || !supabaseUrl || !serviceKey) {
+      return new Response(JSON.stringify({ error: "Variáveis de ambiente ausentes" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const lista = (agendamentos ?? []) as AgendamentoWhatsapp[];
+    const supabase = createClient(supabaseUrl, serviceKey);
 
-    debug["total_agendamentos_encontrados"] = lista.length;
-
-    const resultados: Array<Record<string, unknown>> = [];
-
-    for (const item of lista) {
-      const telefone = limparTelefone(item.telefone || "");
-
-      if (!telefone) {
-        resultados.push({
-          id: item.id,
-          resultado: "sem_telefone",
-        });
-        continue;
+    const mpResponse = await fetch(
+      `https://api.mercadopago.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+        },
       }
+    );
 
-      const mensagem = montarMensagemLembrete(item);
+    const pagamento = await mpResponse.json();
 
-      try {
-        const response = await fetch(
-          `https://graph.facebook.com/v18.0/${Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")}/messages`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${Deno.env.get("WHATSAPP_TOKEN")}`,
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: telefone,
-              type: "text",
-              text: {
-                body: mensagem,
-              },
-            }),
-          },
-        );
+    const status = pagamento?.status;
+    const externalReference = pagamento?.external_reference;
+    const valor = pagamento?.transaction_amount;
 
-        const result = await response.json();
+    await supabase
+      .from("pagamentos_saas")
+      .update({
+        status,
+        valor,
+        pago_em: status === "approved" ? new Date().toISOString() : null,
+      })
+      .eq("payment_id", String(paymentId));
 
-        resultados.push({
-          id: item.id,
-          telefone,
-          status_http: response.status,
-          resposta_meta: result,
-        });
+    if (status === "approved" && externalReference) {
+      const hoje = new Date();
+      const vencimento = new Date();
+      vencimento.setDate(hoje.getDate() + 30);
 
-        await supabase.from("whatsapp_logs").insert([
-          {
-            agendamento_id: item.id,
-            cliente: item.cliente,
-            telefone,
-            tipo: "lembrete",
-            mensagem,
-            status: response.ok ? "enviado" : "erro",
-            erro: response.ok ? null : JSON.stringify(result),
-            enviado_em: new Date().toISOString(),
-          },
-        ]);
-      } catch (e) {
-        resultados.push({
-          id: item.id,
-          erro: e instanceof Error ? e.message : String(e),
-        });
-      }
+      await supabase
+        .from("empresas")
+        .update({
+          bloqueada: false,
+          plano: "mensal",
+          status_assinatura: "ativo",
+          licenca_vitalicia: false,
+          trial_fim: vencimento.toISOString(),
+          observacao_licenca: "Liberado automaticamente via Mercado Pago Pix.",
+        })
+        .eq("id", externalReference);
     }
 
-    debug["resultados"] = resultados;
-
-    return new Response(JSON.stringify(debug, null, 2), {
+    return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (err) {
+  } catch (error) {
     return new Response(
-      JSON.stringify(
-        {
-          erro: err instanceof Error ? err.message : String(err),
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ ok: false, error: String(error) }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
-      },
+      }
     );
   }
 });

@@ -1,211 +1,134 @@
-import { useEffect, useMemo, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 
-type Configuracao = {
-  nome_empresa?: string | null;
-  nome_fantasia?: string | null;
-};
-
-type MenuItem = {
-  label: string;
-  to: string;
-};
-
-type MenuGrupo = {
-  titulo: string;
-  itens: MenuItem[];
-};
-
-const menuGrupos: MenuGrupo[] = [
+const menu = [
   {
     titulo: "Principal",
     itens: [
-      { label: "Dashboard", to: "/dashboard" },
-      { label: "Agenda", to: "/agenda" },
-      { label: "Consulta de Agendamentos", to: "/consulta-agendamentos" },
+      { nome: "Dashboard", rota: "/dashboard" },
+      { nome: "Agenda", rota: "/agenda" },
+      { nome: "Consulta", rota: "/consulta-agendamentos" },
     ],
   },
   {
     titulo: "Cadastros",
     itens: [
-      { label: "Clientes", to: "/clientes" },
-      { label: "Profissionais", to: "/profissionais" },
-      { label: "Serviços", to: "/servicos" },
-      { label: "Produtos", to: "/produtos" },
-      { label: "Usuários", to: "/usuarios" },
+      { nome: "Clientes", rota: "/clientes" },
+      { nome: "Profissionais", rota: "/profissionais" },
+      { nome: "Serviços", rota: "/servicos" },
+      { nome: "Produtos", rota: "/produtos" },
+      { nome: "Usuários", rota: "/usuarios" },
     ],
   },
   {
     titulo: "Operação",
     itens: [
-      { label: "Financeiro", to: "/financeiro" },
-      { label: "Pacotes", to: "/marketing-pacotes" },
-      { label: "Pagamentos", to: "/pagamentos" },
-      { label: "Despesas", to: "/despesas" },
-      { label: "Caixa", to: "/caixa" },
-      { label: "Comissões", to: "/comissoes" },
+      { nome: "Financeiro", rota: "/financeiro" },
+      { nome: "Despesas", rota: "/despesas" },
+      { nome: "Pagamentos", rota: "/pagamentos" },
+      { nome: "Relatórios", rota: "/relatorios" },
+      { nome: "Retorno", rota: "/relatorios-retorno" },
     ],
   },
   {
     titulo: "Comunicação",
     itens: [
-      { label: "WhatsApp", to: "/whatsapp" },
-      { label: "Campanhas", to: "/whatsapp-campanha" },
-      { label: "Mensagens WhatsApp", to: "/whatsapp-mensagens" },
+      { nome: "WhatsApp", rota: "/whatsapp" },
+      { nome: "Fila WhatsApp", rota: "/whatsapp-fila" },
+      { nome: "Mensagens", rota: "/whatsapp-mensagens" },
+      { nome: "Campanhas", rota: "/whatsapp-campanha" },
     ],
   },
   {
     titulo: "Sistema",
-    itens: [
-      { label: "Anamnese", to: "/anamnese-configuracao" },
-      { label: "Bloqueios", to: "/bloqueios" },
-      { label: "Relatórios", to: "/relatorios" },
-      { label: "Configurações", to: "/configuracoes" },
-    ],
+    itens: [{ nome: "Configurações", rota: "/configuracoes" }],
   },
 ];
 
-function grupoContemRota(grupo: MenuGrupo, pathname: string) {
-  return grupo.itens.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
-}
-
 export default function Sidebar() {
+  const navigate = useNavigate();
   const location = useLocation();
-  const [configuracao, setConfiguracao] = useState<Configuracao | null>(null);
+  const [recolhida, setRecolhida] = useState(false);
 
-  const gruposAbertosIniciais = useMemo(() => {
-    const abertos: Record<string, boolean> = {};
-
-    menuGrupos.forEach((grupo) => {
-      abertos[grupo.titulo] = grupoContemRota(grupo, location.pathname);
-    });
-
-    if (!Object.values(abertos).some(Boolean)) {
-      abertos.Principal = true;
-    }
-
-    return abertos;
-  }, [location.pathname]);
-
-  const [gruposAbertos, setGruposAbertos] =
-    useState<Record<string, boolean>>(gruposAbertosIniciais);
-
-  useEffect(() => {
-    void carregarConfiguracao();
-  }, []);
-
-  useEffect(() => {
-    setGruposAbertos((atual) => {
-      const atualizado = { ...atual };
-
-      menuGrupos.forEach((grupo) => {
-        if (grupoContemRota(grupo, location.pathname)) {
-          atualizado[grupo.titulo] = true;
-        }
-      });
-
-      return atualizado;
-    });
-  }, [location.pathname]);
-
-  async function carregarConfiguracao() {
-    const { data, error } = await supabase
-      .from("configuracoes")
-      .select("nome_empresa, nome_fantasia")
-      .limit(1)
-      .maybeSingle();
-
-    if (!error) {
-      setConfiguracao(data || null);
-    }
+  async function sair() {
+    await supabase.auth.signOut();
+    navigate("/login");
   }
 
-  function alternarGrupo(titulo: string) {
-    setGruposAbertos((atual) => ({
-      ...atual,
-      [titulo]: !atual[titulo],
-    }));
+  function ativo(rota: string) {
+    return location.pathname === rota;
   }
-
-  const nomeEmpresa =
-    configuracao?.nome_fantasia ||
-    configuracao?.nome_empresa ||
-    "VendlySys";
 
   return (
     <aside
-      className="sticky top-0 flex h-screen w-72 shrink-0 flex-col overflow-hidden"
-      style={{
-        backgroundColor: "var(--color-secondary)",
-        color: "#fff",
-      }}
+      className={`min-h-screen bg-[#4b2f3f] text-white flex flex-col transition-all duration-300 ${
+        recolhida ? "w-20" : "w-72"
+      }`}
     >
-      <div className="px-5 py-7">
-        <div className="flex items-center gap-3">
-          <div
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white"
-            style={{ backgroundColor: "var(--color-primary)" }}
-          >
-            {nomeEmpresa.charAt(0).toUpperCase()}
+      <div className="px-4 py-6 border-b border-white/10">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-pink-500 flex items-center justify-center font-bold text-lg">
+              V
+            </div>
+
+            {!recolhida && (
+              <div>
+                <h1 className="text-xl font-bold leading-tight">VendlySys</h1>
+                <p className="text-xs text-white/60">Gestão de agendas</p>
+              </div>
+            )}
           </div>
 
-          <div className="min-w-0">
-            <h2 className="truncate text-3xl font-extrabold leading-none">
-              {nomeEmpresa}
-            </h2>
-            <p className="mt-1 text-sm text-white/80">Gestão de agendas</p>
-          </div>
+          <button
+            onClick={() => setRecolhida(!recolhida)}
+            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
+            title={recolhida ? "Expandir menu" : "Recolher menu"}
+          >
+            {recolhida ? "›" : "‹"}
+          </button>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 pb-6">
-        <div className="space-y-3">
-          {menuGrupos.map((grupo) => {
-            const aberto = gruposAbertos[grupo.titulo];
+      <nav className="flex-1 px-3 py-5 space-y-6 overflow-y-auto">
+        {menu.map((grupo) => (
+          <div key={grupo.titulo}>
+            {!recolhida && (
+              <p className="text-[11px] uppercase tracking-wider text-white/50 font-bold mb-2 px-2">
+                {grupo.titulo}
+              </p>
+            )}
 
-            return (
-              <div key={grupo.titulo} className="space-y-1">
+            <div className="space-y-1">
+              {grupo.itens.map((item) => (
                 <button
-                  type="button"
-                  onClick={() => alternarGrupo(grupo.titulo)}
-                  className="flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-xs font-extrabold uppercase tracking-wide text-white/65 transition hover:bg-white/10 hover:text-white"
+                  key={item.rota}
+                  onClick={() => navigate(item.rota)}
+                  title={item.nome}
+                  className={`w-full text-left px-4 py-3 rounded-2xl text-sm font-semibold transition ${
+                    ativo(item.rota)
+                      ? "bg-pink-500 text-white shadow"
+                      : "text-white/85 hover:bg-white/10"
+                  } ${recolhida ? "text-center px-2" : ""}`}
                 >
-                  <span>{grupo.titulo}</span>
-
-                  <span
-                    className="text-lg leading-none transition-transform"
-                    style={{ transform: aberto ? "rotate(90deg)" : "rotate(0deg)" }}
-                  >
-                    ›
-                  </span>
+                  {recolhida ? item.nome.charAt(0) : item.nome}
                 </button>
-
-                {aberto && (
-                  <div className="space-y-1">
-                    {grupo.itens.map((item) => (
-                      <NavLink
-                        key={`${grupo.titulo}-${item.to}-${item.label}`}
-                        to={item.to}
-                        className="block rounded-2xl px-4 py-3 text-sm font-extrabold transition hover:bg-white/10"
-                        style={({ isActive }) => ({
-                          backgroundColor: isActive
-                            ? "var(--color-primary)"
-                            : "transparent",
-                          color: "#ffffff",
-                          opacity: isActive ? 1 : 0.9,
-                        })}
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
+
+      <div className="p-4 border-t border-white/10">
+        <button
+          onClick={sair}
+          title="Sair"
+          className="w-full bg-white/10 hover:bg-white/20 rounded-2xl px-4 py-3 text-sm font-bold"
+        >
+          {recolhida ? "⎋" : "Sair"}
+        </button>
+      </div>
     </aside>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -12,11 +13,13 @@ import EmptyState from "../components/ui/EmptyState";
 type CategoriaServico = {
   id: string;
   nome: string;
+  empresa_id?: string | null;
   created_at?: string | null;
 };
 
 type Servico = {
   id: string;
+  empresa_id?: string | null;
   nome: string;
   categoria: string | null;
   preco: number | null;
@@ -66,6 +69,8 @@ const categoriasPadrao = [
 ];
 
 export default function ServicosPage() {
+  const { empresaId, carregandoEmpresa } = useEmpresa();
+
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [categorias, setCategorias] = useState<CategoriaServico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,10 +101,11 @@ export default function ServicosPage() {
   } | null>(null);
 
   useEffect(() => {
-    carregarTudo();
-  }, []);
+    if (empresaId) carregarTudo();
+  }, [empresaId]);
 
   async function carregarTudo() {
+    if (!empresaId) return;
     setLoading(true);
     await Promise.all([carregarServicos(), carregarCategorias()]);
     setLoading(false);
@@ -109,6 +115,7 @@ export default function ServicosPage() {
     const { data, error } = await supabase
       .from("servicos")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("categoria", { ascending: true })
       .order("nome", { ascending: true });
 
@@ -126,6 +133,7 @@ export default function ServicosPage() {
     const { data, error } = await supabase
       .from("categorias_servicos")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("nome", { ascending: true });
 
     if (error) {
@@ -171,6 +179,11 @@ export default function ServicosPage() {
   async function salvarCategoria(e: FormEvent) {
     e.preventDefault();
 
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
+
     const nomeFinal = nomeCategoria.trim();
 
     if (!nomeFinal) {
@@ -195,7 +208,8 @@ export default function ServicosPage() {
       const { error } = await supabase
         .from("categorias_servicos")
         .update({ nome: nomeFinal })
-        .eq("id", categoriaEditandoId);
+        .eq("id", categoriaEditandoId)
+        .eq("empresa_id", empresaId);
 
       if (error) {
         alert("Erro ao editar categoria: " + error.message);
@@ -206,7 +220,8 @@ export default function ServicosPage() {
         const { error: erroServicos } = await supabase
           .from("servicos")
           .update({ categoria: nomeFinal })
-          .eq("categoria", categoriaAntiga.nome);
+          .eq("categoria", categoriaAntiga.nome)
+          .eq("empresa_id", empresaId);
 
         if (erroServicos) {
           alert("Categoria editada, mas não foi possível atualizar os serviços: " + erroServicos.message);
@@ -215,7 +230,7 @@ export default function ServicosPage() {
     } else {
       const { error } = await supabase
         .from("categorias_servicos")
-        .insert([{ nome: nomeFinal }]);
+        .insert([{ nome: nomeFinal, empresa_id: empresaId }]);
 
       if (error) {
         alert("Erro ao criar categoria: " + error.message);
@@ -230,6 +245,10 @@ export default function ServicosPage() {
   }
 
   async function excluirCategoria(nomeDaCategoria: string) {
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
     const categoriaUsada = servicos.some((item) => item.categoria === nomeDaCategoria);
 
     if (categoriaUsada) {
@@ -252,7 +271,8 @@ export default function ServicosPage() {
     const { error } = await supabase
       .from("categorias_servicos")
       .delete()
-      .eq("id", categoriaExistente.id);
+      .eq("id", categoriaExistente.id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       alert("Erro ao excluir categoria: " + error.message);
@@ -264,6 +284,11 @@ export default function ServicosPage() {
 
   async function salvarServico(e: FormEvent) {
     e.preventDefault();
+
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
 
     const precoNormalizado = normalizarNumero(preco);
     const precoPromocionalNormalizado = normalizarNumero(precoPromocional);
@@ -313,10 +338,11 @@ export default function ServicosPage() {
       duracao_padrao_minutos:
         duracaoNormalizada && duracaoNormalizada > 0 ? duracaoNormalizada : 60,
       ativo,
+      empresa_id: empresaId,
     };
 
     const resposta = editandoId
-      ? await supabase.from("servicos").update(payload).eq("id", editandoId)
+      ? await supabase.from("servicos").update(payload).eq("id", editandoId).eq("empresa_id", empresaId)
       : await supabase.from("servicos").insert([payload]);
 
     if (resposta.error) {
@@ -354,10 +380,15 @@ export default function ServicosPage() {
   }
 
   async function toggleAtivo(id: string, ativoAtual: boolean) {
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
     const { error } = await supabase
       .from("servicos")
       .update({ ativo: !ativoAtual })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao atualizar status do serviço:", error);
@@ -496,6 +527,12 @@ export default function ServicosPage() {
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
 
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      e.target.value = "";
+      return;
+    }
+
     setImportando(true);
     setResumoImportacao(null);
 
@@ -536,6 +573,7 @@ export default function ServicosPage() {
         descricao: string | null;
         duracao_padrao_minutos: number;
         ativo: boolean;
+        empresa_id: string;
       }> = [];
 
       const categoriasParaCriar = new Set<string>();
@@ -653,12 +691,14 @@ export default function ServicosPage() {
           duracao_padrao_minutos:
             duracaoServico && duracaoServico > 0 ? duracaoServico : 60,
           ativo: ativoNormalizado ?? true,
+          empresa_id: empresaId,
         });
       });
 
       if (categoriasParaCriar.size > 0) {
         const payloadCategorias = Array.from(categoriasParaCriar).map((nomeCategoria) => ({
           nome: nomeCategoria,
+          empresa_id: empresaId,
         }));
 
         const { error: erroCategorias } = await supabase
@@ -702,6 +742,22 @@ export default function ServicosPage() {
       ...prev,
       [nomeCategoria]: prev[nomeCategoria] === false ? true : false,
     }));
+  }
+
+  if (carregandoEmpresa) {
+    return (
+      <SectionCard>
+        <p>Carregando empresa...</p>
+      </SectionCard>
+    );
+  }
+
+  if (!empresaId) {
+    return (
+      <SectionCard>
+        <p>Empresa não encontrada. Faça login novamente.</p>
+      </SectionCard>
+    );
   }
 
   return (

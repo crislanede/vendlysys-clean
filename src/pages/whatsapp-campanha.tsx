@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 import { abrirWhatsapp, montarMensagemCampanha } from "../lib/whatsapp";
 
 type Cliente = {
@@ -36,6 +37,8 @@ function substituirVariaveis(
 }
 
 export default function WhatsappCampanhaPage() {
+  const { empresaId, carregandoEmpresa } = useEmpresa();
+
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState("");
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
@@ -61,10 +64,12 @@ export default function WhatsappCampanhaPage() {
   }, [configuracao]);
 
   useEffect(() => {
+    if (!empresaId) return;
+
     void carregarClientes();
     void carregarConfiguracao();
     void carregarModelos();
-  }, []);
+  }, [empresaId]);
 
   useEffect(() => {
     const cliente = clientes.find((c) => c.id === clienteSelecionadoId) || null;
@@ -75,6 +80,7 @@ export default function WhatsappCampanhaPage() {
     const { data, error } = await supabase
       .from("clientes")
       .select("id, nome, telefone")
+      .eq("empresa_id", empresaId)
       .order("nome", { ascending: true });
 
     if (error) {
@@ -89,6 +95,7 @@ export default function WhatsappCampanhaPage() {
     const { data, error } = await supabase
       .from("configuracoes")
       .select("nome_empresa, nome_fantasia")
+      .eq("empresa_id", empresaId)
       .limit(1)
       .maybeSingle();
 
@@ -106,6 +113,7 @@ export default function WhatsappCampanhaPage() {
     const { data, error } = await supabase
       .from("whatsapp_modelos")
       .select("*")
+      .eq("empresa_id", empresaId)
       .eq("ativo", true)
       .order("nome", { ascending: true });
 
@@ -148,6 +156,7 @@ export default function WhatsappCampanhaPage() {
       titulo: titulo.trim(),
       conteudo: conteudo.trim(),
       ativo: true,
+      empresa_id: empresaId,
     };
 
     const { data, error } = await supabase
@@ -196,7 +205,8 @@ export default function WhatsappCampanhaPage() {
         titulo: titulo.trim(),
         conteudo: conteudo.trim(),
       })
-      .eq("id", modeloSelecionadoId);
+      .eq("id", modeloSelecionadoId)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao atualizar modelo:", error);
@@ -220,7 +230,8 @@ export default function WhatsappCampanhaPage() {
     const { error } = await supabase
       .from("whatsapp_modelos")
       .update({ ativo: false })
-      .eq("id", modeloSelecionadoId);
+      .eq("id", modeloSelecionadoId)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao inativar modelo:", error);
@@ -274,8 +285,17 @@ export default function WhatsappCampanhaPage() {
         mensagem,
         tipo: "campanha",
         status: "enviado",
+        empresa_id: empresaId,
       },
     ]);
+  }
+
+  if (carregandoEmpresa) {
+    return <div className="p-6">Carregando empresa...</div>;
+  }
+
+  if (!empresaId) {
+    return <div className="p-6">Empresa não encontrada para este usuário.</div>;
   }
 
   const preview = substituirVariaveis(conteudo, {
