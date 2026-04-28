@@ -6,6 +6,7 @@ import AdminRoute from "./components/AdminRoute";
 import ThemeLoader from "./components/theme/ThemeLoader";
 import BloqueioTrial from "./components/BloqueioTrial";
 
+
 import Login from "./pages/login";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 import Licencas from "./pages/licencas";
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
+        <Route path="/" element={<AppLayout />}></Route>
 
         <Route
           path="/admin"
@@ -62,6 +64,7 @@ export default function App() {
           <Route path="licencas" element={<Licencas />} />
           <Route path="empresas" element={<AdminEmpresas />} />
         </Route>
+        <Route path="nova-empresa" element={<NovaEmpresa />} />
 
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />

@@ -1,39 +1,47 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import EmpresaSwitcher from "./EmpresaSwitcher";
 import { useEmpresa } from "../../hooks/useEmpresa";
+import { supabase } from "../../lib/supabase";
+import { useEffect, useState } from "react";
 
 export default function AppLayout() {
-  const { empresaNome, corPrimaria } = useEmpresa();
+  const { corPrimaria } = useEmpresa();
+  const [usuario, setUsuario] = useState("");
+
+  useEffect(() => {
+    carregarUsuario();
+  }, []);
+
+  async function carregarUsuario() {
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email || "";
+    setUsuario(email.split("@")[0]);
+  }
 
   return (
     <div
       className="min-h-screen flex"
-      style={{ backgroundColor: "var(--cor-fundo)" }}
+      style={{ backgroundColor: "var(--cor-fundo, #fbf4fb)" }}
     >
-      {/* SIDEBAR */}
       <Sidebar />
 
-      {/* CONTEÚDO */}
-      <div className="flex-1 flex flex-col min-h-screen">
-        
-        {/* HEADER */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <header
-          className="h-14 flex items-center justify-between px-6 shadow"
-          style={{ backgroundColor: corPrimaria }}
+          className="h-16 flex items-center justify-between px-6 shadow z-40 relative"
+          style={{ backgroundColor: corPrimaria || "var(--cor-primaria, #4b2f3f)" }}
         >
-          {/* ESQUERDA (USUÁRIO) */}
-          <div className="text-white font-semibold">
-            👤 Usuário
+          <div className="text-white font-semibold flex items-center gap-2">
+            <span>👤</span>
+            <span>{usuario || "Usuário"}</span>
           </div>
 
-          {/* DIREITA (EMPRESA) */}
-          <div className="text-white text-sm font-semibold bg-white/20 px-3 py-1 rounded-lg">
-            {empresaNome || "Empresa"}
+          <div className="relative z-50">
+            <EmpresaSwitcher />
           </div>
         </header>
 
-        {/* MAIN */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
