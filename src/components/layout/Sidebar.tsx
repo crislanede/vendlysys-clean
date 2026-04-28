@@ -50,7 +50,8 @@ const menu = [
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { corPrimaria } = useEmpresa();
+
+  const { empresaNome, corPrimaria, logoUrl } = useEmpresa();
 
   const [recolhida, setRecolhida] = useState(false);
 
@@ -68,19 +69,32 @@ export default function Sidebar() {
       className={`min-h-screen text-white flex flex-col transition-all duration-300 ${
         recolhida ? "w-20" : "w-72"
       }`}
-      style={{ backgroundColor: corPrimaria || "var(--cor-primaria, #4b2f3f)" }}
+      style={{
+        backgroundColor: corPrimaria || "var(--cor-primaria, #4b2f3f)",
+      }}
     >
+      {/* TOPO */}
       <div className="px-4 py-6 border-b border-white/15">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg shrink-0">
-              V
-            </div>
+            {logoUrl ? (
+              <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center overflow-hidden shrink-0">
+                <img
+                  src={logoUrl}
+                  alt={empresaNome || "Logo"}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg shrink-0">
+                {(empresaNome || "V").charAt(0).toUpperCase()}
+              </div>
+            )}
 
             {!recolhida && (
               <div className="min-w-0">
                 <h1 className="text-xl font-bold leading-tight truncate">
-                  VendlySys
+                  {empresaNome || "VendlySys"}
                 </h1>
                 <p className="text-xs text-white/70 truncate">
                   Gestão de agendas
@@ -100,6 +114,7 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* MENU */}
       <nav className="flex-1 px-3 py-5 space-y-6 overflow-y-auto">
         {menu.map((grupo) => (
           <div key={grupo.titulo}>
@@ -131,7 +146,7 @@ export default function Sidebar() {
                     style={
                       selecionado
                         ? {
-                            backgroundColor: "rgba(255, 255, 255, 0.22)",
+                            backgroundColor: "rgba(255,255,255,0.22)",
                             borderLeft: recolhida
                               ? undefined
                               : "4px solid rgba(255,255,255,0.9)",
@@ -148,6 +163,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {/* RODAPÉ */}
       <div className="p-4 border-t border-white/15">
         <button
           type="button"

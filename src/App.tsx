@@ -7,6 +7,7 @@ import ThemeLoader from "./components/theme/ThemeLoader";
 import BloqueioTrial from "./components/BloqueioTrial";
 
 
+
 import Login from "./pages/login";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 import Licencas from "./pages/licencas";
@@ -68,6 +69,7 @@ export default function App() {
 
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/:slug" element={<MeuEspaco />} />
 
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agenda" element={<Agenda />} />

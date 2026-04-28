@@ -2,46 +2,84 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import EmpresaSwitcher from "./EmpresaSwitcher";
 import { useEmpresa } from "../../hooks/useEmpresa";
-import { supabase } from "../../lib/supabase";
-import { useEffect, useState } from "react";
 
 export default function AppLayout() {
-  const { corPrimaria } = useEmpresa();
-  const [usuario, setUsuario] = useState("");
+  const {
+    empresaNome,
+    corPrimaria,
+    carregandoEmpresa,
+    licencaAtiva,
+    empresaBloqueada,
+    trialFim,
+    statusAssinatura,
+  } = useEmpresa();
 
-  useEffect(() => {
-    carregarUsuario();
-  }, []);
-
-  async function carregarUsuario() {
-    const { data } = await supabase.auth.getUser();
-    const email = data.user?.email || "";
-    setUsuario(email.split("@")[0]);
+  if (carregandoEmpresa) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white p-6 rounded-2xl shadow font-bold">
+          Carregando sistema...
+        </div>
+      </div>
+    );
   }
 
+  // 🔒 BLOQUEIO SAAS
+  if (!licencaAtiva || empresaBloqueada) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+        <div className="bg-white max-w-md w-full rounded-3xl shadow-xl p-8 text-center space-y-4">
+          
+          <h1 className="text-2xl font-extrabold text-slate-900">
+            Acesso bloqueado
+          </h1>
+
+          <p className="text-slate-600">
+            Sua licença não está ativa.
+          </p>
+
+          {statusAssinatura === "trial" && trialFim && (
+            <p className="text-sm text-orange-600 font-bold">
+              Seu período de teste expirou em{" "}
+              {new Date(trialFim).toLocaleDateString("pt-BR")}
+            </p>
+          )}
+
+          <button
+            className="w-full mt-4 py-3 rounded-2xl text-white font-bold"
+            style={{ backgroundColor: corPrimaria }}
+            onClick={() => alert("Integrar com pagamento (Stripe / Pix)")}
+          >
+            Ativar plano
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ SISTEMA LIBERADO
   return (
     <div
       className="min-h-screen flex"
-      style={{ backgroundColor: "var(--cor-fundo, #fbf4fb)" }}
+      style={{ backgroundColor: "var(--cor-fundo)" }}
     >
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-screen">
+        {/* HEADER */}
         <header
-          className="h-16 flex items-center justify-between px-6 shadow z-40 relative"
-          style={{ backgroundColor: corPrimaria || "var(--cor-primaria, #4b2f3f)" }}
-        >
-          <div className="text-white font-semibold flex items-center gap-2">
-            <span>👤</span>
-            <span>{usuario || "Usuário"}</span>
-          </div>
+  className="h-14 flex items-center justify-between px-6 shadow"
+  style={{ backgroundColor: corPrimaria }}
+>
+  <div className="text-white font-semibold">
+    {empresaNome}
+  </div>
 
-          <div className="relative z-50">
-            <EmpresaSwitcher />
-          </div>
-        </header>
+  <EmpresaSwitcher />
+</header>
 
-        <main className="flex-1 overflow-y-auto">
+        {/* CONTEÚDO */}
+        <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>
