@@ -147,7 +147,8 @@ export default function AdminEmpresas() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <p className="text-sm font-bold text-pink-600 uppercase">
+        <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
           Administração SaaS
         </p>
         <h1 className="text-3xl font-bold text-slate-900">
@@ -259,7 +260,8 @@ export default function AdminEmpresas() {
 
                         <button
                           onClick={() => vitalicio(empresa)}
-                          className="bg-purple-600 text-white px-3 py-2 rounded-xl text-xs font-bold"
+                          style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+                          className="text-white px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition"
                         >
                           Vitalício
                         </button>

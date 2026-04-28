@@ -260,14 +260,16 @@ export default function CadastroEmpresa() {
         <button
           onClick={cadastrar}
           disabled={carregando}
-          className="w-full mt-6 bg-pink-600 text-white rounded-xl py-3 font-semibold disabled:opacity-60"
+          style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+          className="w-full mt-6 text-white rounded-xl py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
         >
           {carregando ? "Criando cadastro..." : "Criar conta grátis"}
         </button>
 
         <p className="text-center text-sm text-slate-500 mt-6">
           Já tem conta?{" "}
-          <a href="/login" className="text-pink-600 font-semibold">
+          <a href="/login" style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+            className="font-semibold">
             Entrar
           </a>
         </p>

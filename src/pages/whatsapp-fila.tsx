@@ -268,7 +268,8 @@ export default function WhatsappFila() {
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-pink-600 uppercase">
+          <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
             Comunicação
           </p>
 
@@ -285,7 +286,8 @@ export default function WhatsappFila() {
         <button
           onClick={gerarFilaAutomatica}
           disabled={gerando}
-          className="bg-pink-600 text-white px-5 py-3 rounded-2xl font-bold disabled:opacity-60"
+          style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-white px-5 py-3 rounded-2xl font-bold hover:opacity-90 transition disabled:opacity-60"
         >
           {gerando ? "Gerando..." : "Gerar fila automática"}
         </button>

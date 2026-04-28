@@ -167,7 +167,8 @@ export default function UsuariosEmpresa() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <p className="text-sm font-bold text-pink-600 uppercase">
+        <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
           Sistema
         </p>
         <h1 className="text-3xl font-bold">
@@ -204,7 +205,8 @@ export default function UsuariosEmpresa() {
           <button
             onClick={adicionarUsuario}
             disabled={salvando}
-            className="bg-pink-600 text-white rounded-xl font-bold"
+            style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+            className="text-white rounded-xl font-bold hover:opacity-90 transition disabled:opacity-60"
           >
             {salvando ? "Adicionando..." : "Adicionar"}
           </button>

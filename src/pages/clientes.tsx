@@ -120,7 +120,8 @@ export default function ClientesPage() {
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-pink-600 uppercase">
+          <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
             Cadastros
           </p>
           <h1 className="text-3xl font-bold text-slate-900">Clientes</h1>
@@ -175,10 +176,11 @@ export default function ClientesPage() {
           />
 
           <button
-            onClick={salvar}
-            disabled={salvando}
-            className="bg-pink-600 text-white rounded-xl px-5 py-3 font-bold disabled:opacity-60"
-          >
+  onClick={salvar}
+  disabled={salvando}
+  style={{ backgroundColor: "var(--cor-primaria)" }}
+  className="text-white rounded-xl px-5 py-3 font-bold disabled:opacity-60"
+>
             {salvando ? "Salvando..." : "Salvar cliente"}
           </button>
         </div>

@@ -58,17 +58,19 @@ export default function Login() {
           />
 
           <button
-            onClick={entrar}
-            disabled={carregando}
-            className="w-full bg-pink-600 text-white rounded-xl py-3 font-semibold"
-          >
+  onClick={entrar}
+  disabled={carregando}
+  style={{ backgroundColor: "var(--cor-primaria)" }}
+  className="w-full text-white rounded-xl py-3 font-semibold"
+>
             {carregando ? "Entrando..." : "Entrar"}
           </button>
         </div>
 
         <p className="text-center text-sm text-slate-500 mt-6">
           Ainda não tem conta?{" "}
-          <a href="/cadastro-empresa" className="text-pink-600 font-semibold">
+          <a href="/cadastro-empresa" style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+            className="font-semibold">
             Teste grátis por 7 dias
           </a>
         </p>

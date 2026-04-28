@@ -1,3 +1,45 @@
+// 🔢 TIPOS DE MENSAGEM
+export type TipoMensagemWhatsapp =
+  | "confirmacao_agendamento"
+  | "lembrete_agendamento"
+  | "cancelamento_agendamento"
+  | "agradecimento_atendimento"
+  | "pdf_anamnese"
+  | "novo_agendamento_cliente"
+  | "reagendamento_agendamento"
+  | "campanha";
+
+// 📦 MENSAGENS PADRÃO
+export const mensagensWhatsappPadrao: Record<
+  TipoMensagemWhatsapp,
+  string
+> = {
+  confirmacao_agendamento:
+    "Olá, {{cliente}}! Seu agendamento na {{empresa}} está marcado para {{data}} às {{horario}} com {{profissional}}. Confirme pelo link: {{link_meu_espaco}}",
+
+  lembrete_agendamento:
+    "Olá, {{cliente}}! Passando para lembrar do seu atendimento na {{empresa}} amanhã às {{horario}}. Esperamos você!",
+
+  cancelamento_agendamento:
+    "Olá, {{cliente}}! Seu agendamento de {{servico}} em {{data}} às {{horario}} foi cancelado.",
+
+  agradecimento_atendimento:
+    "Olá, {{cliente}}! Obrigada pela preferência. Foi um prazer atender você na {{empresa}} 💖",
+
+  pdf_anamnese:
+    "Olá, {{cliente}}! Segue o link do PDF da sua anamnese: {{pdf_url}}",
+
+  novo_agendamento_cliente:
+    "Olá! Recebemos uma nova solicitação de agendamento de {{cliente}} para {{servico}}.",
+
+  reagendamento_agendamento:
+    "Olá, {{cliente}}! Seu agendamento foi reagendado para {{nova_data}} às {{novo_horario}}.",
+
+  campanha:
+    "Olá, {{cliente}}! Temos uma novidade especial para você: {{mensagem}}",
+};
+
+// 📱 NORMALIZA TELEFONE
 export function normalizarTelefoneWhatsapp(telefone: string) {
   const numeroLimpo = String(telefone || "").replace(/\D/g, "");
 
@@ -10,6 +52,7 @@ export function normalizarTelefoneWhatsapp(telefone: string) {
   return `55${numeroLimpo}`;
 }
 
+// 🚀 ABRIR WHATSAPP
 export function abrirWhatsapp(telefone: string, mensagem: string) {
   const numeroFinal = normalizarTelefoneWhatsapp(telefone);
   const texto = encodeURIComponent(mensagem || "");
@@ -22,6 +65,7 @@ export function abrirWhatsapp(telefone: string, mensagem: string) {
   window.open(`https://wa.me/${numeroFinal}?text=${texto}`, "_blank");
 }
 
+// 🔗 LINK MEU ESPAÇO
 export function montarLinkMeuEspaco(token?: string | null) {
   const baseUrl = window.location.origin;
   return token
@@ -29,9 +73,7 @@ export function montarLinkMeuEspaco(token?: string | null) {
     : `${baseUrl}/meu-espaco`;
 }
 
-/**
- * 🔥 Compatível com versão antiga e nova
- */
+// 📦 TIPAGEM FLEXÍVEL
 type DadosMensagem = {
   cliente?: string | null;
   empresa?: string | null;
@@ -42,11 +84,9 @@ type DadosMensagem = {
   valor?: number | string | null;
   token?: string | null;
 
-  // NOVO PADRÃO
   link_meu_espaco?: string | null;
   pdf_url?: string | null;
 
-  // LEGADO (evita quebrar telas antigas)
   linkMeuEspaco?: string | null;
   pdfUrl?: string | null;
 
@@ -55,6 +95,7 @@ type DadosMensagem = {
   mensagem?: string | null;
 };
 
+// 📅 FORMATADORES
 function formatarData(data?: string | null) {
   if (!data) return "";
   try {
@@ -73,9 +114,7 @@ function formatarValor(valor?: number | string | null) {
   });
 }
 
-/**
- * 🔥 MOTOR PRINCIPAL DE TEMPLATE
- */
+// 🔥 MOTOR DE TEMPLATE
 export function aplicarVariaveisWhatsapp(
   modelo: string,
   dados: DadosMensagem
@@ -103,26 +142,74 @@ export function aplicarVariaveisWhatsapp(
     .replaceAll("{{mensagem}}", dados.mensagem || "");
 }
 
-/**
- * 🔹 Mensagens prontas (fallback)
- */
+// 💾 SALVAR MENSAGEM PERSONALIZADA
+export async function salvarMensagemWhatsapp({
+  tipo,
+  mensagem,
+  empresaId,
+}: {
+  tipo: TipoMensagemWhatsapp;
+  mensagem: string;
+  empresaId: string;
+}) {
+  const { supabase } = await import("./supabase");
+
+  const { error } = await supabase
+    .from("mensagens_whatsapp")
+    .upsert({
+      tipo,
+      mensagem,
+      empresa_id: empresaId,
+    });
+
+  if (error) {
+    console.error(error);
+    throw error;
+  }
+}
+
+// 📩 HELPERS PRONTOS (compatibilidade com telas antigas)
+
+export function montarMensagemConfirmacao(dados: DadosMensagem) {
+  return aplicarVariaveisWhatsapp(
+    mensagensWhatsappPadrao.confirmacao_agendamento,
+    dados
+  );
+}
+
+export function montarMensagemLembreteAgendamento(
+  dados: DadosMensagem
+) {
+  return aplicarVariaveisWhatsapp(
+    mensagensWhatsappPadrao.lembrete_agendamento,
+    dados
+  );
+}
+
+export function montarMensagemCancelamento(dados: DadosMensagem) {
+  return aplicarVariaveisWhatsapp(
+    mensagensWhatsappPadrao.cancelamento_agendamento,
+    dados
+  );
+}
+
 export function montarMensagemAgradecimento(dados: DadosMensagem) {
   return aplicarVariaveisWhatsapp(
-    "Olá, {{cliente}}! Obrigada pela preferência. Foi um prazer atender você na {{empresa}} 💖\n\nAcesse seu espaço: {{link_meu_espaco}}",
+    mensagensWhatsappPadrao.agradecimento_atendimento,
     dados
   );
 }
 
 export function montarMensagemPdfAnamnese(dados: DadosMensagem) {
   return aplicarVariaveisWhatsapp(
-    "Olá, {{cliente}}! Segue o PDF da sua anamnese da {{empresa}}:\n{{pdf_url}}",
+    mensagensWhatsappPadrao.pdf_anamnese,
     dados
   );
 }
 
 export function montarMensagemCampanha(dados: DadosMensagem) {
   return aplicarVariaveisWhatsapp(
-    "{{titulo}}\n\nOlá, {{cliente}}!\n\n{{mensagem}}\n\n{{descricao}}",
+    mensagensWhatsappPadrao.campanha,
     dados
   );
 }

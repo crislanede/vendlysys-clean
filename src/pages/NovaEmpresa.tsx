@@ -128,14 +128,13 @@ export default function NovaEmpresa() {
         />
 
         <button
-          onClick={criar}
-          disabled={carregando}
-          className="w-full bg-pink-600 text-white rounded-xl py-3 font-bold"
-        >
-          {carregando
-            ? "Criando..."
-            : "Criar nova empresa"}
-        </button>
+  onClick={criar}
+  disabled={carregando}
+  style={{ backgroundColor: "var(--cor-primaria)" }}
+  className="w-full text-white rounded-xl py-3 font-bold hover:opacity-90 transition disabled:opacity-60"
+>
+  {carregando ? "Criando..." : "Criar empresa"}
+</button>
       </div>
     </div>
   );

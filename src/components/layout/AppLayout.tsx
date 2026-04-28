@@ -1,49 +1,39 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import EmpresaSwitcher from "./EmpresaSwitcher";
 import { useEmpresa } from "../../hooks/useEmpresa";
-import { supabase } from "../../lib/supabase";
-import { useEffect, useState } from "react";
 
 export default function AppLayout() {
-  const { corPrimaria } = useEmpresa();
-  const [usuario, setUsuario] = useState("");
-
-  useEffect(() => {
-    carregarUsuario();
-  }, []);
-
-  async function carregarUsuario() {
-    const { data } = await supabase.auth.getUser();
-    const email = data.user?.email || "";
-
-    const nome = email.split("@")[0]; // pega antes do @
-    setUsuario(nome);
-  }
+  const { empresaNome, corPrimaria } = useEmpresa();
 
   return (
-    <div className="min-h-screen flex bg-[#fbf4fb]">
+    <div
+      className="min-h-screen flex"
+      style={{ backgroundColor: "var(--cor-fundo)" }}
+    >
+      {/* SIDEBAR */}
       <Sidebar />
 
+      {/* CONTEÚDO */}
       <div className="flex-1 flex flex-col min-h-screen">
         
         {/* HEADER */}
         <header
-          className="h-16 flex items-center justify-between px-6 shadow"
+          className="h-14 flex items-center justify-between px-6 shadow"
           style={{ backgroundColor: corPrimaria }}
         >
-          {/* 👤 USUÁRIO (ESQUERDA) */}
-          <div className="text-white font-semibold flex items-center gap-2">
-            <span>👤</span>
-            <span>{usuario || "Usuário"}</span>
+          {/* ESQUERDA (USUÁRIO) */}
+          <div className="text-white font-semibold">
+            👤 Usuário
           </div>
 
-          {/* 🏢 EMPRESA (DIREITA) */}
-          <EmpresaSwitcher />
+          {/* DIREITA (EMPRESA) */}
+          <div className="text-white text-sm font-semibold bg-white/20 px-3 py-1 rounded-lg">
+            {empresaNome || "Empresa"}
+          </div>
         </header>
 
-        {/* CONTEÚDO */}
-        <main className="flex-1 overflow-y-auto p-4">
+        {/* MAIN */}
+        <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>

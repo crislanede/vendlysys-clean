@@ -136,7 +136,8 @@ export default function ProfissionaisPage() {
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-pink-600 uppercase">
+          <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
             Cadastros
           </p>
           <h1 className="text-3xl font-bold text-slate-900">Profissionais</h1>
@@ -270,7 +271,8 @@ export default function ProfissionaisPage() {
           <button
             onClick={salvar}
             disabled={salvando}
-            className="bg-pink-600 text-white rounded-xl px-5 py-3 font-bold disabled:opacity-60 md:col-span-3"
+            style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+            className="text-white rounded-xl px-5 py-3 font-bold hover:opacity-90 transition disabled:opacity-60 md:col-span-3"
           >
             {salvando ? "Salvando..." : "Salvar profissional"}
           </button>

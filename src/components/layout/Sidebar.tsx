@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { useEmpresa } from "../../hooks/useEmpresa";
 
 const menu = [
   {
@@ -49,6 +50,8 @@ const menu = [
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { corPrimaria } = useEmpresa();
+
   const [recolhida, setRecolhida] = useState(false);
 
   async function sair() {
@@ -62,28 +65,34 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`min-h-screen bg-[#4b2f3f] text-white flex flex-col transition-all duration-300 ${
+      className={`min-h-screen text-white flex flex-col transition-all duration-300 ${
         recolhida ? "w-20" : "w-72"
       }`}
+      style={{ backgroundColor: corPrimaria || "var(--cor-primaria, #4b2f3f)" }}
     >
-      <div className="px-4 py-6 border-b border-white/10">
+      <div className="px-4 py-6 border-b border-white/15">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-pink-500 flex items-center justify-center font-bold text-lg">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg shrink-0">
               V
             </div>
 
             {!recolhida && (
-              <div>
-                <h1 className="text-xl font-bold leading-tight">VendlySys</h1>
-                <p className="text-xs text-white/60">Gestão de agendas</p>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold leading-tight truncate">
+                  VendlySys
+                </h1>
+                <p className="text-xs text-white/70 truncate">
+                  Gestão de agendas
+                </p>
               </div>
             )}
           </div>
 
           <button
+            type="button"
             onClick={() => setRecolhida(!recolhida)}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
+            className="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm shrink-0"
             title={recolhida ? "Expandir menu" : "Recolher menu"}
           >
             {recolhida ? "›" : "‹"}
@@ -95,36 +104,56 @@ export default function Sidebar() {
         {menu.map((grupo) => (
           <div key={grupo.titulo}>
             {!recolhida && (
-              <p className="text-[11px] uppercase tracking-wider text-white/50 font-bold mb-2 px-2">
+              <p className="text-[11px] uppercase tracking-wider text-white/60 font-bold mb-2 px-2">
                 {grupo.titulo}
               </p>
             )}
 
             <div className="space-y-1">
-              {grupo.itens.map((item) => (
-                <button
-                  key={item.rota}
-                  onClick={() => navigate(item.rota)}
-                  title={item.nome}
-                  className={`w-full text-left px-4 py-3 rounded-2xl text-sm font-semibold transition ${
-                    ativo(item.rota)
-                      ? "bg-pink-500 text-white shadow"
-                      : "text-white/85 hover:bg-white/10"
-                  } ${recolhida ? "text-center px-2" : ""}`}
-                >
-                  {recolhida ? item.nome.charAt(0) : item.nome}
-                </button>
-              ))}
+              {grupo.itens.map((item) => {
+                const selecionado = ativo(item.rota);
+
+                return (
+                  <button
+                    key={item.rota}
+                    type="button"
+                    onClick={() => navigate(item.rota)}
+                    title={item.nome}
+                    className={`w-full rounded-2xl text-sm font-semibold transition ${
+                      recolhida
+                        ? "px-2 py-3 text-center"
+                        : "px-4 py-3 text-left"
+                    } ${
+                      selecionado
+                        ? "text-white shadow"
+                        : "text-white/85 hover:bg-white/10"
+                    }`}
+                    style={
+                      selecionado
+                        ? {
+                            backgroundColor: "rgba(255, 255, 255, 0.22)",
+                            borderLeft: recolhida
+                              ? undefined
+                              : "4px solid rgba(255,255,255,0.9)",
+                          }
+                        : undefined
+                    }
+                  >
+                    {recolhida ? item.nome.charAt(0) : item.nome}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-white/10">
+      <div className="p-4 border-t border-white/15">
         <button
+          type="button"
           onClick={sair}
           title="Sair"
-          className="w-full bg-white/10 hover:bg-white/20 rounded-2xl px-4 py-3 text-sm font-bold"
+          className="w-full bg-white/15 hover:bg-white/25 rounded-2xl px-4 py-3 text-sm font-bold transition"
         >
           {recolhida ? "⎋" : "Sair"}
         </button>

@@ -1,373 +1,334 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 type Agendamento = {
   id: string;
-  cliente: string;
-  profissional: string;
-  servico: string;
-  data: string;
-  horario: string;
-  status: string;
+  cliente: string | null;
+  servico: string | null;
+  profissional: string | null;
+  data: string | null;
   valor: number | null;
-  valor_pago?: number | null;
-  forma_pagamento?: string | null;
-  status_pagamento?: string | null;
-  finalizado_em?: string | null;
+  status: string | null;
+  status_atendimento?: string | null;
 };
 
-type Financeiro = {
-  id: string;
-  tipo: string;
-  descricao: string;
-  valor: number;
-  data_lancamento: string;
-  status: string;
-};
+export default function RelatoriosRetorno() {
+  const { empresaId, carregandoEmpresa } = useEmpresa();
 
-function formatarMoeda(valor: number) {
-  return valor.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function normalizarStatus(status?: string | null) {
-  return (status || "").trim().toLowerCase();
-}
-
-export default function RelatoriosPage() {
-  const hoje = new Date().toISOString().split("T")[0];
-
-  const [dataInicio, setDataInicio] = useState(hoje);
-  const [dataFim, setDataFim] = useState(hoje);
-
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
-  const [financeiro, setFinanceiro] = useState<Financeiro[]>([]);
+  const [dados, setDados] = useState<Agendamento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
 
   useEffect(() => {
-    void carregarDados();
-  }, []);
+    if (empresaId) carregar();
+  }, [empresaId]);
 
-  async function carregarDados() {
+  async function carregar() {
+    if (!empresaId) return;
+
     setLoading(true);
 
-    const [{ data: agData, error: agError }, { data: finData, error: finError }] =
-      await Promise.all([
-        supabase
-          .from("agendamentos")
-          .select("*")
-          .order("data", { ascending: false })
-          .order("horario", { ascending: false }),
+    let query = supabase
+      .from("agendamentos")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("data", { ascending: false });
 
-        supabase
-          .from("financeiro")
-          .select("*")
-          .order("data_lancamento", { ascending: false }),
-      ]);
+    if (dataInicio) query = query.gte("data", dataInicio);
+    if (dataFim) query = query.lte("data", dataFim);
 
-    if (agError) {
-      console.error("Erro ao carregar agendamentos:", agError);
+    const { data, error } = await query;
+
+    if (error) {
+      alert("Erro ao carregar retorno: " + error.message);
+      setLoading(false);
+      return;
     }
 
-    if (finError) {
-      console.error("Erro ao carregar financeiro:", finError);
-    }
-
-    setAgendamentos((agData || []) as Agendamento[]);
-    setFinanceiro((finData || []) as Financeiro[]);
+    setDados(data || []);
     setLoading(false);
   }
 
-  const agendamentosFiltrados = useMemo(() => {
-    return agendamentos.filter((item) => {
-      return item.data >= dataInicio && item.data <= dataFim;
-    });
-  }, [agendamentos, dataInicio, dataFim]);
+  const metricas = useMemo(() => {
+    const total = dados.length;
 
-  const financeiroFiltrado = useMemo(() => {
-    return financeiro.filter((item) => {
-      return item.data_lancamento >= dataInicio && item.data_lancamento <= dataFim;
-    });
-  }, [financeiro, dataInicio, dataFim]);
+    const finalizados = dados.filter(
+      (i) => i.status === "finalizado" || i.status_atendimento === "finalizado"
+    );
 
-  const totalAgendamentos = agendamentosFiltrados.length;
+    const cancelados = dados.filter(
+      (i) => i.status === "cancelado" || i.status_atendimento === "cancelado"
+    );
 
-  const totalConfirmados = agendamentosFiltrados.filter(
-    (a) => normalizarStatus(a.status) === "confirmado"
-  ).length;
+    const faturamento = finalizados.reduce(
+      (acc, item) => acc + Number(item.valor || 0),
+      0
+    );
 
-  const totalCancelados = agendamentosFiltrados.filter(
-    (a) => normalizarStatus(a.status) === "cancelado"
-  ).length;
+    const ticketMedio =
+      finalizados.length > 0 ? faturamento / finalizados.length : 0;
 
-  const totalFinalizados = agendamentosFiltrados.filter(
-    (a) => normalizarStatus(a.status) === "finalizado"
-  ).length;
+    const taxaCancelamento =
+      total > 0 ? Math.round((cancelados.length / total) * 100) : 0;
 
-  const faturamentoAgendamentos = agendamentosFiltrados
-    .filter((a) => normalizarStatus(a.status) === "finalizado")
-    .reduce((acc, item) => acc + Number(item.valor_pago || item.valor || 0), 0);
+    return {
+      total,
+      finalizados: finalizados.length,
+      cancelados: cancelados.length,
+      faturamento,
+      ticketMedio,
+      taxaCancelamento,
+    };
+  }, [dados]);
 
-  const totalEntradas = financeiroFiltrado
-    .filter((f) => f.tipo === "entrada")
-    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
+  const rankingServicos = useMemo(() => {
+    const mapa: Record<string, { nome: string; qtd: number; valor: number }> =
+      {};
 
-  const totalSaidas = financeiroFiltrado
-    .filter((f) => f.tipo === "saida")
-    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
-
-  const lucroLiquido = totalEntradas - totalSaidas;
-
-  const porProfissional = useMemo(() => {
-    const mapa: Record<string, number> = {};
-
-    agendamentosFiltrados.forEach((item) => {
-      const nome = item.profissional || "Não informado";
-      const valor = Number(item.valor_pago || item.valor || 0);
-
-      if (normalizarStatus(item.status) === "finalizado") {
-        mapa[nome] = (mapa[nome] || 0) + valor;
-      }
-    });
-
-    return Object.entries(mapa)
-      .map(([profissional, total]) => ({ profissional, total }))
-      .sort((a, b) => b.total - a.total);
-  }, [agendamentosFiltrados]);
-
-  const porServico = useMemo(() => {
-    const mapa: Record<string, number> = {};
-
-    agendamentosFiltrados.forEach((item) => {
+    dados.forEach((item) => {
       const nome = item.servico || "Não informado";
-      mapa[nome] = (mapa[nome] || 0) + 1;
+      if (!mapa[nome]) mapa[nome] = { nome, qtd: 0, valor: 0 };
+
+      mapa[nome].qtd += 1;
+      mapa[nome].valor += Number(item.valor || 0);
     });
 
-    return Object.entries(mapa)
-      .map(([servico, quantidade]) => ({ servico, quantidade }))
-      .sort((a, b) => b.quantidade - a.quantidade);
-  }, [agendamentosFiltrados]);
+    return Object.values(mapa).sort((a, b) => b.qtd - a.qtd).slice(0, 5);
+  }, [dados]);
+
+  const rankingProfissionais = useMemo(() => {
+    const mapa: Record<string, { nome: string; qtd: number; valor: number }> =
+      {};
+
+    dados.forEach((item) => {
+      const nome = item.profissional || "Não informado";
+      if (!mapa[nome]) mapa[nome] = { nome, qtd: 0, valor: 0 };
+
+      mapa[nome].qtd += 1;
+      mapa[nome].valor += Number(item.valor || 0);
+    });
+
+    return Object.values(mapa).sort((a, b) => b.qtd - a.qtd).slice(0, 5);
+  }, [dados]);
+
+  function limpar() {
+    setDataInicio("");
+    setDataFim("");
+    setTimeout(() => carregar(), 0);
+  }
+
+  function formatarValor(valor: number) {
+    return valor.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+  }
+
+  function formatarData(data: string | null) {
+    if (!data) return "-";
+    return new Date(data + "T00:00:00").toLocaleDateString("pt-BR");
+  }
+
+  if (carregandoEmpresa) {
+    return <div className="p-6">Carregando empresa...</div>;
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div>
-        <p className="text-sm font-medium text-orange-500">Análises</p>
-        <h1 className="text-4xl font-bold text-slate-900">Relatórios</h1>
-        <p className="mt-2 text-base text-slate-500">
-          Acompanhe agendamentos, faturamento e desempenho por período.
+        <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">BI</p>
+        <h1 className="text-3xl font-bold text-slate-900">
+          Dashboard de Retorno
+        </h1>
+        <p className="text-slate-500">
+          Analise faturamento, atendimentos, cancelamentos, serviços e profissionais.
         </p>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4">
-          <h2 className="text-2xl font-semibold text-slate-900">Filtros</h2>
-          <p className="text-sm text-slate-500">
-            Refine os dados para analisar o período desejado.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto]">
+      <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-4 items-end shadow-sm">
+        <div>
+          <label className="text-xs text-slate-500">Data inicial</label>
           <input
             type="date"
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}
-            className="rounded-2xl border border-slate-200 px-4 py-3"
+            className="block mt-1 border rounded-xl px-3 py-2"
           />
+        </div>
 
+        <div>
+          <label className="text-xs text-slate-500">Data final</label>
           <input
             type="date"
             value={dataFim}
             onChange={(e) => setDataFim(e.target.value)}
-            className="rounded-2xl border border-slate-200 px-4 py-3"
+            className="block mt-1 border rounded-xl px-3 py-2"
           />
-
-          <button
-            type="button"
-            onClick={() => void carregarDados()}
-            className="rounded-2xl bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
-          >
-            Recarregar
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <CardResumo
-          titulo="Total de agendamentos"
-          valor={String(totalAgendamentos)}
-          subtitulo="No período selecionado"
-        />
-        <CardResumo
-          titulo="Confirmados"
-          valor={String(totalConfirmados)}
-          subtitulo="Agendamentos confirmados"
-        />
-        <CardResumo
-          titulo="Cancelados"
-          valor={String(totalCancelados)}
-          subtitulo="Agendamentos cancelados"
-        />
-        <CardResumo
-          titulo="Finalizados"
-          valor={String(totalFinalizados)}
-          subtitulo="Atendimentos concluídos"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <CardResumo
-          titulo="Faturamento dos agendamentos"
-          valor={formatarMoeda(faturamentoAgendamentos)}
-          subtitulo="Com base nos finalizados"
-        />
-        <CardResumo
-          titulo="Entradas financeiras"
-          valor={formatarMoeda(totalEntradas)}
-          subtitulo="Tabela financeiro"
-        />
-        <CardResumo
-          titulo="Lucro líquido"
-          valor={formatarMoeda(lucroLiquido)}
-          subtitulo="Entradas - saídas"
-          destaque={lucroLiquido >= 0 ? "positivo" : "negativo"}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Faturamento por profissional
-          </h2>
-          <p className="mb-4 text-sm text-slate-500">
-            Soma dos atendimentos finalizados por profissional.
-          </p>
-
-          {porProfissional.length === 0 ? (
-            <p className="text-slate-500">Nenhum dado encontrado.</p>
-          ) : (
-            <div className="space-y-3">
-              {porProfissional.map((item) => (
-                <div
-                  key={item.profissional}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3"
-                >
-                  <span className="font-medium text-slate-800">
-                    {item.profissional}
-                  </span>
-                  <span className="font-semibold text-emerald-600">
-                    {formatarMoeda(item.total)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Serviços mais agendados
-          </h2>
-          <p className="mb-4 text-sm text-slate-500">
-            Quantidade de vezes que cada serviço apareceu no período.
-          </p>
+        <button
+          onClick={carregar}
+          style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-white px-5 py-2 rounded-xl font-semibold hover:opacity-90 transition"
+        >
+          Filtrar
+        </button>
 
-          {porServico.length === 0 ? (
-            <p className="text-slate-500">Nenhum dado encontrado.</p>
-          ) : (
-            <div className="space-y-3">
-              {porServico.map((item) => (
-                <div
-                  key={item.servico}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3"
-                >
-                  <span className="font-medium text-slate-800">
-                    {item.servico}
-                  </span>
-                  <span className="font-semibold text-slate-700">
-                    {item.quantidade}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <button
+          onClick={limpar}
+          className="border px-5 py-2 rounded-xl font-semibold"
+        >
+          Limpar
+        </button>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-semibold text-slate-900">
-          Agendamentos do período
-        </h2>
-        <p className="mb-4 text-sm text-slate-500">
-          Lista detalhada para auditoria e acompanhamento.
-        </p>
-
-        {loading ? (
-          <p className="text-slate-500">Carregando...</p>
-        ) : agendamentosFiltrados.length === 0 ? (
-          <p className="text-slate-500">Nenhum agendamento encontrado.</p>
-        ) : (
-          <div className="space-y-3">
-            {agendamentosFiltrados.map((item) => (
-              <div
-                key={item.id}
-                className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 xl:flex-row xl:items-center xl:justify-between"
-              >
-                <div>
-                  <p className="text-lg font-semibold text-slate-900">
-                    {item.cliente}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {item.profissional} • {item.servico}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {new Date(`${item.data}T00:00:00`).toLocaleDateString("pt-BR")}{" "}
-                    às {item.horario}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                    {item.status}
-                  </span>
-
-                  <span className="text-sm font-semibold text-slate-800">
-                    {formatarMoeda(Number(item.valor_pago || item.valor || 0))}
-                  </span>
-                </div>
-              </div>
-            ))}
+      {loading ? (
+        <p>Carregando...</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <Card title="Atendimentos" value={metricas.total} />
+            <Card title="Finalizados" value={metricas.finalizados} />
+            <Card title="Cancelados" value={metricas.cancelados} />
+            <Card title="Faturamento" value={formatarValor(metricas.faturamento)} />
+            <Card title="Ticket médio" value={formatarValor(metricas.ticketMedio)} />
           </div>
-        )}
-      </div>
+
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-bold text-slate-900">Taxa de cancelamento</h2>
+                <p className="text-sm text-slate-500">
+                  Percentual de atendimentos cancelados no período.
+                </p>
+              </div>
+              <span className="text-2xl font-bold text-red-600">
+                {metricas.taxaCancelamento}%
+              </span>
+            </div>
+
+            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-red-500 rounded-full"
+                style={{ width: `${Math.min(metricas.taxaCancelamento, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Ranking
+              titulo="Top serviços"
+              subtitulo="Serviços mais realizados no período"
+              dados={rankingServicos}
+            />
+
+            <Ranking
+              titulo="Top profissionais"
+              subtitulo="Profissionais com mais atendimentos"
+              dados={rankingProfissionais}
+            />
+          </div>
+
+          <div className="bg-white rounded-2xl border shadow-sm">
+            <div className="p-4 border-b">
+              <h2 className="font-semibold">Histórico de atendimentos</h2>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-slate-500">
+                    <th className="p-3">Cliente</th>
+                    <th>Serviço</th>
+                    <th>Profissional</th>
+                    <th>Data</th>
+                    <th>Valor</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {dados.map((item) => (
+                    <tr key={item.id} className="border-t hover:bg-slate-50">
+                      <td className="p-3 font-medium">{item.cliente || "-"}</td>
+                      <td>{item.servico || "-"}</td>
+                      <td>{item.profissional || "-"}</td>
+                      <td>{formatarData(item.data)}</td>
+                      <td>{formatarValor(Number(item.valor || 0))}</td>
+                      <td>
+                        <span className="text-xs px-2 py-1 rounded-full bg-slate-100">
+                          {item.status || item.status_atendimento || "-"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {dados.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-10 text-slate-400">
+                        Nenhum atendimento encontrado
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function CardResumo({
+function Card({ title, value }: { title: string; value: string | number }) {
+  return (
+    <div className="bg-white border rounded-2xl p-4 shadow-sm">
+      <p className="text-sm text-slate-500">{title}</p>
+      <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
+    </div>
+  );
+}
+
+function Ranking({
   titulo,
-  valor,
   subtitulo,
-  destaque = "normal",
+  dados,
 }: {
   titulo: string;
-  valor: string;
   subtitulo: string;
-  destaque?: "normal" | "positivo" | "negativo";
+  dados: { nome: string; qtd: number; valor: number }[];
 }) {
-  const corValor =
-    destaque === "positivo"
-      ? "text-emerald-600"
-      : destaque === "negativo"
-      ? "text-red-600"
-      : "text-slate-900";
-
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p className="text-lg text-slate-500">{titulo}</p>
-      <p className={`mt-3 text-4xl font-bold ${corValor}`}>{valor}</p>
-      <p className="mt-2 text-sm text-slate-400">{subtitulo}</p>
+    <div className="bg-white border rounded-2xl p-5 shadow-sm">
+      <h2 className="font-bold text-slate-900">{titulo}</h2>
+      <p className="text-sm text-slate-500 mb-4">{subtitulo}</p>
+
+      <div className="space-y-3">
+        {dados.map((item, index) => (
+          <div key={item.nome} className="flex items-center justify-between border-b pb-2">
+            <div>
+              <p className="font-semibold text-slate-800">
+                {index + 1}. {item.nome}
+              </p>
+              <p className="text-xs text-slate-500">{item.qtd} atendimento(s)</p>
+            </div>
+
+            <p className="text-sm font-bold text-slate-900">
+              {item.valor.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}
+            </p>
+          </div>
+        ))}
+
+        {dados.length === 0 && (
+          <p className="text-sm text-slate-400">Nenhum dado encontrado.</p>
+        )}
+      </div>
     </div>
   );
 }

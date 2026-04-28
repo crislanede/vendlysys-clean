@@ -119,7 +119,8 @@ export default function Licencas() {
   return (
     <div className="p-6 bg-slate-50 min-h-screen">
       <div className="mb-6">
-        <p className="text-sm font-bold text-pink-600 uppercase">
+        <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase">
           Administração
         </p>
         <h1 className="text-3xl font-bold text-slate-900">
@@ -220,7 +221,8 @@ export default function Licencas() {
 
                       <button
                         onClick={() => liberarVitalicio(empresa)}
-                        className="px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold"
+                        style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+                        className="px-3 py-2 rounded-xl text-white text-xs font-bold hover:opacity-90 transition"
                       >
                         Vitalício
                       </button>
