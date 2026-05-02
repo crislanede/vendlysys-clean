@@ -1,10 +1,11 @@
+import type { ReactElement } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppLayout from "./components/layout/AppLayout";
 import AdminSaasLayout from "./components/AdminSaasLayout";
 import AdminRoute from "./components/AdminRoute";
 import ThemeLoader from "./components/theme/ThemeLoader";
-import BloqueioTrial from "./components/BloqueioTrial";
+import { useAuth } from "./context/AuthContext";
 
 import Login from "./pages/login";
 import ResetarSenha from "./pages/resetar-senha";
@@ -41,20 +42,31 @@ import WhatsappMensagens from "./pages/whatsapp-mensagens";
 
 import MeuEspaco from "./pages/meu-espaco";
 
-function AppContent() {
+function RequireAuth({ children }: { children: ReactElement }) {
+  const { loading, user } = useAuth();
   const location = useLocation();
 
-  const rotasSemBloqueio =
-    location.pathname === "/login" ||
-    location.pathname === "/resetar-senha" ||
-    location.pathname === "/cadastro-empresa" ||
-    location.pathname.startsWith("/admin") ||
-    location.pathname.startsWith("/meu-espaco");
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <div className="bg-white p-6 rounded-2xl shadow font-bold">
+          Carregando...
+        </div>
+      </div>
+    );
+  }
 
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return children;
+}
+
+function AppContent() {
   return (
     <>
       <ThemeLoader />
-      {!rotasSemBloqueio && <BloqueioTrial />}
 
       <Routes>
         {/* Rotas públicas */}
@@ -78,8 +90,15 @@ function AppContent() {
           <Route path="licencas" element={<Licencas />} />
         </Route>
 
-        {/* Sistema da empresa */}
-        <Route path="/" element={<AppLayout />}>
+        {/* Sistema da empresa - protegido por login */}
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <AppLayout />
+            </RequireAuth>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path=":slug" element={<MeuEspaco />} />
 
