@@ -1,1139 +1,730 @@
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 type Servico = {
-  id: string
-  nome: string
-  valor?: number | null
-  preco?: number | null
-  ativo?: boolean | null
-}
-
-type Cliente = {
-  id: string
-  nome: string
-  telefone?: string | null
-}
+  id: string;
+  nome: string | null;
+  valor?: number | null;
+  preco?: number | null;
+  preco_promocional?: number | null;
+  empresa_id?: string | null;
+};
 
 type Pacote = {
-  id: string
-  nome: string
-  descricao: string | null
-  valor: number | null
-  validade_dias: number | null
-  ativo: boolean | null
-  created_at?: string | null
-}
+  id: string;
+  empresa_id: string;
+  nome: string | null;
+  descricao?: string | null;
+  validade_dias?: number | null;
+  status?: string | null;
+  valor_original?: number | null;
+  valor_final?: number | null;
+  desconto_percentual?: number | null;
+  desconto_valor?: number | null;
+  tipo_desconto?: "percentual" | "valor" | string | null;
+  criado_em?: string | null;
+  created_at?: string | null;
+};
 
-type PacoteServico = {
-  id: string
-  pacote_id: string
-  servico_id: string
-  quantidade: number
-  servicos?: Servico | null
-}
+type ItemPacote = {
+  id?: string;
+  pacote_id?: string;
+  servico_id: string;
+  quantidade: number;
+  valor_unitario: number;
+  valor_total: number;
+};
 
-type ClientePacote = {
-  id: string
-  cliente_id: string
-  pacote_id: string
-  data_inicio: string | null
-  data_fim: string | null
-  valor_pago: number | null
-  status: string | null
-  observacoes: string | null
-  clientes?: Cliente | null
-  marketing_pacotes?: Pacote | null
-}
-
-type ClientePacoteSaldo = {
-  id: string
-  cliente_pacote_id: string
-  servico_id: string
-  quantidade_total: number
-  quantidade_usada: number
-  servicos?: Servico | null
-}
+const vazioItem: ItemPacote = {
+  servico_id: "",
+  quantidade: 1,
+  valor_unitario: 0,
+  valor_total: 0,
+};
 
 export default function MarketingPacotes() {
-  const [aba, setAba] = useState<'pacotes' | 'vinculos'>('pacotes')
-  const [loading, setLoading] = useState(false)
+  const { empresaId, corFundo } = useEmpresa() as any;
 
-  const [pacotes, setPacotes] = useState<Pacote[]>([])
-  const [servicos, setServicos] = useState<Servico[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [pacoteServicos, setPacoteServicos] = useState<PacoteServico[]>([])
-  const [clientePacotes, setClientePacotes] = useState<ClientePacote[]>([])
-  const [saldos, setSaldos] = useState<ClientePacoteSaldo[]>([])
+  const [servicos, setServicos] = useState<Servico[]>([]);
+  const [pacotes, setPacotes] = useState<Pacote[]>([]);
+  const [busca, setBusca] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
 
-  const [mostrarFormPacote, setMostrarFormPacote] = useState(false)
-  const [pacoteEditandoId, setPacoteEditandoId] = useState<string | null>(null)
+  const [modalAberto, setModalAberto] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  const [formPacote, setFormPacote] = useState({
-    nome: '',
-    descricao: '',
-    valor: '',
-    validade_dias: '30',
-    ativo: true,
-  })
-
-  const [itensPacote, setItensPacote] = useState<{ servico_id: string; quantidade: string }[]>([
-    { servico_id: '', quantidade: '1' },
-  ])
-
-  const [mostrarFormVinculo, setMostrarFormVinculo] = useState(false)
-  const [formVinculo, setFormVinculo] = useState({
-    cliente_id: '',
-    pacote_id: '',
-    data_inicio: new Date().toISOString().slice(0, 10),
-    valor_pago: '',
-    observacoes: '',
-  })
-
-  const pacoteSelecionadoParaVinculo = useMemo(
-    () => pacotes.find((p) => p.id === formVinculo.pacote_id),
-    [pacotes, formVinculo.pacote_id],
-  )
+  const [nome, setNome] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [validadeDias, setValidadeDias] = useState(30);
+  const [status, setStatus] = useState("ativo");
+  const [tipoDesconto, setTipoDesconto] = useState<"percentual" | "valor">("percentual");
+  const [descontoPercentual, setDescontoPercentual] = useState(0);
+  const [descontoValor, setDescontoValor] = useState(0);
+  const [itens, setItens] = useState<ItemPacote[]>([{ ...vazioItem }]);
 
   useEffect(() => {
-    carregarTudo()
-  }, [])
+    if (empresaId) {
+      carregarTudo();
+    }
+  }, [empresaId]);
 
   async function carregarTudo() {
-    setLoading(true)
-    await Promise.all([
-      buscarPacotes(),
-      buscarServicos(),
-      buscarClientes(),
-      buscarClientePacotes(),
-    ])
-    setLoading(false)
+    await Promise.all([carregarServicos(), carregarPacotes()]);
   }
 
-  async function buscarPacotes() {
+  async function carregarServicos() {
+    if (!empresaId) return;
+
     const { data, error } = await supabase
-      .from('marketing_pacotes')
-      .select('*')
-      .order('created_at', { ascending: false })
+      .from("servicos")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("nome", { ascending: true });
 
     if (error) {
-      alert('Erro ao buscar pacotes: ' + error.message)
-      return
+      alert("Erro ao carregar serviços: " + error.message);
+      return;
     }
 
-    setPacotes(data || [])
-
-    const { data: itens, error: erroItens } = await supabase
-      .from('marketing_pacote_servicos')
-      .select('*, servicos(*)')
-
-    if (erroItens) {
-      console.warn('Erro ao buscar serviços dos pacotes:', erroItens.message)
-    } else {
-      setPacoteServicos(itens || [])
-    }
+    setServicos(data || []);
   }
 
-  async function buscarServicos() {
+  async function carregarPacotes() {
+    if (!empresaId) return;
+
+    setCarregando(true);
+
     const { data, error } = await supabase
-      .from('servicos')
-      .select('*')
-      .order('nome', { ascending: true })
+      .from("marketing_pacotes")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("created_at", { ascending: false });
+
+    setCarregando(false);
 
     if (error) {
-      alert('Erro ao buscar serviços: ' + error.message)
-      return
+      alert("Erro ao carregar pacotes: " + error.message);
+      return;
     }
 
-    setServicos(data || [])
+    setPacotes(data || []);
   }
 
-  async function buscarClientes() {
-    const { data, error } = await supabase
-      .from('clientes')
-      .select('id, nome, telefone')
-      .order('nome', { ascending: true })
-
-    if (error) {
-      alert('Erro ao buscar clientes: ' + error.message)
-      return
-    }
-
-    setClientes(data || [])
+  function valorServico(servico?: Servico | null) {
+    if (!servico) return 0;
+    return Number(servico.preco_promocional ?? servico.preco ?? servico.valor ?? 0) || 0;
   }
 
-  async function buscarClientePacotes() {
-    const { data, error } = await supabase
-      .from('cliente_pacotes')
-      .select('*, clientes(id, nome, telefone), marketing_pacotes(*)')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.warn('Erro ao buscar pacotes de clientes:', error.message)
-      setClientePacotes([])
-    } else {
-      setClientePacotes(data || [])
-    }
-
-    const { data: saldosData, error: erroSaldos } = await supabase
-      .from('cliente_pacote_saldos')
-      .select('*, servicos(*)')
-
-    if (erroSaldos) {
-      console.warn('Erro ao buscar saldos:', erroSaldos.message)
-      setSaldos([])
-    } else {
-      setSaldos(saldosData || [])
-    }
+  function formatarMoeda(valor: number) {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(Number(valor || 0));
   }
 
-  function limparFormPacote() {
-    setPacoteEditandoId(null)
-    setFormPacote({
-      nome: '',
-      descricao: '',
-      valor: '',
-      validade_dias: '30',
-      ativo: true,
-    })
-    setItensPacote([{ servico_id: '', quantidade: '1' }])
+  function limparFormulario() {
+    setEditandoId(null);
+    setNome("");
+    setDescricao("");
+    setValidadeDias(30);
+    setStatus("ativo");
+    setTipoDesconto("percentual");
+    setDescontoPercentual(0);
+    setDescontoValor(0);
+    setItens([{ ...vazioItem }]);
   }
 
   function abrirNovoPacote() {
-    limparFormPacote()
-    setMostrarFormPacote(true)
+    limparFormulario();
+    setModalAberto(true);
   }
 
-  function editarPacote(pacote: Pacote) {
-    setPacoteEditandoId(pacote.id)
-    setFormPacote({
-      nome: pacote.nome || '',
-      descricao: pacote.descricao || '',
-      valor: pacote.valor !== null && pacote.valor !== undefined ? String(pacote.valor) : '',
-      validade_dias: pacote.validade_dias ? String(pacote.validade_dias) : '30',
-      ativo: pacote.ativo ?? true,
-    })
+  async function abrirEditarPacote(pacote: Pacote) {
+    limparFormulario();
+    setEditandoId(pacote.id);
+    setNome(pacote.nome || "");
+    setDescricao(pacote.descricao || "");
+    setValidadeDias(Number(pacote.validade_dias || 30));
+    setStatus(pacote.status || "ativo");
+    setTipoDesconto((pacote.tipo_desconto as "percentual" | "valor") || "percentual");
+    setDescontoPercentual(Number(pacote.desconto_percentual || 0));
+    setDescontoValor(Number(pacote.desconto_valor || 0));
 
-    const itens = pacoteServicos
-      .filter((item) => item.pacote_id === pacote.id)
-      .map((item) => ({
-        servico_id: item.servico_id,
-        quantidade: String(item.quantidade || 1),
-      }))
+    const { data, error } = await supabase
+      .from("marketing_pacote_servicos")
+      .select("*")
+      .eq("pacote_id", pacote.id);
 
-    setItensPacote(itens.length ? itens : [{ servico_id: '', quantidade: '1' }])
-    setMostrarFormPacote(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  async function salvarPacote(e: React.FormEvent) {
-    e.preventDefault()
-
-    if (!formPacote.nome.trim()) {
-      alert('Informe o nome do combo/pacote.')
-      return
+    if (error) {
+      alert("Erro ao carregar serviços do pacote: " + error.message);
+      return;
     }
 
-    const itensValidos = itensPacote.filter((item) => item.servico_id && Number(item.quantidade) > 0)
+    const itensCarregados = (data || []).map((item: any) => ({
+      id: item.id,
+      pacote_id: item.pacote_id,
+      servico_id: item.servico_id || "",
+      quantidade: Number(item.quantidade || 1),
+      valor_unitario: Number(item.valor_unitario || 0),
+      valor_total: Number(item.valor_total || 0),
+    }));
+
+    setItens(itensCarregados.length ? itensCarregados : [{ ...vazioItem }]);
+    setModalAberto(true);
+  }
+
+  function adicionarServico() {
+    setItens((atuais) => [...atuais, { ...vazioItem }]);
+  }
+
+  function removerServico(index: number) {
+    setItens((atuais) => {
+      const novos = atuais.filter((_, i) => i !== index);
+      return novos.length ? novos : [{ ...vazioItem }];
+    });
+  }
+
+  function atualizarItem(index: number, campo: keyof ItemPacote, valor: string | number) {
+    setItens((atuais) => {
+      const novos = [...atuais];
+      const item = { ...novos[index] };
+
+      if (campo === "servico_id") {
+        const servico = servicos.find((s) => s.id === valor);
+        const unitario = valorServico(servico);
+        item.servico_id = String(valor);
+        item.valor_unitario = unitario;
+        item.valor_total = unitario * Number(item.quantidade || 1);
+      }
+
+      if (campo === "quantidade") {
+        const quantidade = Math.max(1, Number(valor || 1));
+        item.quantidade = quantidade;
+        item.valor_total = quantidade * Number(item.valor_unitario || 0);
+      }
+
+      novos[index] = item;
+      return novos;
+    });
+  }
+
+  const totalServicos = useMemo(() => {
+    return itens.reduce((total, item) => total + Number(item.valor_total || 0), 0);
+  }, [itens]);
+
+  const valorDesconto = useMemo(() => {
+    if (tipoDesconto === "percentual") {
+      return (totalServicos * Number(descontoPercentual || 0)) / 100;
+    }
+
+    return Math.min(Number(descontoValor || 0), totalServicos);
+  }, [tipoDesconto, descontoPercentual, descontoValor, totalServicos]);
+
+  const totalFinal = Math.max(totalServicos - valorDesconto, 0);
+
+  async function salvarPacote() {
+    if (!empresaId) {
+      alert("Empresa não encontrada.");
+      return;
+    }
+
+    if (!nome.trim()) {
+      alert("Informe o nome do pacote.");
+      return;
+    }
+
+    const itensValidos = itens.filter((item) => item.servico_id && item.quantidade > 0);
 
     if (itensValidos.length === 0) {
-      alert('Adicione pelo menos um serviço ao pacote.')
-      return
+      alert("Adicione pelo menos um serviço ao pacote.");
+      return;
     }
 
-    setLoading(true)
+    setSalvando(true);
 
-    const payloadPacote = {
-      nome: formPacote.nome.trim(),
-      descricao: formPacote.descricao.trim() || null,
-      valor: formPacote.valor ? Number(formPacote.valor) : null,
-      validade_dias: formPacote.validade_dias ? Number(formPacote.validade_dias) : null,
-      ativo: formPacote.ativo,
-    }
+    const payload = {
+      empresa_id: empresaId,
+      nome: nome.trim(),
+      descricao: descricao.trim() || null,
+      validade_dias: validadeDias,
+      status,
+      tipo_desconto: tipoDesconto,
+      desconto_percentual: tipoDesconto === "percentual" ? descontoPercentual : 0,
+      desconto_valor: tipoDesconto === "valor" ? descontoValor : 0,
+      valor_original: totalServicos,
+      valor_final: totalFinal,
+    };
 
-    let pacoteId = pacoteEditandoId
-    let errorPacote = null
+    let pacoteId = editandoId;
 
-    if (pacoteEditandoId) {
+    if (editandoId) {
       const { error } = await supabase
-        .from('marketing_pacotes')
-        .update(payloadPacote)
-        .eq('id', pacoteEditandoId)
-
-      errorPacote = error
-    } else {
-      const { data, error } = await supabase
-        .from('marketing_pacotes')
-        .insert([payloadPacote])
-        .select('id')
-        .single()
-
-      pacoteId = data?.id
-      errorPacote = error
-    }
-
-    if (errorPacote || !pacoteId) {
-      alert('Erro ao salvar pacote: ' + (errorPacote?.message || 'pacote não retornou ID'))
-      setLoading(false)
-      return
-    }
-
-    if (pacoteEditandoId) {
-      const { error } = await supabase
-        .from('marketing_pacote_servicos')
-        .delete()
-        .eq('pacote_id', pacoteId)
+        .from("marketing_pacotes")
+        .update(payload)
+        .eq("id", editandoId)
+        .eq("empresa_id", empresaId);
 
       if (error) {
-        alert('Erro ao atualizar serviços do pacote: ' + error.message)
-        setLoading(false)
-        return
+        setSalvando(false);
+        alert("Erro ao atualizar pacote: " + error.message);
+        return;
       }
+
+      await supabase.from("marketing_pacote_servicos").delete().eq("pacote_id", editandoId);
+    } else {
+      const { data, error } = await supabase
+        .from("marketing_pacotes")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error) {
+        setSalvando(false);
+        alert("Erro ao salvar pacote: " + error.message);
+        return;
+      }
+
+      pacoteId = data.id;
     }
 
-    const payloadItens = itensValidos.map((item) => ({
+    const itensPayload = itensValidos.map((item) => ({
       pacote_id: pacoteId,
       servico_id: item.servico_id,
-      quantidade: Number(item.quantidade),
-    }))
+      quantidade: item.quantidade,
+      valor_unitario: item.valor_unitario,
+      valor_total: item.valor_total,
+    }));
 
-    const { error: errorItens } = await supabase
-      .from('marketing_pacote_servicos')
-      .insert(payloadItens)
+    const { error: itensError } = await supabase
+      .from("marketing_pacote_servicos")
+      .insert(itensPayload);
 
-    if (errorItens) {
-      alert('Pacote salvo, mas houve erro nos serviços: ' + errorItens.message)
-      setLoading(false)
-      return
+    setSalvando(false);
+
+    if (itensError) {
+      alert("Pacote salvo, mas erro ao salvar serviços: " + itensError.message);
+      return;
     }
 
-    alert(pacoteEditandoId ? 'Pacote atualizado com sucesso!' : 'Pacote criado com sucesso!')
-    limparFormPacote()
-    setMostrarFormPacote(false)
-    await buscarPacotes()
-    setLoading(false)
+    setModalAberto(false);
+    limparFormulario();
+    carregarPacotes();
   }
 
-  async function alternarStatusPacote(pacote: Pacote) {
-    const { error } = await supabase
-      .from('marketing_pacotes')
-      .update({ ativo: !pacote.ativo })
-      .eq('id', pacote.id)
+  async function alterarStatusPacote(pacote: Pacote) {
+    if (!empresaId) return;
 
-    if (error) {
-      alert('Erro ao alterar status do pacote: ' + error.message)
-      return
-    }
-
-    await buscarPacotes()
-  }
-
-  function limparFormVinculo() {
-    setFormVinculo({
-      cliente_id: '',
-      pacote_id: '',
-      data_inicio: new Date().toISOString().slice(0, 10),
-      valor_pago: '',
-      observacoes: '',
-    })
-  }
-
-  function calcularDataFim(dataInicio: string, validadeDias?: number | null) {
-    if (!dataInicio || !validadeDias) return null
-
-    const data = new Date(dataInicio + 'T00:00:00')
-    data.setDate(data.getDate() + validadeDias)
-
-    return data.toISOString().slice(0, 10)
-  }
-
-  async function vincularPacoteAoCliente(e: React.FormEvent) {
-    e.preventDefault()
-
-    if (!formVinculo.cliente_id) {
-      alert('Selecione um cliente.')
-      return
-    }
-
-    if (!formVinculo.pacote_id) {
-      alert('Selecione um pacote.')
-      return
-    }
-
-    const pacote = pacotes.find((p) => p.id === formVinculo.pacote_id)
-    const itensDoPacote = pacoteServicos.filter((item) => item.pacote_id === formVinculo.pacote_id)
-
-    if (!pacote || itensDoPacote.length === 0) {
-      alert('Este pacote não possui serviços configurados.')
-      return
-    }
-
-    setLoading(true)
-
-    const dataFim = calcularDataFim(formVinculo.data_inicio, pacote.validade_dias)
-
-    const { data: clientePacoteCriado, error } = await supabase
-      .from('cliente_pacotes')
-      .insert([
-        {
-          cliente_id: formVinculo.cliente_id,
-          pacote_id: formVinculo.pacote_id,
-          data_inicio: formVinculo.data_inicio || new Date().toISOString().slice(0, 10),
-          data_fim: dataFim,
-          valor_pago: formVinculo.valor_pago ? Number(formVinculo.valor_pago) : pacote.valor,
-          status: 'ativo',
-          observacoes: formVinculo.observacoes.trim() || null,
-        },
-      ])
-      .select('id')
-      .single()
-
-    if (error || !clientePacoteCriado?.id) {
-      alert('Erro ao vincular pacote ao cliente: ' + (error?.message || 'sem ID retornado'))
-      setLoading(false)
-      return
-    }
-
-    const payloadSaldos = itensDoPacote.map((item) => ({
-      cliente_pacote_id: clientePacoteCriado.id,
-      servico_id: item.servico_id,
-      quantidade_total: item.quantidade || 1,
-      quantidade_usada: 0,
-    }))
-
-    const { error: erroSaldos } = await supabase
-      .from('cliente_pacote_saldos')
-      .insert(payloadSaldos)
-
-    if (erroSaldos) {
-      alert('Pacote vinculado, mas houve erro ao criar saldo: ' + erroSaldos.message)
-      setLoading(false)
-      return
-    }
-
-    alert('Pacote vinculado ao cliente com sucesso!')
-    limparFormVinculo()
-    setMostrarFormVinculo(false)
-    await buscarClientePacotes()
-    setLoading(false)
-  }
-
-  async function cancelarClientePacote(clientePacote: ClientePacote) {
-    const confirmar = window.confirm('Deseja cancelar este pacote do cliente?')
-
-    if (!confirmar) return
+    const novoStatus = pacote.status === "inativo" ? "ativo" : "inativo";
 
     const { error } = await supabase
-      .from('cliente_pacotes')
-      .update({ status: 'cancelado' })
-      .eq('id', clientePacote.id)
+      .from("marketing_pacotes")
+      .update({ status: novoStatus })
+      .eq("id", pacote.id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
-      alert('Erro ao cancelar pacote: ' + error.message)
-      return
+      alert("Erro ao alterar status: " + error.message);
+      return;
     }
 
-    await buscarClientePacotes()
+    carregarPacotes();
   }
 
-  function adicionarItemPacote() {
-    setItensPacote([...itensPacote, { servico_id: '', quantidade: '1' }])
+  async function excluirPacote(id: string) {
+    const confirmar = confirm("Tem certeza que deseja excluir este pacote?");
+    if (!confirmar) return;
+
+    await supabase.from("marketing_pacote_servicos").delete().eq("pacote_id", id);
+
+    const { error } = await supabase
+      .from("marketing_pacotes")
+      .delete()
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      alert("Erro ao excluir pacote: " + error.message);
+      return;
+    }
+
+    carregarPacotes();
   }
 
-  function removerItemPacote(index: number) {
-    const novos = itensPacote.filter((_, i) => i !== index)
-    setItensPacote(novos.length ? novos : [{ servico_id: '', quantidade: '1' }])
-  }
+  const pacotesFiltrados = pacotes.filter((pacote) => {
+    const texto = `${pacote.nome || ""} ${pacote.descricao || ""}`.toLowerCase();
+    return texto.includes(busca.toLowerCase());
+  });
 
-  function atualizarItemPacote(index: number, campo: 'servico_id' | 'quantidade', valor: string) {
-    setItensPacote((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [campo]: valor } : item)),
-    )
-  }
+  const inputStyle = {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: 14,
+    padding: "14px 16px",
+    fontSize: 15,
+    background: "#fff",
+  };
 
-  function itensDoPacote(pacoteId: string) {
-    return pacoteServicos.filter((item) => item.pacote_id === pacoteId)
-  }
+  const cardStyle = {
+    background: "#fff",
+    border: "1px solid #d8def0",
+    borderRadius: 18,
+    padding: 22,
+    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.06)",
+  };
 
-  function saldosDoClientePacote(clientePacoteId: string) {
-    return saldos.filter((saldo) => saldo.cliente_pacote_id === clientePacoteId)
-  }
+  const primaryButton = {
+    background: "var(--cor-primaria, #27245f)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 14,
+    padding: "13px 18px",
+    fontWeight: 800,
+    cursor: "pointer",
+  };
 
-  function formatarMoeda(valor?: number | null) {
-    if (valor === null || valor === undefined) return 'R$ 0,00'
-    return Number(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-  }
+  const secondaryButton = {
+    background: "#fff",
+    color: "#172554",
+    border: "1px solid #cbd5e1",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: "pointer",
+  };
+
+  const dangerButton = {
+    background: "#fee2e2",
+    color: "#dc2626",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: "pointer",
+  };
 
   return (
-    <div style={{ padding: 24, background: '#f8fafc', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 1250, margin: '0 auto' }}>
-        <div style={headerBox}>
+    <div style={{ padding: 28, background: corFundo || "transparent", minHeight: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
+        <div>
+          <div style={{ color: "#172554", fontSize: 13, fontWeight: 900, textTransform: "uppercase" }}>
+            Marketing
+          </div>
+          <h1 style={{ margin: "6px 0 8px", fontSize: 34 }}>Pacotes / Combos</h1>
+          <p style={{ margin: 0, color: "#64748b", fontSize: 16 }}>
+            Crie combos, pacotes e saldos de serviços para aplicar na finalização do atendimento.
+          </p>
+        </div>
+
+        <button type="button" onClick={abrirNovoPacote} style={primaryButton}>
+          + Novo pacote
+        </button>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: 26 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900 }}>Marketing</h1>
-            <p style={{ color: '#64748b', marginTop: 6, marginBottom: 0 }}>
-              Crie combos, pacotes e saldos de serviços para aplicar na finalização do atendimento.
+            <h2 style={{ margin: 0, fontSize: 22 }}>Pacotes cadastrados</h2>
+            <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+              {pacotesFiltrados.length} pacote(s) encontrado(s).
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setAba('pacotes')}
-              style={aba === 'pacotes' ? tabButtonActive : tabButton}
-            >
-              Combos / Pacotes
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAba('vinculos')}
-              style={aba === 'vinculos' ? tabButtonActive : tabButton}
-            >
-              Pacotes dos clientes
-            </button>
-          </div>
+          <input
+            placeholder="Buscar pacote..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            style={{ ...inputStyle, maxWidth: 380 }}
+          />
         </div>
 
-        {aba === 'pacotes' && (
-          <>
-            <div style={toolbarBox}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 20 }}>Combos e pacotes</h2>
-                <p style={{ margin: '4px 0 0', color: '#64748b' }}>
-                  Exemplo: 4 mãos + 4 pés mensal.
-                </p>
-              </div>
+        <div style={{ marginTop: 18, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ background: "#f8fafc", color: "#475569" }}>
+                <th style={{ padding: 14, textAlign: "left" }}>Pacote</th>
+                <th style={{ padding: 14, textAlign: "left" }}>Validade</th>
+                <th style={{ padding: 14, textAlign: "left" }}>Desconto</th>
+                <th style={{ padding: 14, textAlign: "left" }}>Valor</th>
+                <th style={{ padding: 14, textAlign: "left" }}>Status</th>
+                <th style={{ padding: 14, textAlign: "right" }}>Ações</th>
+              </tr>
+            </thead>
 
-              {!mostrarFormPacote && (
-                <button type="button" onClick={abrirNovoPacote} style={primaryButton}>
-                  + Novo pacote
-                </button>
-              )}
-            </div>
-
-            {mostrarFormPacote && (
-              <form onSubmit={salvarPacote} style={card}>
-                <div style={cardHeader}>
-                  <h3 style={{ margin: 0 }}>
-                    {pacoteEditandoId ? 'Editar pacote' : 'Novo pacote'}
-                  </h3>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      limparFormPacote()
-                      setMostrarFormPacote(false)
-                    }}
-                    style={secondaryButton}
-                  >
-                    Fechar
-                  </button>
-                </div>
-
-                <div style={grid2}>
-                  <Campo label="Nome do pacote *">
-                    <input
-                      value={formPacote.nome}
-                      onChange={(e) => setFormPacote({ ...formPacote, nome: e.target.value })}
-                      placeholder="Ex: Combo Pé e Mão Mensal"
-                      style={inputStyle}
-                    />
-                  </Campo>
-
-                  <Campo label="Valor do pacote">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formPacote.valor}
-                      onChange={(e) => setFormPacote({ ...formPacote, valor: e.target.value })}
-                      placeholder="Ex: 200.00"
-                      style={inputStyle}
-                    />
-                  </Campo>
-
-                  <Campo label="Validade em dias">
-                    <input
-                      type="number"
-                      min="1"
-                      value={formPacote.validade_dias}
-                      onChange={(e) => setFormPacote({ ...formPacote, validade_dias: e.target.value })}
-                      placeholder="30"
-                      style={inputStyle}
-                    />
-                  </Campo>
-
-                  <Campo label="Status">
-                    <select
-                      value={formPacote.ativo ? 'ativo' : 'inativo'}
-                      onChange={(e) => setFormPacote({ ...formPacote, ativo: e.target.value === 'ativo' })}
-                      style={inputStyle}
-                    >
-                      <option value="ativo">Ativo</option>
-                      <option value="inativo">Inativo</option>
-                    </select>
-                  </Campo>
-                </div>
-
-                <div style={{ marginTop: 16 }}>
-                  <Campo label="Descrição">
-                    <textarea
-                      value={formPacote.descricao}
-                      onChange={(e) => setFormPacote({ ...formPacote, descricao: e.target.value })}
-                      placeholder="Descrição comercial do pacote"
-                      style={textareaStyle}
-                    />
-                  </Campo>
-                </div>
-
-                <div style={{ marginTop: 20 }}>
-                  <div style={sectionTitleRow}>
-                    <h4 style={{ margin: 0 }}>Serviços incluídos</h4>
-
-                    <button type="button" onClick={adicionarItemPacote} style={smallButton}>
-                      + Adicionar serviço
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                    {itensPacote.map((item, index) => (
-                      <div key={index} style={itemRow}>
-                        <select
-                          value={item.servico_id}
-                          onChange={(e) => atualizarItemPacote(index, 'servico_id', e.target.value)}
-                          style={{ ...inputStyle, flex: 1 }}
-                        >
-                          <option value="">Selecione um serviço</option>
-                          {servicos.map((servico) => (
-                            <option key={servico.id} value={servico.id}>
-                              {servico.nome}
-                            </option>
-                          ))}
-                        </select>
-
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantidade}
-                          onChange={(e) => atualizarItemPacote(index, 'quantidade', e.target.value)}
-                          placeholder="Qtd."
-                          style={{ ...inputStyle, width: 120 }}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => removerItemPacote(index)}
-                          style={smallDangerButton}
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                  <button type="submit" disabled={loading} style={primaryButton}>
-                    {loading ? 'Salvando...' : pacoteEditandoId ? 'Salvar alterações' : 'Criar pacote'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      limparFormPacote()
-                      setMostrarFormPacote(false)
-                    }}
-                    style={secondaryButton}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            )}
-
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Pacotes cadastrados</h3>
-
-              {pacotes.length === 0 ? (
-                <p style={{ color: '#64748b' }}>Nenhum pacote cadastrado ainda.</p>
+            <tbody>
+              {carregando ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+                    Carregando pacotes...
+                  </td>
+                </tr>
+              ) : pacotesFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+                    Nenhum pacote cadastrado ainda.
+                  </td>
+                </tr>
               ) : (
-                <div style={{ display: 'grid', gap: 14 }}>
-                  {pacotes.map((pacote) => {
-                    const itens = itensDoPacote(pacote.id)
+                pacotesFiltrados.map((pacote) => {
+                  const statusAtual = pacote.status || "ativo";
+                  const tipo = pacote.tipo_desconto || "percentual";
+                  const descontoTexto =
+                    tipo === "valor"
+                      ? formatarMoeda(Number(pacote.desconto_valor || 0))
+                      : `${Number(pacote.desconto_percentual || 0)}%`;
 
-                    return (
-                      <div key={pacote.id} style={pacoteCard}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <h4 style={{ margin: 0, fontSize: 18 }}>{pacote.nome}</h4>
-                            <StatusPill ativo={!!pacote.ativo} />
-                          </div>
-
-                          <p style={{ color: '#64748b', marginBottom: 8 }}>
-                            {pacote.descricao || 'Sem descrição'}
-                          </p>
-
-                          <div style={miniInfoRow}>
-                            <span><strong>Valor:</strong> {formatarMoeda(pacote.valor)}</span>
-                            <span><strong>Validade:</strong> {pacote.validade_dias || '-'} dias</span>
-                          </div>
-
-                          <div style={{ marginTop: 10 }}>
-                            <strong>Serviços:</strong>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                              {itens.length === 0 ? (
-                                <span style={mutedText}>Nenhum serviço vinculado</span>
-                              ) : (
-                                itens.map((item) => (
-                                  <span key={item.id} style={serviceBadge}>
-                                    {item.servicos?.nome || 'Serviço'} × {item.quantidade}
-                                  </span>
-                                ))
-                              )}
-                            </div>
-                          </div>
+                  return (
+                    <tr key={pacote.id} style={{ borderTop: "1px solid #e2e8f0" }}>
+                      <td style={{ padding: 14 }}>
+                        <div style={{ fontWeight: 900 }}>{pacote.nome}</div>
+                        <div style={{ color: "#64748b", fontSize: 12 }}>{pacote.descricao || "-"}</div>
+                      </td>
+                      <td style={{ padding: 14 }}>{Number(pacote.validade_dias || 0)} dias</td>
+                      <td style={{ padding: 14 }}>{descontoTexto}</td>
+                      <td style={{ padding: 14 }}>
+                        <div style={{ color: "#64748b", fontSize: 12 }}>
+                          De {formatarMoeda(Number(pacote.valor_original || 0))}
                         </div>
-
-                        <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-start' }}>
-                          <button type="button" onClick={() => editarPacote(pacote)} style={smallButton}>
+                        <strong>{formatarMoeda(Number(pacote.valor_final || 0))}</strong>
+                      </td>
+                      <td style={{ padding: 14 }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            padding: "5px 10px",
+                            borderRadius: 999,
+                            fontWeight: 800,
+                            fontSize: 12,
+                            background: statusAtual === "inativo" ? "#fee2e2" : "#dcfce7",
+                            color: statusAtual === "inativo" ? "#b91c1c" : "#15803d",
+                          }}
+                        >
+                          {statusAtual === "inativo" ? "Inativo" : "Ativo"}
+                        </span>
+                      </td>
+                      <td style={{ padding: 14, textAlign: "right" }}>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <button type="button" onClick={() => abrirEditarPacote(pacote)} style={secondaryButton}>
                             Editar
                           </button>
 
-                          <button type="button" onClick={() => alternarStatusPacote(pacote)} style={smallDangerButton}>
-                            {pacote.ativo ? 'Inativar' : 'Ativar'}
+                          <button type="button" onClick={() => alterarStatusPacote(pacote)} style={secondaryButton}>
+                            {statusAtual === "inativo" ? "Ativar" : "Inativar"}
+                          </button>
+
+                          <button type="button" onClick={() => excluirPacote(pacote.id)} style={dangerButton}>
+                            Excluir
                           </button>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
-            </div>
-          </>
-        )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        {aba === 'vinculos' && (
-          <>
-            <div style={toolbarBox}>
+      {modalAberto && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.55)",
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: "min(1180px, 96vw)",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: 22,
+              padding: 26,
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.30)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+              <h2 style={{ margin: 0 }}>{editandoId ? "Editar pacote" : "Novo pacote"}</h2>
+              <button type="button" onClick={() => setModalAberto(false)} style={secondaryButton}>
+                Fechar
+              </button>
+            </div>
+
+            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: 20 }}>Pacotes dos clientes</h2>
-                <p style={{ margin: '4px 0 0', color: '#64748b' }}>
-                  Vincule combos aos clientes e acompanhe o saldo de serviços.
-                </p>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Nome do pacote *</label>
+                <input
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Ex: Combo Pé e Mão Mensal"
+                  style={inputStyle}
+                />
               </div>
 
-              {!mostrarFormVinculo && (
-                <button type="button" onClick={() => setMostrarFormVinculo(true)} style={primaryButton}>
-                  + Vender / vincular pacote
-                </button>
-              )}
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Desconto</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <select
+                    value={tipoDesconto}
+                    onChange={(e) => setTipoDesconto(e.target.value as "percentual" | "valor")}
+                    style={inputStyle}
+                  >
+                    <option value="percentual">Porcentagem (%)</option>
+                    <option value="valor">Valor fixo (R$)</option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min={0}
+                    value={tipoDesconto === "percentual" ? descontoPercentual : descontoValor}
+                    onChange={(e) => {
+                      const valor = Number(e.target.value || 0);
+                      if (tipoDesconto === "percentual") setDescontoPercentual(valor);
+                      else setDescontoValor(valor);
+                    }}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Validade em dias</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={validadeDias}
+                  onChange={(e) => setValidadeDias(Number(e.target.value || 30))}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Status</label>
+                <select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
+              </div>
+
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Descrição</label>
+                <textarea
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                  placeholder="Descrição comercial do pacote"
+                  style={{ ...inputStyle, minHeight: 88, resize: "vertical" }}
+                />
+              </div>
             </div>
 
-            {mostrarFormVinculo && (
-              <form onSubmit={vincularPacoteAoCliente} style={card}>
-                <div style={cardHeader}>
-                  <h3 style={{ margin: 0 }}>Vender / vincular pacote ao cliente</h3>
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                <h3 style={{ margin: 0 }}>Serviços incluídos</h3>
+                <button type="button" onClick={adicionarServico} style={secondaryButton}>
+                  + Adicionar serviço
+                </button>
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      limparFormVinculo()
-                      setMostrarFormVinculo(false)
+              <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                {itens.map((item, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 120px 150px 150px 110px",
+                      gap: 10,
+                      alignItems: "center",
                     }}
-                    style={secondaryButton}
                   >
-                    Fechar
-                  </button>
-                </div>
-
-                <div style={grid2}>
-                  <Campo label="Cliente *">
                     <select
-                      value={formVinculo.cliente_id}
-                      onChange={(e) => setFormVinculo({ ...formVinculo, cliente_id: e.target.value })}
+                      value={item.servico_id}
+                      onChange={(e) => atualizarItem(index, "servico_id", e.target.value)}
                       style={inputStyle}
                     >
-                      <option value="">Selecione um cliente</option>
-                      {clientes.map((cliente) => (
-                        <option key={cliente.id} value={cliente.id}>
-                          {cliente.nome} {cliente.telefone ? `- ${cliente.telefone}` : ''}
+                      <option value="">Selecione um serviço</option>
+                      {servicos.map((servico) => (
+                        <option key={servico.id} value={servico.id}>
+                          {servico.nome}
                         </option>
                       ))}
                     </select>
-                  </Campo>
 
-                  <Campo label="Pacote *">
-                    <select
-                      value={formVinculo.pacote_id}
-                      onChange={(e) => {
-                        const pacote = pacotes.find((p) => p.id === e.target.value)
-                        setFormVinculo({
-                          ...formVinculo,
-                          pacote_id: e.target.value,
-                          valor_pago: pacote?.valor !== null && pacote?.valor !== undefined ? String(pacote.valor) : '',
-                        })
-                      }}
-                      style={inputStyle}
-                    >
-                      <option value="">Selecione um pacote</option>
-                      {pacotes.filter((p) => p.ativo).map((pacote) => (
-                        <option key={pacote.id} value={pacote.id}>
-                          {pacote.nome} - {formatarMoeda(pacote.valor)}
-                        </option>
-                      ))}
-                    </select>
-                  </Campo>
-
-                  <Campo label="Data de início">
-                    <input
-                      type="date"
-                      value={formVinculo.data_inicio}
-                      onChange={(e) => setFormVinculo({ ...formVinculo, data_inicio: e.target.value })}
-                      style={inputStyle}
-                    />
-                  </Campo>
-
-                  <Campo label="Valor pago">
                     <input
                       type="number"
-                      min="0"
-                      step="0.01"
-                      value={formVinculo.valor_pago}
-                      onChange={(e) => setFormVinculo({ ...formVinculo, valor_pago: e.target.value })}
-                      placeholder="Valor pago pelo cliente"
+                      min={1}
+                      value={item.quantidade}
+                      onChange={(e) => atualizarItem(index, "quantidade", Number(e.target.value || 1))}
                       style={inputStyle}
                     />
-                  </Campo>
-                </div>
 
-                {pacoteSelecionadoParaVinculo && (
-                  <div style={previewBox}>
-                    <strong>Resumo do pacote:</strong>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {itensDoPacote(pacoteSelecionadoParaVinculo.id).map((item) => (
-                        <span key={item.id} style={serviceBadge}>
-                          {item.servicos?.nome || 'Serviço'} × {item.quantidade}
-                        </span>
-                      ))}
+                    <div style={{ ...inputStyle, background: "#f8fafc" }}>
+                      <div style={{ fontSize: 12, color: "#475569" }}>Valor unitário</div>
+                      <strong>{formatarMoeda(item.valor_unitario)}</strong>
                     </div>
-                    <p style={{ marginBottom: 0, color: '#64748b' }}>
-                      Validade até: {calcularDataFim(formVinculo.data_inicio, pacoteSelecionadoParaVinculo.validade_dias) || '-'}
-                    </p>
+
+                    <div style={{ ...inputStyle, background: "#f8fafc" }}>
+                      <div style={{ fontSize: 12, color: "#475569" }}>Subtotal</div>
+                      <strong>{formatarMoeda(item.valor_total)}</strong>
+                    </div>
+
+                    <button type="button" onClick={() => removerServico(index)} style={dangerButton}>
+                      Remover
+                    </button>
                   </div>
-                )}
-
-                <div style={{ marginTop: 16 }}>
-                  <Campo label="Observações">
-                    <textarea
-                      value={formVinculo.observacoes}
-                      onChange={(e) => setFormVinculo({ ...formVinculo, observacoes: e.target.value })}
-                      placeholder="Ex: vendido via Pix, promoção especial..."
-                      style={textareaStyle}
-                    />
-                  </Campo>
-                </div>
-
-                <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                  <button type="submit" disabled={loading} style={primaryButton}>
-                    {loading ? 'Salvando...' : 'Confirmar pacote'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      limparFormVinculo()
-                      setMostrarFormVinculo(false)
-                    }}
-                    style={secondaryButton}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            )}
-
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Pacotes ativos e vendidos</h3>
-
-              {clientePacotes.length === 0 ? (
-                <p style={{ color: '#64748b' }}>Nenhum pacote vinculado a cliente ainda.</p>
-              ) : (
-                <div style={{ display: 'grid', gap: 14 }}>
-                  {clientePacotes.map((clientePacote) => {
-                    const saldosPacote = saldosDoClientePacote(clientePacote.id)
-                    const ativo = clientePacote.status === 'ativo'
-
-                    return (
-                      <div key={clientePacote.id} style={pacoteCard}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <h4 style={{ margin: 0, fontSize: 18 }}>
-                              {clientePacote.clientes?.nome || 'Cliente'} — {clientePacote.marketing_pacotes?.nome || 'Pacote'}
-                            </h4>
-                            <span
-                              style={{
-                                ...pillBase,
-                                background: ativo ? '#dcfce7' : '#fee2e2',
-                                color: ativo ? '#166534' : '#991b1b',
-                              }}
-                            >
-                              {clientePacote.status || 'ativo'}
-                            </span>
-                          </div>
-
-                          <div style={miniInfoRow}>
-                            <span><strong>Início:</strong> {clientePacote.data_inicio || '-'}</span>
-                            <span><strong>Fim:</strong> {clientePacote.data_fim || '-'}</span>
-                            <span><strong>Valor pago:</strong> {formatarMoeda(clientePacote.valor_pago)}</span>
-                          </div>
-
-                          <div style={{ marginTop: 10 }}>
-                            <strong>Saldo:</strong>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                              {saldosPacote.length === 0 ? (
-                                <span style={mutedText}>Sem saldo cadastrado</span>
-                              ) : (
-                                saldosPacote.map((saldo) => {
-                                  const restante = Number(saldo.quantidade_total || 0) - Number(saldo.quantidade_usada || 0)
-
-                                  return (
-                                    <span key={saldo.id} style={serviceBadge}>
-                                      {saldo.servicos?.nome || 'Serviço'}: {restante}/{saldo.quantidade_total}
-                                    </span>
-                                  )
-                                })
-                              )}
-                            </div>
-                          </div>
-
-                          {clientePacote.observacoes && (
-                            <p style={{ color: '#64748b', marginBottom: 0 }}>
-                              {clientePacote.observacoes}
-                            </p>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-start' }}>
-                          {ativo && (
-                            <button
-                              type="button"
-                              onClick={() => cancelarClientePacote(clientePacote)}
-                              style={smallDangerButton}
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                ))}
+              </div>
             </div>
-          </>
-        )}
-      </div>
+
+            <div
+              style={{
+                marginTop: 24,
+                border: "1px solid #d8def0",
+                background: "#f8fafc",
+                borderRadius: 18,
+                padding: 18,
+              }}
+            >
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Total real dos serviços</span>
+                  <strong>{formatarMoeda(totalServicos)}</strong>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>
+                    Desconto {tipoDesconto === "percentual" ? `(${descontoPercentual}%)` : "(R$)"}
+                  </span>
+                  <strong>- {formatarMoeda(valorDesconto)}</strong>
+                </div>
+
+                <hr style={{ border: "none", borderTop: "1px solid #d8def0" }} />
+
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20 }}>
+                  <span>Total do pacote</span>
+                  <strong>{formatarMoeda(totalFinal)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 22, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setModalAberto(false)} style={secondaryButton}>
+                Cancelar
+              </button>
+              <button type="button" onClick={salvarPacote} disabled={salvando} style={primaryButton}>
+                {salvando ? "Salvando..." : editandoId ? "Salvar alterações" : "Criar pacote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
-}
-
-function Campo({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'block' }}>
-      <span style={{ display: 'block', fontWeight: 800, marginBottom: 6, color: '#334155', fontSize: 13 }}>
-        {label}
-      </span>
-      {children}
-    </label>
-  )
-}
-
-function StatusPill({ ativo }: { ativo: boolean }) {
-  return (
-    <span
-      style={{
-        ...pillBase,
-        background: ativo ? '#dcfce7' : '#fee2e2',
-        color: ativo ? '#166534' : '#991b1b',
-      }}
-    >
-      {ativo ? 'Ativo' : 'Inativo'}
-    </span>
-  )
-}
-
-const headerBox: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 18,
-  alignItems: 'center',
-  marginBottom: 22,
-  flexWrap: 'wrap',
-}
-
-const toolbarBox: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 18,
-  padding: 18,
-  boxShadow: '0 10px 28px rgba(15, 23, 42, 0.07)',
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 16,
-  alignItems: 'center',
-  marginBottom: 18,
-  flexWrap: 'wrap',
-}
-
-const card: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 18,
-  padding: 22,
-  boxShadow: '0 10px 28px rgba(15, 23, 42, 0.07)',
-  marginBottom: 20,
-}
-
-const cardHeader: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  gap: 12,
-  marginBottom: 18,
-}
-
-const grid2: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  gap: 16,
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '12px 14px',
-  borderRadius: 12,
-  border: '1px solid #cbd5e1',
-  outline: 'none',
-  fontSize: 14,
-  boxSizing: 'border-box',
-  background: '#fff',
-}
-
-const textareaStyle: React.CSSProperties = {
-  ...inputStyle,
-  minHeight: 85,
-  resize: 'vertical',
-}
-
-const primaryButton: React.CSSProperties = {
-  border: 'none',
-  background: '#f97316',
-  color: '#fff',
-  padding: '12px 18px',
-  borderRadius: 12,
-  fontWeight: 900,
-  cursor: 'pointer',
-}
-
-const secondaryButton: React.CSSProperties = {
-  border: '1px solid #cbd5e1',
-  background: '#fff',
-  color: '#334155',
-  padding: '12px 18px',
-  borderRadius: 12,
-  fontWeight: 800,
-  cursor: 'pointer',
-}
-
-const tabButton: React.CSSProperties = {
-  ...secondaryButton,
-  padding: '10px 14px',
-}
-
-const tabButtonActive: React.CSSProperties = {
-  ...primaryButton,
-  padding: '10px 14px',
-}
-
-const smallButton: React.CSSProperties = {
-  border: 'none',
-  background: '#e0f2fe',
-  color: '#0369a1',
-  padding: '8px 11px',
-  borderRadius: 10,
-  fontWeight: 800,
-  cursor: 'pointer',
-}
-
-const smallDangerButton: React.CSSProperties = {
-  border: 'none',
-  background: '#fee2e2',
-  color: '#991b1b',
-  padding: '8px 11px',
-  borderRadius: 10,
-  fontWeight: 800,
-  cursor: 'pointer',
-}
-
-const pacoteCard: React.CSSProperties = {
-  border: '1px solid #e2e8f0',
-  borderRadius: 16,
-  padding: 16,
-  display: 'flex',
-  justifyContent: 'space-between',
-  gap: 16,
-  flexWrap: 'wrap',
-}
-
-const itemRow: React.CSSProperties = {
-  display: 'flex',
-  gap: 10,
-  alignItems: 'center',
-  flexWrap: 'wrap',
-}
-
-const sectionTitleRow: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-}
-
-const miniInfoRow: React.CSSProperties = {
-  display: 'flex',
-  gap: 18,
-  flexWrap: 'wrap',
-  color: '#334155',
-  fontSize: 14,
-  marginTop: 8,
-}
-
-const serviceBadge: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '6px 10px',
-  borderRadius: 999,
-  background: '#fff7ed',
-  color: '#9a3412',
-  fontWeight: 800,
-  fontSize: 13,
-}
-
-const mutedText: React.CSSProperties = {
-  color: '#64748b',
-  fontSize: 14,
-}
-
-const previewBox: React.CSSProperties = {
-  background: '#f8fafc',
-  border: '1px solid #e2e8f0',
-  borderRadius: 14,
-  padding: 14,
-  marginTop: 16,
-}
-
-const pillBase: React.CSSProperties = {
-  display: 'inline-flex',
-  padding: '4px 10px',
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 900,
+  );
 }

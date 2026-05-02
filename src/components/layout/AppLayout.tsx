@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import EmpresaSwitcher from "./EmpresaSwitcher";
 import { useEmpresa } from "../../hooks/useEmpresa";
+import { supabase } from "../../lib/supabase";
 
 export default function AppLayout() {
   const {
@@ -13,6 +15,50 @@ export default function AppLayout() {
     trialFim,
     statusAssinatura,
   } = useEmpresa();
+
+  const [usuarioLogado, setUsuarioLogado] = useState("Usuário");
+
+  useEffect(() => {
+    carregarUsuarioLogado();
+  }, []);
+
+  async function carregarUsuarioLogado() {
+    const { data } = await supabase.auth.getUser();
+    const user = data.user;
+
+    if (!user) return;
+
+    const email = user.email || "";
+    const nomeMetadata =
+      user.user_metadata?.nome ||
+      user.user_metadata?.name ||
+      user.user_metadata?.full_name ||
+      "";
+
+    let nomeEncontrado = nomeMetadata;
+
+    if (!nomeEncontrado && email) {
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("nome")
+        .eq("email", email)
+        .maybeSingle();
+
+      nomeEncontrado = usuario?.nome || "";
+    }
+
+    if (!nomeEncontrado && user.id) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("nome")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      nomeEncontrado = profile?.nome || "";
+    }
+
+    setUsuarioLogado(nomeEncontrado || email.split("@")[0] || "Usuário");
+  }
 
   if (carregandoEmpresa) {
     return (
@@ -75,7 +121,13 @@ export default function AppLayout() {
     {empresaNome}
   </div>
 
-  <EmpresaSwitcher />
+  <div className="flex items-center gap-4">
+    <div className="hidden md:block text-right text-white leading-tight">
+      <div className="text-xs opacity-75">Usuário logado</div>
+      <div className="font-bold">{usuarioLogado}</div>
+    </div>
+    <EmpresaSwitcher />
+  </div>
 </header>
 
         {/* CONTEÚDO */}

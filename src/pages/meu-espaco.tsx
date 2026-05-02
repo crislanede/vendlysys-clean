@@ -1,525 +1,1291 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import AssinaturaCanvas from "../components/AssinaturaCanvas";
 import { gerarHash } from "../lib/hash";
 import { gerarPdfBlob } from "../lib/pdfAnamnese";
 import { uploadPdfAnamnese } from "../lib/uploadAnamnese";
-import { abrirWhatsapp, montarMensagemPdfAnamnese } from "../lib/whatsapp";
-
-type Empresa = {
-  id: string;
-  nome: string | null;
-  nome_fantasia?: string | null;
-  slug?: string | null;
-  cor_primaria?: string | null;
-  cor_secundaria?: string | null;
-  cor_fundo?: string | null;
-  telefone?: string | null;
-  endereco?: string | null;
-  logo_url?: string | null;
-};
-
-type Agendamento = {
-  id: string;
-  cliente: string;
-  cliente_id?: string | null;
-  telefone?: string | null;
-  servico?: string | null;
-  servico_id?: string | null;
-  profissional?: string | null;
-  profissional_id?: string | null;
-  data: string;
-  horario: string;
-  status: string;
-  empresa_id: string;
-  observacoes?: string | null;
-  token_cliente?: string | null;
-  token?: string | null;
-  duracao_minutos?: number | null;
-  duracao?: number | null;
-  valor?: number | null;
-  preco?: number | null;
-  preco_servico?: number | null;
-};
-
-type Cliente = {
-  id: string;
-  nome: string;
-  telefone?: string | null;
-  email?: string | null;
-  cpf?: string | null;
-  data_nascimento?: string | null;
-  sexo?: string | null;
-  alergias?: string | null;
-  preferencias?: string | null;
-  observacoes?: string | null;
-};
-
-type Servico = {
-  id: string;
-  nome: string;
-  preco?: number | null;
-  valor?: number | null;
-  duracao_padrao_minutos?: number | null;
-  duracao?: number | null;
-  ativo?: boolean | null;
-};
-
-type Profissional = {
-  id: string;
-  nome: string;
-  ativo?: boolean | null;
-  hora_inicio?: string | null;
-  hora_fim?: string | null;
-  inicio_almoco?: string | null;
-  fim_almoco?: string | null;
-  intervalo_entre_atendimentos?: number | null;
-  intervalo?: number | null;
-};
 
 type CampoAnamnese = {
   id: string;
-  modelo_id?: string | null;
-  nome_campo?: string | null;
-  label?: string | null;
-  tipo?: string | null;
-  obrigatorio?: boolean | null;
+  label: string;
+  tipo: string;
+  obrigatorio?: boolean;
+  ordem?: number;
   placeholder?: string | null;
   ajuda?: string | null;
-  opcoes?: string[] | string | null;
-  ordem?: number | null;
-  ativo?: boolean | null;
-  pergunta?: string | null;
-  titulo?: string | null;
-  nome?: string | null;
+  opcoes?: string[] | null;
 };
 
-type ModeloAnamnese = {
+type ServicoCliente = {
   id: string;
-  titulo?: string | null;
-  descricao?: string | null;
-  termo_responsabilidade?: string | null;
+  nome: string;
+  duracao?: number | null;
+  duracao_padrao_minutos?: number | null;
+  preco?: number | string | null;
+  valor?: number | string | null;
+  preco_promocional?: number | string | null;
 };
 
-type AnamneseCliente = {
+type ProfissionalCliente = {
   id: string;
-  preenchido_em?: string | null;
-  assinado_em?: string | null;
-  pdf_url?: string | null;
-  respostas_json?: Record<string, string | null | undefined> | null;
+  nome: string;
 };
 
-type Aba = "agendamento" | "anamnese" | "dados" | "historico" | "combos" | "novo";
+function limparTelefone(valor: string) {
+  return valor.replace(/\D/g, "");
+}
 
-const STATUS_PENDENTES = ["agendado", "pendente", "confirmado"];
+function formatarData(data?: string | null) {
+  if (!data) return "-";
+  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+}
+
+function formatarMoeda(valor?: number | null) {
+  return Number(valor || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function primeiroNome(nome?: string | null) {
+  return String(nome || "")
+    .trim()
+    .split(/\s+/)[0] || "cliente";
+}
+
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function obterDataBaseAnamnese(ficha: any) {
+  return (
+    ficha?.data_assinatura ||
+    ficha?.preenchido_em ||
+    ficha?.created_at ||
+    ficha?.criado_em ||
+    null
+  );
+}
+
+function calcularValidadeAnamnese(ficha: any) {
+  const dataBase = obterDataBaseAnamnese(ficha);
+
+  if (!dataBase) return null;
+
+  const validade = new Date(dataBase);
+  validade.setMonth(validade.getMonth() + 12);
+  return validade;
+}
+
+function anamneseEstaVencida(ficha: any) {
+  const validade = calcularValidadeAnamnese(ficha);
+
+  if (!validade) return true;
+
+  return validade < new Date();
+}
+
+function formatarDataAnamnese(data?: string | Date | null) {
+  if (!data) return "-";
+
+  const dataObj = data instanceof Date ? data : new Date(data);
+
+  if (Number.isNaN(dataObj.getTime())) return "-";
+
+  return dataObj.toLocaleDateString("pt-BR");
+}
+
+function somarMinutos(horario: string, minutos: number) {
+  const [h, m] = horario.split(":").map(Number);
+  const data = new Date(2000, 0, 1, h || 0, m || 0);
+  data.setMinutes(data.getMinutes() + minutos);
+  return data.toTimeString().slice(0, 5);
+}
+
+function gerarHorariosBase() {
+  const horarios: string[] = [];
+  let atual = "08:00";
+
+  while (atual <= "18:00") {
+    horarios.push(atual);
+    atual = somarMinutos(atual, 30);
+  }
+
+  return horarios;
+}
 
 export default function MeuEspaco() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
-
-  const [empresa, setEmpresa] = useState<Empresa | null>(null);
-  const [agendamento, setAgendamento] = useState<Agendamento | null>(null);
-  const [agendamentoToken, setAgendamentoToken] = useState<Agendamento | null>(null);
-  const [historico, setHistorico] = useState<Agendamento[]>([]);
-  const [cliente, setCliente] = useState<Cliente | null>(null);
-
-  const [servicos, setServicos] = useState<Servico[]>([]);
-  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
-  const [novoServicoId, setNovoServicoId] = useState("");
-  const [novoProfissionalId, setNovoProfissionalId] = useState("");
-  const [novaData, setNovaData] = useState("");
-  const [novoHorario, setNovoHorario] = useState("");
-  const [novaObservacao, setNovaObservacao] = useState("");
-  const [horariosDisponiveis, setHorariosDisponiveis] = useState<string[]>([]);
-  const [mensagemHorarios, setMensagemHorarios] = useState("");
-
-  const [modeloAnamnese, setModeloAnamnese] = useState<ModeloAnamnese | null>(null);
-  const [camposAnamnese, setCamposAnamnese] = useState<CampoAnamnese[]>([]);
-  const [respostas, setRespostas] = useState<Record<string, string>>({});
-  const [assinatura, setAssinatura] = useState<string | null>(null);
-  const [aceiteTermo, setAceiteTermo] = useState(false);
-  const [anamneseSalva, setAnamneseSalva] = useState<AnamneseCliente | null>(null);
-  const [salvandoAnamnese, setSalvandoAnamnese] = useState(false);
-
-  const [formCliente, setFormCliente] = useState({
+  const [aba, setAba] = useState("agenda");
+  const [telefone, setTelefone] = useState("");
+  const [modoCadastro, setModoCadastro] = useState(false);
+  const [cadastro, setCadastro] = useState({
     nome: "",
     telefone: "",
     email: "",
-    cpf: "",
     data_nascimento: "",
-    sexo: "Não informado",
-    alergias: "",
-    preferencias: "",
-    observacoes: "",
+    cep: "",
+    endereco: "",
+    numero: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
   });
-
-  const [aba, setAba] = useState<Aba>("agendamento");
-  const [loading, setLoading] = useState(true);
+  const [editandoDados, setEditandoDados] = useState(false);
   const [salvandoDados, setSalvandoDados] = useState(false);
-  const [salvandoNovo, setSalvandoNovo] = useState(false);
+  const [dadosEdicao, setDadosEdicao] = useState({
+    nome: "",
+    email: "",
+    data_nascimento: "",
+    cep: "",
+    endereco: "",
+    numero: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
+  });
+  const [cadastrando, setCadastrando] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [cliente, setCliente] = useState<any>(null);
+  const [mensagem, setMensagem] = useState("");
+  const [carregando, setCarregando] = useState(false);
+
+  const [agendamentos, setAgendamentos] = useState<any[]>([]);
+  const [historico, setHistorico] = useState<any[]>([]);
+
+  const [anamneseObrigatoria, setAnamneseObrigatoria] = useState(false);
+  const [modalAnamneseAberto, setModalAnamneseAberto] = useState(false);
+  const [
+    assinaturaComplementarObrigatoria,
+    setAssinaturaComplementarObrigatoria,
+  ] = useState(false);
+  const [modelo, setModelo] = useState<any>(null);
+  const [empresaAnamneseId, setEmpresaAnamneseId] = useState<string | null>(
+    null,
+  );
+  const [campos, setCampos] = useState<CampoAnamnese[]>([]);
+  const [respostas, setRespostas] = useState<Record<string, string>>({});
+  const [justificativas, setJustificativas] = useState<Record<string, string>>(
+    {},
+  );
+  const [aceitaTermo, setAceitaTermo] = useState(false);
+  const [assinatura, setAssinatura] = useState("");
+  const [anamnesePreenchida, setAnamnesePreenchida] = useState<any>(null);
+  const [pdfAnamneseUrl, setPdfAnamneseUrl] = useState("");
+  const [modoAtualizacaoAnamnese, setModoAtualizacaoAnamnese] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  const acessoBloqueadoPorAnamnese =
+    anamneseObrigatoria || assinaturaComplementarObrigatoria;
+
+  function levarParaAnamneseObrigatoria() {
+    setAba("anamnese");
+    setModalAnamneseAberto(true);
+    setMensagem(
+      assinaturaComplementarObrigatoria
+        ? "Para continuar, assine sua ficha de anamnese."
+        : "Para continuar, preencha a ficha de anamnese obrigatória."
+    );
+  }
+
+  const [servicos, setServicos] = useState<ServicoCliente[]>([]);
+  const [profissionais, setProfissionais] = useState<ProfissionalCliente[]>([]);
+  const [novoAgendamentoAberto, setNovoAgendamentoAberto] = useState(false);
+  const [servicoAgendamentoId, setServicoAgendamentoId] = useState("");
+  const [profissionalAgendamentoId, setProfissionalAgendamentoId] =
+    useState("");
+  const [dataAgendamento, setDataAgendamento] = useState(hojeISO());
+  const [horarioAgendamento, setHorarioAgendamento] = useState("");
+  const [horariosLivres, setHorariosLivres] = useState<string[]>([]);
+  const [carregandoHorarios, setCarregandoHorarios] = useState(false);
+  const [salvandoAgendamento, setSalvandoAgendamento] = useState(false);
+  const [valorAgendamentoFinal, setValorAgendamentoFinal] = useState<
+    number | null
+  >(null);
+  const [precoEspecialAplicado, setPrecoEspecialAplicado] = useState(false);
+  const [carregandoValorAgendamento, setCarregandoValorAgendamento] =
+    useState(false);
 
   useEffect(() => {
-    carregarDados();
-  }, [token]);
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (token) carregarPorToken(token);
+  }, []);
 
   useEffect(() => {
-    setNovoHorario("");
-    carregarHorariosDisponiveis();
-  }, [novoServicoId, novoProfissionalId, novaData]);
+    if (
+      cliente &&
+      servicoAgendamentoId &&
+      profissionalAgendamentoId &&
+      dataAgendamento
+    ) {
+      void carregarHorariosLivres();
+    } else {
+      setHorariosLivres([]);
+      setHorarioAgendamento("");
+    }
+  }, [
+    cliente,
+    servicoAgendamentoId,
+    profissionalAgendamentoId,
+    dataAgendamento,
+  ]);
 
-  async function carregarDados() {
-    setLoading(true);
+  useEffect(() => {
+    if (cliente && servicoAgendamentoId) {
+      void atualizarValorAgendamento();
+    } else {
+      setValorAgendamentoFinal(null);
+      setPrecoEspecialAplicado(false);
+    }
+  }, [cliente, servicoAgendamentoId]);
 
-    const slug = window.location.pathname.split("/")[1];
-    let empresaPorSlug: Empresa | null = null;
+  async function carregarPorToken(token: string) {
+    setCarregando(true);
 
-    if (slug && slug !== "meu-espaco") {
+    const { data } = await supabase
+      .from("agendamentos")
+      .select("cliente_id")
+      .eq("token_cliente", token)
+      .maybeSingle();
+
+    if (data?.cliente_id) {
+      await carregarCliente(data.cliente_id);
+    } else {
+      setMensagem("Link inválido ou expirado.");
+    }
+
+    setCarregando(false);
+  }
+
+  async function entrarPorTelefone() {
+    const tel = limparTelefone(telefone);
+
+    if (tel.length < 10) {
+      setMensagem("Informe um telefone válido.");
+      return;
+    }
+
+    setCarregando(true);
+    setMensagem("");
+
+    const { data, error } = await supabase.from("clientes").select("*");
+
+    if (error) {
+      setMensagem("Erro ao buscar cliente.");
+      setCarregando(false);
+      return;
+    }
+
+    const encontrado = (data || []).find((c) => {
+      const telBanco = limparTelefone(c.telefone || "");
+      return telBanco.endsWith(tel) || tel.endsWith(telBanco);
+    });
+
+    if (!encontrado) {
+      setMensagem("Cliente não encontrado.");
+      setCarregando(false);
+      return;
+    }
+
+    await carregarCliente(encontrado.id);
+    setCarregando(false);
+  }
+
+  async function obterEmpresaPublica() {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("empresa") || params.get("slug");
+
+    if (slug) {
       const { data } = await supabase
         .from("empresas")
-        .select("*")
+        .select("id, nome, slug")
         .eq("slug", slug)
         .maybeSingle();
 
-      empresaPorSlug = data as Empresa | null;
+      if (data?.id) return data;
     }
 
-    if (!token) {
-      if (empresaPorSlug) {
-        setEmpresa(empresaPorSlug);
-        aplicarTema(empresaPorSlug);
-        await carregarServicosEProfissionais(empresaPorSlug.id);
-      }
-      setLoading(false);
-      return;
-    }
-
-    const ag = await buscarAgendamentoPorToken(token);
-
-    if (!ag) {
-      if (empresaPorSlug) {
-        setEmpresa(empresaPorSlug);
-        aplicarTema(empresaPorSlug);
-      }
-      setLoading(false);
-      return;
-    }
-
-    setAgendamentoToken(ag);
-
-    const empresaFinal = await carregarEmpresa(ag.empresa_id, empresaPorSlug);
-    await carregarCliente(ag);
-    await carregarServicosEProfissionais(ag.empresa_id);
-    await carregarModeloAnamnese(ag.empresa_id);
-    await carregarAnamneseCliente(ag);
-    await carregarHistorico(ag);
-
-    const proximo = await buscarProximoPendente(ag);
-    setAgendamento(proximo);
-
-    if (empresaFinal) aplicarTema(empresaFinal);
-    setLoading(false);
-  }
-
-  async function buscarAgendamentoPorToken(tokenBusca: string) {
-    const porTokenCliente = await supabase
-      .from("agendamentos")
-      .select("*")
-      .eq("token_cliente", tokenBusca)
-      .maybeSingle();
-
-    if (porTokenCliente.data) return porTokenCliente.data as Agendamento;
-
-    const porToken = await supabase
-      .from("agendamentos")
-      .select("*")
-      .eq("token", tokenBusca)
-      .maybeSingle();
-
-    return (porToken.data as Agendamento | null) || null;
-  }
-
-  async function carregarEmpresa(empresaId: string, fallback: Empresa | null) {
-    const { data } = await supabase
-      .from("empresas")
-      .select("*")
-      .eq("id", empresaId)
-      .maybeSingle();
-
-    const emp = (data as Empresa | null) || fallback;
-    setEmpresa(emp);
-    return emp;
-  }
-
-  function aplicarTema(emp: Empresa) {
-    const primaria = emp.cor_primaria || "#4b2f3f";
-    const secundaria = emp.cor_secundaria || "#4d6f53";
-    const fundo = emp.cor_fundo || "#f1f9f5";
-
-    document.documentElement.style.setProperty("--cor-primaria", primaria);
-    document.documentElement.style.setProperty("--cor-secundaria", secundaria);
-    document.documentElement.style.setProperty("--cor-fundo", fundo);
-    document.documentElement.style.setProperty("--color-primary", primaria);
-    document.documentElement.style.setProperty("--color-secondary", secundaria);
-    document.documentElement.style.setProperty("--color-background", fundo);
-  }
-
-  async function carregarCliente(ag: Agendamento) {
-    let cli: Cliente | null = null;
-
-    if (ag.cliente_id) {
+    // Quando o Meu Espaço está sendo testado sem slug na URL, usamos a empresa
+    // ativa salva no navegador pelo painel administrativo. Isso evita cadastrar
+    // cliente em uma empresa diferente da que possui os serviços.
+    const empresaSalvaId = localStorage.getItem("empresa_id");
+    if (empresaSalvaId) {
       const { data } = await supabase
-        .from("clientes")
-        .select("*")
-        .eq("id", ag.cliente_id)
+        .from("empresas")
+        .select("id, nome, slug")
+        .eq("id", empresaSalvaId)
         .maybeSingle();
-      cli = data as Cliente | null;
+
+      if (data?.id) return data;
     }
 
-    if (!cli && ag.telefone) {
-      const { data } = await supabase
-        .from("clientes")
-        .select("*")
-        .eq("empresa_id", ag.empresa_id)
-        .eq("telefone", ag.telefone)
-        .maybeSingle();
-      cli = data as Cliente | null;
-    }
-
-    setCliente(cli);
-    setFormCliente({
-      nome: cli?.nome || ag.cliente || "",
-      telefone: cli?.telefone || ag.telefone || "",
-      email: cli?.email || "",
-      cpf: cli?.cpf || "",
-      data_nascimento: cli?.data_nascimento || "",
-      sexo: cli?.sexo || "Não informado",
-      alergias: cli?.alergias || "",
-      preferencias: cli?.preferencias || "",
-      observacoes: cli?.observacoes || "",
-    });
-  }
-
-  async function carregarServicosEProfissionais(empresaId: string) {
-    const [servicosResp, profissionaisResp] = await Promise.all([
-      supabase
-        .from("servicos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nome", { ascending: true }),
-      supabase
-        .from("profissionais")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nome", { ascending: true }),
-    ]);
-
-    setServicos(((servicosResp.data || []) as Servico[]).filter((s) => s.ativo !== false));
-    setProfissionais(((profissionaisResp.data || []) as Profissional[]).filter((p) => p.ativo !== false));
-  }
-
-  async function carregarHistorico(ag: Agendamento) {
-    let query = supabase
-      .from("agendamentos")
-      .select("*")
-      .eq("empresa_id", ag.empresa_id)
-      .order("data", { ascending: false })
-      .order("horario", { ascending: false })
-      .limit(30);
-
-    if (ag.cliente_id) query = query.eq("cliente_id", ag.cliente_id);
-    else query = query.eq("cliente", ag.cliente);
-
-    const { data } = await query;
-    setHistorico((data || []) as Agendamento[]);
-  }
-
-  async function buscarProximoPendente(ag: Agendamento) {
-    if (ehPendenteVisivel(ag)) return ag;
-
-    let query = supabase
-      .from("agendamentos")
-      .select("*")
-      .eq("empresa_id", ag.empresa_id)
-      .gte("data", hojeISO())
-      .in("status", STATUS_PENDENTES)
-      .order("data", { ascending: true })
-      .order("horario", { ascending: true })
-      .limit(20);
-
-    if (ag.cliente_id) query = query.eq("cliente_id", ag.cliente_id);
-    else query = query.eq("cliente", ag.cliente);
-
-    const { data } = await query;
-    const lista = (data || []) as Agendamento[];
-    return lista.find(ehPendenteVisivel) || null;
-  }
-
-  async function carregarModeloAnamnese(empresaId: string) {
-    const { data: modelo } = await supabase
-      .from("anamnese_modelos")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .eq("ativo", true)
+    // Fallback mais seguro: escolhe uma empresa que tenha serviços cadastrados.
+    const { data: servicoComEmpresa } = await supabase
+      .from("servicos")
+      .select("empresa_id")
+      .not("empresa_id", "is", null)
       .limit(1)
       .maybeSingle();
 
-    if (!modelo) {
-      setModeloAnamnese(null);
-      setCamposAnamnese([]);
-      return;
+    if (servicoComEmpresa?.empresa_id) {
+      const { data } = await supabase
+        .from("empresas")
+        .select("id, nome, slug")
+        .eq("id", servicoComEmpresa.empresa_id)
+        .maybeSingle();
+
+      if (data?.id) return data;
     }
 
-    setModeloAnamnese(modelo as ModeloAnamnese);
-
-    const { data: campos } = await supabase
-      .from("anamnese_campos")
-      .select("*")
-      .eq("modelo_id", modelo.id)
-      .order("ordem", { ascending: true });
-
-    setCamposAnamnese(((campos || []) as CampoAnamnese[]).filter((c) => c.ativo !== false));
-  }
-
-  async function carregarAnamneseCliente(ag: Agendamento) {
-    let query = supabase
-      .from("anamneses_clientes")
-      .select("*")
-      .order("preenchido_em", { ascending: false })
+    const { data } = await supabase
+      .from("empresas")
+      .select("id, nome, slug")
       .limit(1);
 
-    if (ag.cliente_id) query = query.eq("cliente_id", ag.cliente_id);
-    else query = query.eq("cliente_nome", ag.cliente);
+    return data?.[0] || null;
+  }
 
-    const { data } = await query.maybeSingle();
-    const anamnese = data as AnamneseCliente | null;
-    setAnamneseSalva(anamnese);
+  async function buscarCepCadastro(cepDigitado: string) {
+    const cepLimpo = cepDigitado.replace(/\D/g, "");
 
-    if (anamnese?.respostas_json) {
-      const carregadas: Record<string, string> = {};
-      Object.entries(anamnese.respostas_json).forEach(([pergunta, resposta]) => {
-        carregadas[pergunta] = String(resposta || "");
-      });
+    setCadastro((atual) => ({ ...atual, cep: cepDigitado }));
+
+    if (cepLimpo.length !== 8) return;
+
+    try {
+      setBuscandoCep(true);
+      setMensagem("");
+
+      const resposta = await fetch(
+        `https://viacep.com.br/ws/${cepLimpo}/json/`,
+      );
+      const dados = await resposta.json();
+
+      if (dados?.erro) {
+        setMensagem("CEP não encontrado. Confira o número digitado.");
+        return;
+      }
+
+      setCadastro((atual) => ({
+        ...atual,
+        cep: cepDigitado,
+        endereco: dados.logradouro || "",
+        bairro: dados.bairro || "",
+        cidade: dados.localidade || "",
+        estado: dados.uf || "",
+      }));
+    } catch (error) {
+      setMensagem(
+        "Não foi possível buscar o CEP agora. Preencha o endereço manualmente.",
+      );
+    } finally {
+      setBuscandoCep(false);
     }
   }
 
-  async function atualizarStatus(status: "confirmado" | "cancelado") {
-    if (!agendamento) return;
+  async function buscarCepEdicao(cepDigitado: string) {
+    const cepLimpo = cepDigitado.replace(/\D/g, "");
 
-    const confirmar = window.confirm(
-      status === "confirmado" ? "Deseja confirmar sua presença?" : "Deseja cancelar este agendamento?"
-    );
-    if (!confirmar) return;
+    setDadosEdicao((atual) => ({ ...atual, cep: cepDigitado }));
 
-    const { error } = await supabase
-      .from("agendamentos")
-      .update({ status })
-      .eq("id", agendamento.id);
+    if (cepLimpo.length !== 8) return;
 
-    if (error) {
-      alert(error.message);
-      return;
+    try {
+      setBuscandoCep(true);
+      setMensagem("");
+
+      const resposta = await fetch(
+        `https://viacep.com.br/ws/${cepLimpo}/json/`,
+      );
+      const dados = await resposta.json();
+
+      if (dados?.erro) {
+        setMensagem("CEP não encontrado. Confira o número digitado.");
+        return;
+      }
+
+      setDadosEdicao((atual) => ({
+        ...atual,
+        cep: cepDigitado,
+        endereco: dados.logradouro || "",
+        bairro: dados.bairro || "",
+        cidade: dados.localidade || "",
+        estado: dados.uf || "",
+      }));
+    } catch (error) {
+      setMensagem(
+        "Não foi possível buscar o CEP agora. Preencha o endereço manualmente.",
+      );
+    } finally {
+      setBuscandoCep(false);
     }
+  }
 
-    const atualizado = { ...agendamento, status };
-    setAgendamento(status === "cancelado" ? null : atualizado);
-    await carregarHistorico(atualizado);
-    alert(status === "confirmado" ? "Presença confirmada!" : "Agendamento cancelado.");
+  function iniciarEdicaoDados() {
+    if (!cliente) return;
+
+    setMensagem("");
+    setDadosEdicao({
+      nome: cliente.nome || "",
+      email: cliente.email || "",
+      data_nascimento: cliente.data_nascimento || "",
+      cep: cliente.cep || "",
+      endereco: cliente.endereco || "",
+      numero: cliente.numero || "",
+      bairro: cliente.bairro || "",
+      cidade: cliente.cidade || "",
+      estado: cliente.estado || "",
+    });
+    setEditandoDados(true);
+  }
+
+  function cancelarEdicaoDados() {
+    setMensagem("");
+    setEditandoDados(false);
   }
 
   async function salvarDadosCliente() {
-    if (!formCliente.nome.trim() || !formCliente.telefone.trim()) {
-      alert("Informe nome e telefone.");
+    if (!cliente?.id) return;
+
+    const nome = dadosEdicao.nome.trim();
+
+    if (!nome) {
+      setMensagem("Informe seu nome completo.");
       return;
     }
 
     setSalvandoDados(true);
+    setMensagem("");
 
-    if (cliente?.id) {
-      const { error } = await supabase
-        .from("clientes")
-        .update({
-          nome: formCliente.nome.trim(),
-          telefone: formCliente.telefone.trim(),
-          email: formCliente.email.trim() || null,
-          cpf: formCliente.cpf.trim() || null,
-          data_nascimento: formCliente.data_nascimento || null,
-          sexo: formCliente.sexo || "Não informado",
-          alergias: formCliente.alergias.trim() || null,
-          preferencias: formCliente.preferencias.trim() || null,
-          observacoes: formCliente.observacoes.trim() || null,
-        })
-        .eq("id", cliente.id);
+    const payload = {
+      nome,
+      email: dadosEdicao.email.trim() || null,
+      data_nascimento: dadosEdicao.data_nascimento || null,
+      cep: dadosEdicao.cep || null,
+      endereco: dadosEdicao.endereco || null,
+      numero: dadosEdicao.numero || null,
+      bairro: dadosEdicao.bairro || null,
+      cidade: dadosEdicao.cidade || null,
+      estado: dadosEdicao.estado || null,
+    };
 
-      if (error) alert(error.message);
-      else alert("Dados atualizados com sucesso.");
-    } else {
-      alert("Cliente não encontrado para atualização.");
+    const { data, error } = await supabase
+      .from("clientes")
+      .update(payload)
+      .eq("id", cliente.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      setMensagem("Erro ao atualizar dados: " + error.message);
+      setSalvandoDados(false);
+      return;
     }
 
+    setCliente(data || { ...cliente, ...payload });
+    setEditandoDados(false);
     setSalvandoDados(false);
+    setMensagem("Dados atualizados com sucesso.");
   }
 
-  async function salvarAnamnese() {
-    const ag = agendamento || agendamentoToken;
-    if (!ag) return;
+  async function cadastrarClienteMeuEspaco() {
+    const nome = cadastro.nome.trim();
+    const telefoneCadastro = limparTelefone(cadastro.telefone);
+    const email = cadastro.email.trim();
 
-    for (const campo of camposAnamnese) {
-      if (campo.obrigatorio && !respostas[campo.id]) {
-        alert(`Preencha o campo obrigatório: ${labelCampo(campo)}`);
-        return;
+    if (!nome) {
+      setMensagem("Informe seu nome completo.");
+      return;
+    }
+
+    if (telefoneCadastro.length < 10) {
+      setMensagem("Informe um telefone válido.");
+      return;
+    }
+
+    setCadastrando(true);
+    setMensagem("");
+
+    const empresa = await obterEmpresaPublica();
+
+    if (!empresa?.id) {
+      setMensagem(
+        "Não foi possível identificar a empresa para concluir o cadastro.",
+      );
+      setCadastrando(false);
+      return;
+    }
+
+    const { data: clientesExistentes, error: erroBusca } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("empresa_id", empresa.id);
+
+    if (erroBusca) {
+      setMensagem("Erro ao validar telefone. Tente novamente.");
+      setCadastrando(false);
+      return;
+    }
+
+    const clienteJaExiste = (clientesExistentes || []).find((c) => {
+      const telBanco = limparTelefone(c.telefone || "");
+      return (
+        telBanco.endsWith(telefoneCadastro) ||
+        telefoneCadastro.endsWith(telBanco)
+      );
+    });
+
+    if (clienteJaExiste?.id) {
+      setMensagem(
+        "Este telefone já possui cadastro. Clique em Já tenho cadastro e entre usando esse número.",
+      );
+      setCadastrando(false);
+      return;
+    }
+
+    const { data: novoCliente, error } = await supabase
+      .from("clientes")
+      .insert({
+        nome,
+        telefone: telefoneCadastro,
+        email: email || null,
+        data_nascimento: cadastro.data_nascimento || null,
+        cep: cadastro.cep || null,
+        endereco: cadastro.endereco || null,
+        numero: cadastro.numero || null,
+        bairro: cadastro.bairro || null,
+        cidade: cadastro.cidade || null,
+        estado: cadastro.estado || null,
+        empresa_id: empresa.id,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      setMensagem("Erro ao cadastrar cliente: " + error.message);
+      setCadastrando(false);
+      return;
+    }
+
+    if (novoCliente?.id) {
+      setTelefone(telefoneCadastro);
+      setCadastro({
+        nome: "",
+        telefone: "",
+        email: "",
+        data_nascimento: "",
+        cep: "",
+        endereco: "",
+        numero: "",
+        bairro: "",
+        cidade: "",
+        estado: "",
+      });
+      setModoCadastro(false);
+      await carregarCliente(novoCliente.id);
+    }
+
+    setCadastrando(false);
+  }
+
+  async function carregarCliente(clienteId: string) {
+    const { data } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    if (!data) {
+      setMensagem("Cliente não encontrado.");
+      return;
+    }
+
+    setCliente(data);
+
+    const ags = await carregarAgendamentos(data.id);
+    await carregarHistorico(data.id);
+
+    const empresaId =
+      data.empresa_id || ags.find((a: any) => a.empresa_id)?.empresa_id || null;
+    await carregarAnamnese(data.id, empresaId);
+    await carregarOpcoesAgendamento(empresaId);
+  }
+
+  async function carregarAgendamentos(clienteId: string) {
+    const { data } = await supabase
+      .from("agendamentos")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .neq("status", "finalizado")
+      .order("data", { ascending: true });
+
+    setAgendamentos(data || []);
+    return data || [];
+  }
+
+  async function carregarHistorico(clienteId: string) {
+    const { data } = await supabase
+      .from("agendamentos")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .eq("status", "finalizado")
+      .order("data", { ascending: false });
+
+    setHistorico(data || []);
+  }
+
+  async function carregarOpcoesAgendamento(empresaId: string | null) {
+    if (!empresaId) return;
+
+    let empresaConsultaId = empresaId;
+
+    let servicosRes = await supabase
+      .from("servicos")
+      .select("*")
+      .eq("empresa_id", empresaConsultaId)
+      .order("nome", { ascending: true });
+
+    // Se o cliente novo foi cadastrado em uma empresa sem serviços, tentamos
+    // localizar a empresa correta a partir do navegador/serviços existentes.
+    if (!servicosRes.error && (servicosRes.data || []).length === 0) {
+      const empresaSalvaId = localStorage.getItem("empresa_id");
+      if (empresaSalvaId && empresaSalvaId !== empresaConsultaId) {
+        const tentativa = await supabase
+          .from("servicos")
+          .select("*")
+          .eq("empresa_id", empresaSalvaId)
+          .order("nome", { ascending: true });
+
+        if (!tentativa.error && (tentativa.data || []).length > 0) {
+          empresaConsultaId = empresaSalvaId;
+          servicosRes = tentativa;
+
+          if (cliente?.id) {
+            await supabase
+              .from("clientes")
+              .update({ empresa_id: empresaConsultaId })
+              .eq("id", cliente.id);
+
+            setCliente((atual: any) =>
+              atual ? { ...atual, empresa_id: empresaConsultaId } : atual,
+            );
+          }
+        }
       }
     }
 
-    if (!aceiteTermo) {
-      alert("Você precisa aceitar o termo.");
+    if (!servicosRes.error && (servicosRes.data || []).length === 0) {
+      const todosServicos = await supabase
+        .from("servicos")
+        .select("*")
+        .order("nome", { ascending: true });
+
+      if (!todosServicos.error && (todosServicos.data || []).length > 0) {
+        empresaConsultaId =
+          todosServicos.data?.[0]?.empresa_id || empresaConsultaId;
+        servicosRes = todosServicos;
+
+        if (cliente?.id && empresaConsultaId) {
+          await supabase
+            .from("clientes")
+            .update({ empresa_id: empresaConsultaId })
+            .eq("id", cliente.id);
+
+          setCliente((atual: any) =>
+            atual ? { ...atual, empresa_id: empresaConsultaId } : atual,
+          );
+        }
+      }
+    }
+
+    const profissionaisRes = await supabase
+      .from("profissionais")
+      .select("*")
+      .eq("empresa_id", empresaConsultaId)
+      .order("nome", { ascending: true });
+
+    if (servicosRes.error) {
+      console.error(
+        "Erro ao carregar serviços no Meu Espaço:",
+        servicosRes.error,
+      );
+      setServicos([]);
+    } else {
+      setServicos((servicosRes.data || []) as ServicoCliente[]);
+    }
+
+    if (profissionaisRes.error) {
+      console.error(
+        "Erro ao carregar profissionais no Meu Espaço:",
+        profissionaisRes.error,
+      );
+      setProfissionais([]);
+    } else {
+      setProfissionais((profissionaisRes.data || []) as ProfissionalCliente[]);
+    }
+  }
+
+  function pegarServicoSelecionado() {
+    return servicos.find((item) => item.id === servicoAgendamentoId) || null;
+  }
+
+  function pegarProfissionalSelecionado() {
+    return (
+      profissionais.find((item) => item.id === profissionalAgendamentoId) ||
+      null
+    );
+  }
+
+  function precoBaseServico(servico: ServicoCliente | null) {
+    const valor = Number(
+      servico?.preco_promocional ?? servico?.preco ?? servico?.valor ?? 0,
+    );
+
+    return Number.isNaN(valor) ? 0 : valor;
+  }
+
+  async function calcularValorServicoCliente(
+    servico: ServicoCliente | null,
+    clienteAtual = cliente,
+  ) {
+    if (!servico) {
+      return { valor: 0, especial: false };
+    }
+
+    const valorPadrao = precoBaseServico(servico);
+
+    if (!clienteAtual?.id) {
+      return { valor: valorPadrao, especial: false };
+    }
+
+    const { data, error } = await supabase
+      .from("cliente_precos_servicos")
+      .select("valor_especial")
+      .eq("cliente_id", clienteAtual.id)
+      .eq("servico_id", servico.id)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Erro ao buscar preço especial do cliente:", error);
+      return { valor: valorPadrao, especial: false };
+    }
+
+    const valorEspecial = Number(data?.valor_especial);
+
+    if (data && !Number.isNaN(valorEspecial) && valorEspecial >= 0) {
+      return { valor: valorEspecial, especial: true };
+    }
+
+    return { valor: valorPadrao, especial: false };
+  }
+
+  async function atualizarValorAgendamento() {
+    const servicoSelecionado = pegarServicoSelecionado();
+
+    if (!servicoSelecionado) {
+      setValorAgendamentoFinal(null);
+      setPrecoEspecialAplicado(false);
+      return;
+    }
+
+    setCarregandoValorAgendamento(true);
+    const resultado = await calcularValorServicoCliente(servicoSelecionado);
+    setValorAgendamentoFinal(resultado.valor);
+    setPrecoEspecialAplicado(resultado.especial);
+    setCarregandoValorAgendamento(false);
+  }
+
+  async function criarLancamentoFinanceiroAgendamento(
+    agendamentoId: string | null,
+    servicoSelecionado: ServicoCliente,
+    profissionalSelecionado: ProfissionalCliente,
+    valorFinal: number,
+    especialAplicado: boolean,
+  ) {
+    const payloadFinanceiro = {
+      empresa_id: cliente.empresa_id,
+      tipo: "entrada",
+      descricao: `Agendamento pelo cliente: ${servicoSelecionado.nome}`,
+      valor: valorFinal,
+      data_lancamento: dataAgendamento,
+      status: "pendente",
+      cliente: cliente.nome || null,
+      profissional: profissionalSelecionado.nome || null,
+      servico: servicoSelecionado.nome || null,
+      agendamento_id: agendamentoId,
+      forma_pagamento: null,
+      data_pagamento: null,
+      observacoes: especialAplicado
+        ? "Preço especial por serviço aplicado automaticamente no Meu Espaço."
+        : "Lançamento gerado automaticamente pelo Meu Espaço.",
+    };
+
+    const { error } = await supabase
+      .from("financeiro")
+      .insert([payloadFinanceiro]);
+
+    if (error) {
+      console.error("Erro ao gerar financeiro do agendamento:", error);
+      alert(
+        "Agendamento criado, mas houve erro ao lançar no financeiro: " +
+          error.message,
+      );
+    }
+  }
+
+  function duracaoTotalServico(servico: ServicoCliente | null) {
+    const duracaoBase = Number(
+      servico?.duracao_padrao_minutos || servico?.duracao || 60,
+    );
+    return duracaoBase + 10;
+  }
+
+  function existeConflitoHorario(
+    horarioInicio: string,
+    duracaoMinutos: number,
+    agendamentosDia: any[],
+  ) {
+    const horarioFim = somarMinutos(horarioInicio, duracaoMinutos);
+
+    return agendamentosDia.some((item) => {
+      if (item.status === "cancelado") return false;
+
+      const inicioExistente = item.horario;
+      const fimExistente = somarMinutos(
+        item.horario,
+        Number(item.duracao_minutos || 60),
+      );
+
+      return horarioInicio < fimExistente && horarioFim > inicioExistente;
+    });
+  }
+
+  async function carregarHorariosLivres() {
+    const servicoSelecionado = pegarServicoSelecionado();
+
+    if (
+      !cliente?.empresa_id ||
+      !servicoSelecionado ||
+      !profissionalAgendamentoId ||
+      !dataAgendamento
+    ) {
+      setHorariosLivres([]);
+      return;
+    }
+
+    setCarregandoHorarios(true);
+    setHorarioAgendamento("");
+
+    const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+
+    const { data: agendamentosDia, error } = await supabase
+      .from("agendamentos")
+      .select("id, data, horario, status, duracao_minutos, profissional_id")
+      .eq("empresa_id", cliente.empresa_id)
+      .eq("profissional_id", profissionalAgendamentoId)
+      .eq("data", dataAgendamento)
+      .neq("status", "cancelado");
+
+    if (error) {
+      console.error("Erro ao buscar horários:", error);
+      alert("Erro ao buscar horários disponíveis: " + error.message);
+      setHorariosLivres([]);
+      setCarregandoHorarios(false);
+      return;
+    }
+
+    const livres = gerarHorariosBase().filter((horario) => {
+      const fimServico = somarMinutos(horario, duracaoTotal);
+
+      if (fimServico > "18:30") return false;
+      return !existeConflitoHorario(
+        horario,
+        duracaoTotal,
+        agendamentosDia || [],
+      );
+    });
+
+    setHorariosLivres(livres);
+    setCarregandoHorarios(false);
+  }
+
+  async function salvarNovoAgendamentoCliente() {
+    if (acessoBloqueadoPorAnamnese) {
+      levarParaAnamneseObrigatoria();
+      alert(
+        assinaturaComplementarObrigatoria
+          ? "Para agendar, primeiro assine sua ficha de anamnese."
+          : "Para agendar, primeiro preencha a ficha de anamnese obrigatória."
+      );
+      return;
+    }
+
+    if (!cliente?.empresa_id) {
+      alert("Empresa não encontrada para este cliente.");
+      return;
+    }
+
+    const servicoSelecionado = pegarServicoSelecionado();
+    const profissionalSelecionado = pegarProfissionalSelecionado();
+
+    if (
+      !servicoSelecionado ||
+      !profissionalSelecionado ||
+      !dataAgendamento ||
+      !horarioAgendamento
+    ) {
+      alert("Escolha serviço, profissional, data e horário.");
+      return;
+    }
+
+    const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+
+    const { data: agendamentosDia, error: erroConsulta } = await supabase
+      .from("agendamentos")
+      .select("id, horario, status, duracao_minutos")
+      .eq("empresa_id", cliente.empresa_id)
+      .eq("profissional_id", profissionalSelecionado.id)
+      .eq("data", dataAgendamento)
+      .neq("status", "cancelado");
+
+    if (erroConsulta) {
+      alert("Erro ao validar horário: " + erroConsulta.message);
+      return;
+    }
+
+    if (
+      existeConflitoHorario(
+        horarioAgendamento,
+        duracaoTotal,
+        agendamentosDia || [],
+      )
+    ) {
+      alert("Já existe um agendamento nesse intervalo. Escolha outro horário.");
+      await carregarHorariosLivres();
+      return;
+    }
+
+    setSalvandoAgendamento(true);
+
+    const valorCalculado =
+      await calcularValorServicoCliente(servicoSelecionado);
+
+    const { data: agendamentoCriado, error } = await supabase
+      .from("agendamentos")
+      .insert([
+        {
+          empresa_id: cliente.empresa_id,
+          cliente: cliente.nome,
+          cliente_id: cliente.id,
+          servico: servicoSelecionado.nome,
+          servico_id: servicoSelecionado.id,
+          profissional: profissionalSelecionado.nome,
+          profissional_id: profissionalSelecionado.id,
+          data: dataAgendamento,
+          horario: horarioAgendamento,
+          duracao_minutos: duracaoTotal,
+          status: "agendado",
+          no_show: false,
+          observacoes: valorCalculado.especial
+            ? `Agendamento realizado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
+            : "Agendamento realizado pelo Meu Espaço",
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (error) {
+      setSalvandoAgendamento(false);
+      alert("Erro ao criar agendamento: " + error.message);
+      return;
+    }
+
+    await criarLancamentoFinanceiroAgendamento(
+      agendamentoCriado?.id || null,
+      servicoSelecionado,
+      profissionalSelecionado,
+      valorCalculado.valor,
+      valorCalculado.especial,
+    );
+
+    setSalvandoAgendamento(false);
+
+    alert("Agendamento criado com sucesso!");
+    setNovoAgendamentoAberto(false);
+    setServicoAgendamentoId("");
+    setProfissionalAgendamentoId("");
+    setDataAgendamento(hojeISO());
+    setHorarioAgendamento("");
+    setValorAgendamentoFinal(null);
+    setPrecoEspecialAplicado(false);
+    await carregarAgendamentos(cliente.id);
+  }
+
+  async function carregarAnamnese(clienteId: string, empresaId: string | null) {
+    let query = supabase
+      .from("anamnese_modelos")
+      .select("*")
+      .eq("ativo", true)
+      .limit(1);
+
+    if (empresaId) {
+      query = query.or(`empresa_id.eq.${empresaId},empresa_id.is.null`);
+    }
+
+    const { data: modeloData } = await query.maybeSingle();
+
+    if (!modeloData) {
+      setModelo(null);
+      setCampos([]);
+      setEmpresaAnamneseId(empresaId || null);
+      setAnamneseObrigatoria(false);
+      setModalAnamneseAberto(false);
+      setAnamnesePreenchida(null);
+      setPdfAnamneseUrl("");
+      setAssinaturaComplementarObrigatoria(false);
+      return;
+    }
+
+    setModelo(modeloData);
+    setEmpresaAnamneseId(modeloData.empresa_id || empresaId || null);
+
+    const { data: camposData } = await supabase
+      .from("anamnese_campos")
+      .select("*")
+      .eq("modelo_id", modeloData.id)
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
+
+    setCampos(camposData || []);
+
+    const { data: preenchida } = await supabase
+      .from("anamneses_clientes")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .eq("preenchido", true)
+      .order("preenchido_em", { ascending: false })
+      .limit(1);
+
+    const fichaPreenchida =
+      preenchida && preenchida.length > 0 ? preenchida[0] : null;
+    setAnamnesePreenchida(fichaPreenchida);
+    setPdfAnamneseUrl(fichaPreenchida?.pdf_url || "");
+
+    const fichaVencida = fichaPreenchida
+      ? anamneseEstaVencida(fichaPreenchida)
+      : false;
+
+    // Regra de produção:
+    // - Sem ficha preenchida: bloqueia e força preenchimento.
+    // - Ficha vencida após 12 meses: bloqueia e força atualização.
+    // - Ficha preenchida sem assinatura: bloqueia e pede apenas assinatura complementar.
+    // A anamnese ativa deve ser obrigatória no Meu Espaço para liberar agendamento, dados e histórico.
+    const precisaPreencher = !fichaPreenchida || fichaVencida;
+    const precisaAssinarFichaAntiga =
+      Boolean(fichaPreenchida) && !fichaVencida && !fichaPreenchida?.assinatura;
+
+    setAnamneseObrigatoria(precisaPreencher);
+    setAssinaturaComplementarObrigatoria(precisaAssinarFichaAntiga);
+    setModoAtualizacaoAnamnese(false);
+
+    if (precisaPreencher || precisaAssinarFichaAntiga) {
+      setRespostas({});
+      setJustificativas({});
+      setAceitaTermo(false);
+      setAssinatura("");
+      setAba("anamnese");
+      setModalAnamneseAberto(true);
+    } else {
+      setModalAnamneseAberto(false);
+      setAba("agenda");
+    }
+  }
+
+  async function carregarRespostasAnamneseAtual() {
+    if (!anamnesePreenchida?.id) {
+      setRespostas({});
+      setJustificativas({});
+      return;
+    }
+
+    const { data } = await supabase
+      .from("anamnese_respostas")
+      .select("campo_id, resposta")
+      .eq("anamnese_id", anamnesePreenchida.id);
+
+    const novasRespostas: Record<string, string> = {};
+    const novasJustificativas: Record<string, string> = {};
+
+    (data || []).forEach((item: any) => {
+      const campo = campos.find((c) => c.id === item?.campo_id);
+      const respostaSalva = String(item?.resposta || "");
+
+      if (
+        campo?.tipo === "sim_nao_justificativa" &&
+        respostaSalva.startsWith("Sim - ")
+      ) {
+        novasRespostas[item.campo_id] = "Sim";
+        novasJustificativas[item.campo_id] = respostaSalva.replace(
+          "Sim - ",
+          "",
+        );
+      } else {
+        novasRespostas[item.campo_id] = respostaSalva;
+      }
+    });
+
+    setRespostas(novasRespostas);
+    setJustificativas(novasJustificativas);
+  }
+
+  async function abrirAtualizacaoAnamnese() {
+    await carregarRespostasAnamneseAtual();
+    setModoAtualizacaoAnamnese(true);
+    setAceitaTermo(false);
+    setAssinatura("");
+    setAba("anamnese");
+  }
+
+  function cancelarAtualizacaoAnamnese() {
+    setModoAtualizacaoAnamnese(false);
+    setRespostas({});
+    setJustificativas({});
+    setAceitaTermo(false);
+    setAssinatura("");
+  }
+
+  function alterarResposta(id: string, valor: string) {
+    setRespostas((prev) => ({ ...prev, [id]: valor }));
+
+    if (valor !== "Sim") {
+      setJustificativas((prev) => ({ ...prev, [id]: "" }));
+    }
+  }
+
+  function alterarJustificativa(id: string, valor: string) {
+    setJustificativas((prev) => ({ ...prev, [id]: valor }));
+  }
+
+  async function buscarIpCliente() {
+    try {
+      const resposta = await fetch("https://api.ipify.org?format=json");
+      const dados = await resposta.json();
+      return dados?.ip || "Não informado";
+    } catch {
+      return "Não informado";
+    }
+  }
+
+  function montarRespostasParaPdf() {
+    const respostasPdf: Record<string, string> = {};
+
+    campos.forEach((campo) => {
+      const resposta = respostas[campo.id] || "";
+      const justificativa = justificativas[campo.id] || "";
+
+      respostasPdf[campo.label] =
+        campo.tipo === "sim_nao_justificativa" && resposta === "Sim"
+          ? `Sim - ${justificativa}`
+          : resposta;
+    });
+
+    return respostasPdf;
+  }
+
+  async function baixarPdfAnamnese() {
+    if (pdfAnamneseUrl) {
+      window.open(pdfAnamneseUrl, "_blank");
+      return;
+    }
+
+    if (!anamnesePreenchida) {
+      alert("PDF ainda não disponível para esta ficha.");
+      return;
+    }
+
+    const { data: respostasSalvas } = await supabase
+      .from("anamnese_respostas")
+      .select("campo_id, resposta")
+      .eq("anamnese_id", anamnesePreenchida.id);
+
+    const respostasPdf: Record<string, string> = {};
+
+    (respostasSalvas || []).forEach((item: any) => {
+      const campo = campos.find((c) => c.id === item?.campo_id);
+      const label = campo?.label || "Campo";
+      respostasPdf[label] = item?.resposta || "";
+    });
+
+    const blob = gerarPdfBlob({
+      empresaNome: cliente?.empresa_nome || "Seu estabelecimento",
+      clienteNome: cliente?.nome || "Cliente",
+      respostas: respostasPdf,
+      assinatura: anamnesePreenchida?.assinatura || "",
+      hash: anamnesePreenchida?.hash || "",
+      ip: anamnesePreenchida?.ip || "",
+      data:
+        anamnesePreenchida?.data_assinatura ||
+        anamnesePreenchida?.preenchido_em ||
+        new Date().toISOString(),
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `anamnese-${cliente?.nome || "cliente"}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function salvarAssinaturaComplementar() {
+    if (!cliente || !anamnesePreenchida) return;
+
+    if (modelo?.termo_responsabilidade && !aceitaTermo) {
+      alert("Aceite o termo de responsabilidade.");
       return;
     }
 
     if (!assinatura) {
-      alert("A assinatura é obrigatória.");
+      alert("Assine a ficha antes de enviar.");
       return;
     }
 
-    setSalvandoAnamnese(true);
+    setSalvando(true);
+
+    const dataAssinatura = new Date().toISOString();
+    const ip = await buscarIpCliente();
+
+    const { data: respostasSalvas } = await supabase
+      .from("anamnese_respostas")
+      .select("campo_id, resposta")
+      .eq("anamnese_id", anamnesePreenchida.id);
+
+    const respostasPdf: Record<string, string> = {};
+
+    (respostasSalvas || []).forEach((item: any) => {
+      const campo = campos.find((c) => c.id === item?.campo_id);
+      const label = campo?.label || "Campo";
+      respostasPdf[label] = item?.resposta || "";
+    });
+
+    const hash = await gerarHash(
+      JSON.stringify({
+        anamnese_id: anamnesePreenchida.id,
+        cliente_id: cliente.id,
+        cliente_nome: cliente.nome,
+        respostas: respostasPdf,
+        assinatura,
+        ip,
+        dataAssinatura,
+      }),
+    );
+
+    let pdfUrl = "";
 
     try {
-      const respostasPdf: Record<string, string> = {};
-      camposAnamnese.forEach((campo) => {
-        respostasPdf[labelCampo(campo)] = respostas[campo.id] || "";
-      });
-
-      const dataAssinatura = new Date().toISOString();
-      const hash = await gerarHash(JSON.stringify(respostasPdf) + assinatura);
-      const ip = "0.0.0.0";
-
-      const { data, error } = await supabase
-        .from("anamneses_clientes")
-        .insert({
-          modelo_id: modeloAnamnese?.id || null,
-          cliente_id: ag.cliente_id || null,
-          cliente_nome: ag.cliente,
-          respostas_json: respostasPdf,
-          aceita_termo: true,
-          preenchido: true,
-          preenchido_em: dataAssinatura,
-          assinatura_base64: assinatura,
-          hash_assinatura: hash,
-          ip_assinatura: ip,
-          assinado_em: dataAssinatura,
-          assinatura_nome: ag.cliente,
-          assinatura_data: dataAssinatura,
-          ip,
-          hash_juridico: hash,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
       const pdfBlob = gerarPdfBlob({
-        empresaNome: nomeEmpresa,
-        clienteNome: ag.cliente,
+        empresaNome: cliente?.empresa_nome || "Seu estabelecimento",
+        clienteNome: cliente?.nome || "Cliente",
         respostas: respostasPdf,
         assinatura,
         hash,
@@ -527,444 +1293,2167 @@ export default function MeuEspaco() {
         data: dataAssinatura,
       });
 
-      const pdfUrl = await uploadPdfAnamnese(pdfBlob, ag.cliente, data.id);
-
-      await supabase
-        .from("anamneses_clientes")
-        .update({ pdf_url: pdfUrl })
-        .eq("id", data.id);
-
-      setAnamneseSalva({
-        id: data.id,
-        preenchido_em: dataAssinatura,
-        assinado_em: dataAssinatura,
-        pdf_url: pdfUrl,
-        respostas_json: respostasPdf,
-      });
-
-      alert("Ficha salva com sucesso!");
-    } catch (error: any) {
-      alert("Erro ao salvar anamnese: " + (error?.message || "erro inesperado"));
-    } finally {
-      setSalvandoAnamnese(false);
+      pdfUrl = await uploadPdfAnamnese(
+        pdfBlob,
+        cliente.nome || "cliente",
+        anamnesePreenchida.id,
+      );
+    } catch (erroPdf) {
+      console.warn(
+        "Assinatura salva, mas houve erro ao gerar/upload do PDF:",
+        erroPdf,
+      );
     }
+
+    const payloadCompleto: Record<string, any> = {
+      assinatura,
+      ip,
+      hash,
+      data_assinatura: dataAssinatura,
+      aceita_termo: Boolean(
+        modelo?.termo_responsabilidade ? aceitaTermo : true,
+      ),
+      pdf_url: pdfUrl || anamnesePreenchida?.pdf_url || null,
+    };
+
+    const payloadSemPdf: Record<string, any> = { ...payloadCompleto };
+    delete payloadSemPdf.pdf_url;
+
+    let error: any = null;
+
+    for (const payload of [payloadCompleto, payloadSemPdf]) {
+      const resultado = await supabase
+        .from("anamneses_clientes")
+        .update(payload)
+        .eq("id", anamnesePreenchida.id);
+
+      error = resultado.error;
+
+      if (!error) break;
+
+      const mensagemErro = String(error?.message || "").toLowerCase();
+      const erroColuna =
+        mensagemErro.includes("column") ||
+        mensagemErro.includes("schema cache") ||
+        mensagemErro.includes("could not find");
+
+      if (!erroColuna) break;
+    }
+
+    if (error) {
+      console.error("Erro ao salvar assinatura:", error);
+      alert("Erro ao salvar assinatura: " + error.message);
+      setSalvando(false);
+      return;
+    }
+
+    alert("Assinatura salva com sucesso!");
+    setAnamnesePreenchida({
+      ...anamnesePreenchida,
+      assinatura,
+      ip,
+      hash,
+      data_assinatura: dataAssinatura,
+      pdf_url: pdfUrl || anamnesePreenchida?.pdf_url || "",
+    });
+    setPdfAnamneseUrl(pdfUrl || anamnesePreenchida?.pdf_url || "");
+    setAssinaturaComplementarObrigatoria(false);
+    setModoAtualizacaoAnamnese(false);
+    setModalAnamneseAberto(false);
+    setAba("agenda");
+    setAceitaTermo(false);
+    setAssinatura("");
+    setSalvando(false);
   }
 
-  function enviarPdfWhatsapp() {
-    const ag = agendamento || agendamentoToken;
-    if (!ag || !anamneseSalva?.pdf_url) return;
+  async function salvarAnamnese() {
+    if (!cliente || !modelo) return;
 
-    abrirWhatsapp(
-      formCliente.telefone || ag.telefone || "",
-      montarMensagemPdfAnamnese({
-        cliente: ag.cliente,
-        empresa: nomeEmpresa,
-        pdfUrl: anamneseSalva.pdf_url,
-      })
+    for (const campo of campos) {
+      const resposta = String(respostas[campo.id] || "").trim();
+      const justificativa = String(justificativas[campo.id] || "").trim();
+
+      if (campo.obrigatorio && !resposta) {
+        alert(`Preencha: ${campo.label}`);
+        return;
+      }
+
+      if (
+        campo.tipo === "sim_nao_justificativa" &&
+        resposta === "Sim" &&
+        !justificativa
+      ) {
+        alert(`Descreva os detalhes de: ${campo.label}`);
+        return;
+      }
+    }
+
+    if (modelo?.termo_responsabilidade && !aceitaTermo) {
+      alert("Aceite o termo de responsabilidade.");
+      return;
+    }
+
+    if (!assinatura) {
+      alert("Assine a ficha antes de enviar.");
+      return;
+    }
+
+    setSalvando(true);
+
+    const dataAssinatura = new Date().toISOString();
+    const ip = await buscarIpCliente();
+    const respostasPdf = montarRespostasParaPdf();
+    const hash = await gerarHash(
+      JSON.stringify({
+        cliente_id: cliente.id,
+        cliente_nome: cliente.nome,
+        modelo_id: modelo.id,
+        respostas: respostasPdf,
+        assinatura,
+        ip,
+        dataAssinatura,
+      }),
+    );
+
+    const payloadCompleto: Record<string, any> = {
+      cliente_id: cliente.id,
+      cliente_nome: cliente.nome,
+      empresa_id: empresaAnamneseId || cliente.empresa_id || null,
+      modelo_id: modelo.id,
+      preenchido: true,
+      aceita_termo: Boolean(
+        modelo?.termo_responsabilidade ? aceitaTermo : true,
+      ),
+      preenchido_em: dataAssinatura,
+      assinatura,
+      ip,
+      hash,
+      data_assinatura: dataAssinatura,
+    };
+
+    const payloadSemModelo: Record<string, any> = { ...payloadCompleto };
+    delete payloadSemModelo.modelo_id;
+
+    const payloadMinimo: Record<string, any> = {
+      cliente_id: cliente.id,
+      cliente_nome: cliente.nome,
+      preenchido: true,
+      aceita_termo: Boolean(
+        modelo?.termo_responsabilidade ? aceitaTermo : true,
+      ),
+      preenchido_em: dataAssinatura,
+      assinatura,
+      ip,
+      hash,
+      data_assinatura: dataAssinatura,
+    };
+
+    let anamnese: any = null;
+    let error: any = null;
+
+    for (const payload of [payloadCompleto, payloadSemModelo, payloadMinimo]) {
+      const resultado = await supabase
+        .from("anamneses_clientes")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      anamnese = resultado.data;
+      error = resultado.error;
+
+      if (!error && anamnese?.id) break;
+
+      const mensagemErro = String(error?.message || "").toLowerCase();
+      const erroColuna =
+        mensagemErro.includes("column") ||
+        mensagemErro.includes("schema cache") ||
+        mensagemErro.includes("could not find");
+
+      if (!erroColuna) break;
+    }
+
+    if (error || !anamnese) {
+      console.error("Erro ao salvar anamnese:", error);
+      alert(
+        "Erro ao salvar anamnese: " +
+          (error?.message || "registro não retornado"),
+      );
+      setSalvando(false);
+      return;
+    }
+
+    const { error: erroRespostas } = await supabase
+      .from("anamnese_respostas")
+      .insert(
+        campos.map((campo) => {
+          const resposta = respostas[campo.id] || "";
+          const justificativa = justificativas[campo.id] || "";
+
+          return {
+            anamnese_id: anamnese.id,
+            campo_id: campo.id,
+            resposta:
+              campo.tipo === "sim_nao_justificativa" && resposta === "Sim"
+                ? `Sim - ${justificativa}`
+                : resposta,
+          };
+        }),
+      );
+
+    if (erroRespostas) {
+      console.error("Erro ao salvar respostas:", erroRespostas);
+      alert(
+        "A ficha foi criada, mas houve erro ao salvar as respostas: " +
+          erroRespostas.message,
+      );
+      setSalvando(false);
+      return;
+    }
+
+    let pdfUrl = "";
+
+    try {
+      const pdfBlob = gerarPdfBlob({
+        empresaNome: cliente?.empresa_nome || "Seu estabelecimento",
+        clienteNome: cliente?.nome || "Cliente",
+        respostas: respostasPdf,
+        assinatura,
+        hash,
+        ip,
+        data: dataAssinatura,
+      });
+
+      pdfUrl = await uploadPdfAnamnese(
+        pdfBlob,
+        cliente.nome || "cliente",
+        anamnese.id,
+      );
+
+      const { error: erroPdfUrl } = await supabase
+        .from("anamneses_clientes")
+        .update({ pdf_url: pdfUrl })
+        .eq("id", anamnese.id);
+
+      if (erroPdfUrl) {
+        console.warn(
+          "PDF gerado, mas não foi possível salvar a URL no banco:",
+          erroPdfUrl,
+        );
+      }
+    } catch (erroPdf) {
+      console.warn(
+        "Anamnese salva, mas houve erro ao gerar/upload do PDF:",
+        erroPdf,
+      );
+    }
+
+    alert("Anamnese salva com sucesso!");
+    setAnamnesePreenchida({
+      id: anamnese.id,
+      assinatura,
+      ip,
+      hash,
+      data_assinatura: dataAssinatura,
+      preenchido_em: dataAssinatura,
+      pdf_url: pdfUrl,
+    });
+    setPdfAnamneseUrl(pdfUrl);
+    setAnamneseObrigatoria(false);
+    setAssinaturaComplementarObrigatoria(false);
+    setModoAtualizacaoAnamnese(false);
+    setModalAnamneseAberto(false);
+    setAba("agenda");
+    setRespostas({});
+    setJustificativas({});
+    setAceitaTermo(false);
+    setAssinatura("");
+    setSalvando(false);
+  }
+
+  function sair() {
+    setCliente(null);
+    setTelefone("");
+    setMensagem("");
+    setAba("agenda");
+    setAnamneseObrigatoria(false);
+    setAssinaturaComplementarObrigatoria(false);
+    setModalAnamneseAberto(false);
+    setAssinatura("");
+    setAnamnesePreenchida(null);
+    setPdfAnamneseUrl("");
+    setNovoAgendamentoAberto(false);
+    setServicoAgendamentoId("");
+    setProfissionalAgendamentoId("");
+    setHorarioAgendamento("");
+    setValorAgendamentoFinal(null);
+    setPrecoEspecialAplicado(false);
+  }
+
+  function renderizarCampo(campo: CampoAnamnese) {
+    const estiloCampo = {
+      width: "100%",
+      padding: 14,
+      borderRadius: 14,
+      border: "1px solid #cbd5e1",
+      marginTop: 8,
+      boxSizing: "border-box" as const,
+    };
+
+    const valor = respostas[campo.id] || "";
+    const opcoes = Array.isArray(campo.opcoes) ? campo.opcoes : [];
+
+    if (campo.tipo === "sim_nao" || campo.tipo === "sim_nao_justificativa") {
+      return (
+        <>
+          <select
+            value={valor}
+            onChange={(e) => alterarResposta(campo.id, e.target.value)}
+            style={estiloCampo}
+          >
+            <option value="">Selecione</option>
+            <option value="Não">Não</option>
+            <option value="Sim">Sim</option>
+          </select>
+
+          {campo.tipo === "sim_nao_justificativa" && valor === "Sim" && (
+            <textarea
+              value={justificativas[campo.id] || ""}
+              onChange={(e) => alterarJustificativa(campo.id, e.target.value)}
+              placeholder={campo.placeholder || "Descreva os detalhes"}
+              style={{
+                ...estiloCampo,
+                minHeight: 90,
+                marginTop: 10,
+                background: "#fff7ed",
+                border: "1px solid #fdba74",
+              }}
+            />
+          )}
+        </>
+      );
+    }
+
+    if (campo.tipo === "textarea") {
+      return (
+        <textarea
+          value={valor}
+          onChange={(e) => alterarResposta(campo.id, e.target.value)}
+          placeholder={campo.placeholder || ""}
+          style={{ ...estiloCampo, minHeight: 100 }}
+        />
+      );
+    }
+
+    if (campo.tipo === "select") {
+      return (
+        <select
+          value={valor}
+          onChange={(e) => alterarResposta(campo.id, e.target.value)}
+          style={estiloCampo}
+        >
+          <option value="">Selecione</option>
+          {opcoes.map((opcao) => (
+            <option key={opcao} value={opcao}>
+              {opcao}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (campo.tipo === "checkbox") {
+      return (
+        <label
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            marginTop: 10,
+            fontWeight: 700,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={valor === "Sim"}
+            onChange={(e) =>
+              alterarResposta(campo.id, e.target.checked ? "Sim" : "Não")
+            }
+          />
+          Sim
+        </label>
+      );
+    }
+
+    return (
+      <input
+        type={
+          campo.tipo === "date" || campo.tipo === "number" ? campo.tipo : "text"
+        }
+        value={valor}
+        onChange={(e) => alterarResposta(campo.id, e.target.value)}
+        placeholder={campo.placeholder || ""}
+        style={estiloCampo}
+      />
     );
   }
 
-  async function carregarHorariosDisponiveis() {
-    if (!novoServicoId || !novoProfissionalId || !novaData) {
-      setHorariosDisponiveis([]);
-      setMensagemHorarios("Selecione serviço, profissional e data para ver horários.");
-      return;
-    }
+  const formularioAssinaturaComplementar = (
+    <div>
+      <h2 style={{ marginTop: 0 }}>Assinatura da anamnese</h2>
 
-    const servico = servicos.find((s) => s.id === novoServicoId);
-    const profissional = profissionais.find((p) => p.id === novoProfissionalId);
-    if (!servico || !profissional || !empresa) return;
+      <div
+        style={{
+          background: "#fff7ed",
+          border: "1px solid #fed7aa",
+          color: "#9a3412",
+          borderRadius: 18,
+          padding: 18,
+          marginBottom: 20,
+          fontWeight: 800,
+        }}
+      >
+        Sua ficha já está preenchida. Para finalizar e liberar o acesso
+        completo, assine o termo abaixo.
+      </div>
 
-    const duracao = duracaoServico(servico);
-    const inicio = horaParaMinutos(profissional.hora_inicio || "08:00");
-    const fim = horaParaMinutos(profissional.hora_fim || "18:00");
-    const passo = 30;
+      {modelo?.termo_responsabilidade && (
+        <div
+          style={{
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 18,
+            padding: 18,
+            marginTop: 20,
+          }}
+        >
+          <strong>Termo de responsabilidade</strong>
+          <p style={{ color: "#475569" }}>{modelo.termo_responsabilidade}</p>
 
-    const { data: ags } = await supabase
-      .from("agendamentos")
-      .select("*")
-      .eq("empresa_id", empresa.id)
-      .eq("data", novaData)
-      .eq("profissional_id", profissional.id);
+          <label style={{ fontWeight: 800 }}>
+            <input
+              type="checkbox"
+              checked={aceitaTermo}
+              onChange={(e) => setAceitaTermo(e.target.checked)}
+            />{" "}
+            Li e aceito o termo.
+          </label>
+        </div>
+      )}
 
-    const ocupados = ((ags || []) as Agendamento[])
-      .filter((a) => normalizarStatus(a.status) !== "cancelado")
-      .map((a) => ({
-        inicio: horaParaMinutos(a.horario),
-        fim: horaParaMinutos(a.horario) + (Number(a.duracao_minutos || a.duracao || 0) || duracao),
-      }));
+      <div
+        style={{
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          borderRadius: 18,
+          padding: 18,
+          marginTop: 20,
+        }}
+      >
+        <strong>Assinatura do cliente *</strong>
+        <p style={{ color: "#475569", marginTop: 6 }}>
+          Assine abaixo para validar a ficha de anamnese já preenchida.
+        </p>
 
-    const disponiveis: string[] = [];
+        <AssinaturaCanvas onChange={setAssinatura} initialValue={assinatura} />
+      </div>
 
-    for (let atual = inicio; atual + duracao <= fim; atual += passo) {
-      const atualFim = atual + duracao;
-      const conflita = ocupados.some((o) => atual < o.fim && atualFim > o.inicio);
-      if (!conflita) disponiveis.push(minutosParaHora(atual));
-    }
-
-    setHorariosDisponiveis(disponiveis);
-    setMensagemHorarios(disponiveis.length ? "" : "Nenhum horário disponível para esse dia.");
-  }
-
-  async function solicitarNovoAgendamento() {
-    const agBase = agendamento || agendamentoToken;
-    if (!agBase || !empresa) return;
-
-    if (!novoServicoId || !novoProfissionalId || !novaData || !novoHorario) {
-      alert("Selecione serviço, profissional, data e horário.");
-      return;
-    }
-
-    const servico = servicos.find((s) => s.id === novoServicoId);
-    const profissional = profissionais.find((p) => p.id === novoProfissionalId);
-    if (!servico || !profissional) return;
-
-    setSalvandoNovo(true);
-
-    const { error } = await supabase.from("agendamentos").insert({
-      empresa_id: empresa.id,
-      cliente_id: agBase.cliente_id || cliente?.id || null,
-      cliente: formCliente.nome || agBase.cliente,
-      telefone: formCliente.telefone || agBase.telefone || null,
-      servico_id: servico.id,
-      servico: servico.nome,
-      profissional_id: profissional.id,
-      profissional: profissional.nome,
-      data: novaData,
-      horario: novoHorario,
-      duracao_minutos: duracaoServico(servico),
-      status: "agendado",
-      observacoes: novaObservacao.trim() || "Solicitado pelo Meu Espaço",
-      token_cliente: crypto.randomUUID(),
-    });
-
-    if (error) alert(error.message);
-    else {
-      alert("Novo agendamento solicitado com sucesso!");
-      setNovoServicoId("");
-      setNovoProfissionalId("");
-      setNovaData("");
-      setNovoHorario("");
-      setNovaObservacao("");
-      await carregarHistorico(agBase);
-    }
-
-    setSalvandoNovo(false);
-  }
-
-  const nomeEmpresa = empresa?.nome_fantasia || empresa?.nome || "Seu estabelecimento";
-
-  const servicoSelecionado = useMemo(
-    () => servicos.find((s) => s.id === novoServicoId),
-    [servicos, novoServicoId]
+      <button
+        type="button"
+        onClick={salvarAssinaturaComplementar}
+        disabled={salvando}
+        style={{
+          marginTop: 22,
+          padding: "15px 22px",
+          borderRadius: 16,
+          border: 0,
+          background: "#282663",
+          color: "#fff",
+          fontWeight: 900,
+          cursor: "pointer",
+        }}
+      >
+        {salvando ? "Salvando..." : "Salvar assinatura"}
+      </button>
+    </div>
   );
 
-  const statusVisivel = agendamento && ehPendenteVisivel(agendamento) ? agendamento.status : "-";
+  const formularioAnamnese = (
+    <div>
+      <h2 style={{ marginTop: 0 }}>{modelo?.titulo || "Anamnese"}</h2>
 
-  if (loading) {
-    return <TelaCentral mensagem="Carregando Meu Espaço..." />;
-  }
+      {modelo?.descricao && (
+        <p style={{ color: "#64748b" }}>{modelo.descricao}</p>
+      )}
 
-  if (!empresa) {
-    return <TelaCentral mensagem="Empresa não encontrada. Verifique se o link está correto." />;
+      {campos.map((campo) => (
+        <div key={campo.id} style={{ marginBottom: 18 }}>
+          <label style={{ fontWeight: 900 }}>
+            {campo.label}
+            {campo.obrigatorio ? " *" : ""}
+          </label>
+
+          {campo.ajuda && (
+            <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13 }}>
+              {campo.ajuda}
+            </p>
+          )}
+
+          {renderizarCampo(campo)}
+        </div>
+      ))}
+
+      {modelo?.termo_responsabilidade && (
+        <div
+          style={{
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 18,
+            padding: 18,
+            marginTop: 20,
+          }}
+        >
+          <strong>Termo de responsabilidade</strong>
+          <p style={{ color: "#475569" }}>{modelo.termo_responsabilidade}</p>
+
+          <label style={{ fontWeight: 800 }}>
+            <input
+              type="checkbox"
+              checked={aceitaTermo}
+              onChange={(e) => setAceitaTermo(e.target.checked)}
+            />{" "}
+            Li e aceito o termo.
+          </label>
+        </div>
+      )}
+
+      <div
+        style={{
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          borderRadius: 18,
+          padding: 18,
+          marginTop: 20,
+        }}
+      >
+        <strong>Assinatura do cliente *</strong>
+        <p style={{ color: "#475569", marginTop: 6 }}>
+          Assine abaixo para validar a ficha de anamnese.
+        </p>
+
+        <AssinaturaCanvas onChange={setAssinatura} initialValue={assinatura} />
+      </div>
+
+      <button
+        type="button"
+        onClick={salvarAnamnese}
+        disabled={salvando}
+        style={{
+          marginTop: 22,
+          padding: "15px 22px",
+          borderRadius: 16,
+          border: 0,
+          background: "#282663",
+          color: "#fff",
+          fontWeight: 900,
+          cursor: "pointer",
+        }}
+      >
+        {salvando
+          ? "Salvando..."
+          : modoAtualizacaoAnamnese
+            ? "Salvar atualização da anamnese"
+            : "Enviar anamnese"}
+      </button>
+
+      {modoAtualizacaoAnamnese && (
+        <button
+          type="button"
+          onClick={cancelarAtualizacaoAnamnese}
+          disabled={salvando}
+          style={{
+            marginTop: 12,
+            marginLeft: 10,
+            padding: "15px 22px",
+            borderRadius: 16,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            color: "#334155",
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Cancelar atualização
+        </button>
+      )}
+    </div>
+  );
+
+  const botaoAba = (valor: string, label: string) => {
+    const abaBloqueada = acessoBloqueadoPorAnamnese && valor !== "anamnese";
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (abaBloqueada) {
+            levarParaAnamneseObrigatoria();
+            return;
+          }
+
+          setAba(valor);
+        }}
+        disabled={abaBloqueada}
+        title={
+          abaBloqueada
+            ? assinaturaComplementarObrigatoria
+              ? "Assine a anamnese para liberar esta área."
+              : "Preencha a anamnese para liberar esta área."
+            : undefined
+        }
+        style={{
+          border: aba === valor ? "2px solid #282663" : "1px solid #cbd5e1",
+          background: aba === valor ? "#282663" : "#fff",
+          color: aba === valor ? "#fff" : "#282663",
+          padding: "13px 18px",
+          borderRadius: 16,
+          fontWeight: 900,
+          cursor: abaBloqueada ? "not-allowed" : "pointer",
+          opacity: abaBloqueada ? 0.55 : 1,
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  if (!cliente) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "linear-gradient(135deg, #eef3fb, #dbe7f7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            background: "#fff",
+            borderRadius: 28,
+            padding: 36,
+            boxShadow: "0 24px 60px rgba(15,23,42,.16)",
+            maxHeight: "calc(100vh - 48px)",
+            overflowY: "auto",
+          }}
+        >
+          <h1 style={{ margin: 0, color: "#0f172a", fontSize: 30 }}>
+            Meu Espaço
+          </h1>
+
+          <p style={{ color: "#64748b", lineHeight: 1.5 }}>
+            Acesse seus agendamentos, dados pessoais, anamnese e histórico.
+          </p>
+
+          {!modoCadastro ? (
+            <>
+              <label style={{ fontWeight: 800 }}>Telefone</label>
+
+              <input
+                value={telefone}
+                onChange={(e) => setTelefone(e.target.value)}
+                placeholder="Ex: 11999999999"
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              {mensagem && (
+                <div
+                  style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    borderRadius: 14,
+                    padding: 12,
+                    marginTop: 14,
+                  }}
+                >
+                  {mensagem}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={entrarPorTelefone}
+                disabled={carregando}
+                style={{
+                  width: "100%",
+                  marginTop: 18,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: 0,
+                  background: "#282663",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 16,
+                  cursor: "pointer",
+                }}
+              >
+                {carregando ? "Entrando..." : "Entrar"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMensagem("");
+                  setCadastro((atual) => ({ ...atual, telefone }));
+                  setModoCadastro(true);
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 12,
+                  padding: 14,
+                  borderRadius: 16,
+                  border: "1px solid #282663",
+                  background: "#fff",
+                  color: "#282663",
+                  fontWeight: 900,
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                Primeiro acesso? Cadastre-se
+              </button>
+            </>
+          ) : (
+            <>
+              <h2
+                style={{ margin: "18px 0 8px", color: "#0f172a", fontSize: 22 }}
+              >
+                Criar cadastro
+              </h2>
+
+              <p style={{ color: "#64748b", lineHeight: 1.5, marginTop: 0 }}>
+                Preencha seus dados para acessar o Meu Espaço e realizar
+                agendamentos.
+              </p>
+
+              <label style={{ fontWeight: 800 }}>Nome completo *</label>
+              <input
+                value={cadastro.nome}
+                onChange={(e) =>
+                  setCadastro({ ...cadastro, nome: e.target.value })
+                }
+                placeholder="Seu nome completo"
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 12,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <label style={{ fontWeight: 800 }}>Telefone *</label>
+              <input
+                value={cadastro.telefone}
+                onChange={(e) =>
+                  setCadastro({ ...cadastro, telefone: e.target.value })
+                }
+                placeholder="Ex: 11999999999"
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 12,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <label style={{ fontWeight: 800 }}>E-mail</label>
+              <input
+                value={cadastro.email}
+                onChange={(e) =>
+                  setCadastro({ ...cadastro, email: e.target.value })
+                }
+                placeholder="seuemail@exemplo.com"
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 12,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <label style={{ fontWeight: 800 }}>Data de nascimento</label>
+              <input
+                type="date"
+                value={cadastro.data_nascimento}
+                onChange={(e) =>
+                  setCadastro({ ...cadastro, data_nascimento: e.target.value })
+                }
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 12,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <label style={{ fontWeight: 800 }}>CEP</label>
+              <input
+                value={cadastro.cep}
+                onChange={(e) => buscarCepCadastro(e.target.value)}
+                placeholder="Ex: 05888160"
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 8,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              {buscandoCep && (
+                <p
+                  style={{ color: "#64748b", margin: "0 0 12px", fontSize: 13 }}
+                >
+                  Buscando endereço pelo CEP...
+                </p>
+              )}
+
+              <label style={{ fontWeight: 800 }}>Endereço</label>
+              <input
+                value={cadastro.endereco}
+                onChange={(e) =>
+                  setCadastro({ ...cadastro, endereco: e.target.value })
+                }
+                placeholder="Rua, avenida..."
+                style={{
+                  width: "100%",
+                  padding: "15px 16px",
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  marginTop: 8,
+                  marginBottom: 12,
+                  fontSize: 16,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <label style={{ fontWeight: 800 }}>Número</label>
+                  <input
+                    value={cadastro.numero}
+                    onChange={(e) =>
+                      setCadastro({ ...cadastro, numero: e.target.value })
+                    }
+                    placeholder="Número"
+                    style={{
+                      width: "100%",
+                      padding: "15px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #cbd5e1",
+                      marginTop: 8,
+                      marginBottom: 12,
+                      fontSize: 16,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontWeight: 800 }}>Bairro</label>
+                  <input
+                    value={cadastro.bairro}
+                    onChange={(e) =>
+                      setCadastro({ ...cadastro, bairro: e.target.value })
+                    }
+                    placeholder="Bairro"
+                    style={{
+                      width: "100%",
+                      padding: "15px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #cbd5e1",
+                      marginTop: 8,
+                      marginBottom: 12,
+                      fontSize: 16,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 110px",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <label style={{ fontWeight: 800 }}>Cidade</label>
+                  <input
+                    value={cadastro.cidade}
+                    onChange={(e) =>
+                      setCadastro({ ...cadastro, cidade: e.target.value })
+                    }
+                    placeholder="Cidade"
+                    style={{
+                      width: "100%",
+                      padding: "15px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #cbd5e1",
+                      marginTop: 8,
+                      marginBottom: 12,
+                      fontSize: 16,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontWeight: 800 }}>UF</label>
+                  <input
+                    value={cadastro.estado}
+                    onChange={(e) =>
+                      setCadastro({
+                        ...cadastro,
+                        estado: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="SP"
+                    maxLength={2}
+                    style={{
+                      width: "100%",
+                      padding: "15px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #cbd5e1",
+                      marginTop: 8,
+                      marginBottom: 12,
+                      fontSize: 16,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {mensagem && (
+                <div
+                  style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    borderRadius: 14,
+                    padding: 12,
+                    marginTop: 14,
+                  }}
+                >
+                  {mensagem}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={cadastrarClienteMeuEspaco}
+                disabled={cadastrando}
+                style={{
+                  width: "100%",
+                  marginTop: 18,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: 0,
+                  background: "#282663",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 16,
+                  cursor: "pointer",
+                }}
+              >
+                {cadastrando ? "Cadastrando..." : "Cadastrar e entrar"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMensagem("");
+                  setModoCadastro(false);
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 12,
+                  padding: 14,
+                  borderRadius: 16,
+                  border: "1px solid #cbd5e1",
+                  background: "#fff",
+                  color: "#334155",
+                  fontWeight: 900,
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                Já tenho cadastro
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen px-4 py-8" style={{ backgroundColor: "var(--cor-fundo)" }}>
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="rounded-[2rem] p-8 text-white shadow-lg" style={{ backgroundColor: "var(--cor-secundaria)" }}>
-          <div className="flex items-center gap-4">
-            {empresa.logo_url && (
-              <img src={empresa.logo_url} alt={nomeEmpresa} className="h-16 w-16 rounded-2xl object-cover bg-white" />
-            )}
-            <div>
-              <p className="text-sm font-bold text-white/80">Meu Espaço</p>
-              <h1 className="mt-2 text-4xl font-extrabold">{nomeEmpresa}</h1>
-              {(empresa.telefone || empresa.endereco) && (
-                <p className="mt-3 text-white/85">
-                  {empresa.telefone || ""}{empresa.telefone && empresa.endereco ? " • " : ""}{empresa.endereco || ""}
-                </p>
-              )}
-            </div>
+    <div style={{ minHeight: "100vh", background: "#eef3fb", padding: 28 }}>
+      <div style={{ maxWidth: 1160, margin: "0 auto" }}>
+        <div
+          style={{
+            background: "#282663",
+            color: "#fff",
+            borderRadius: 24,
+            padding: 24,
+            marginBottom: 24,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, opacity: 0.8, fontWeight: 700 }}>
+              Meu Espaço
+            </p>
+            <h1 style={{ margin: "4px 0 0", fontSize: 30 }}>
+              Olá, {primeiroNome(cliente.nome)}
+            </h1>
           </div>
+
+          <button
+            type="button"
+            onClick={sair}
+            style={{
+              background: "#fff",
+              color: "#282663",
+              border: 0,
+              borderRadius: 14,
+              padding: "12px 16px",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+          >
+            Sair
+          </button>
         </div>
 
-        <div>
-          <p className="text-sm font-extrabold uppercase" style={{ color: "var(--cor-primaria)" }}>Área do cliente</p>
-          <h2 className="text-4xl font-extrabold text-slate-950">Olá, {formCliente.nome || agendamentoToken?.cliente || "cliente"}</h2>
-          <p className="mt-2 text-slate-600">Acompanhe seus próximos horários, atualize seus dados, preencha a ficha e consulte o histórico.</p>
-        </div>
-
-        <div className="bg-white rounded-[2rem] p-2 shadow ring-1 ring-slate-200 flex flex-wrap gap-2">
-          <Tab ativo={aba === "agendamento"} onClick={() => setAba("agendamento")}>Meu agendamento</Tab>
-          <Tab ativo={aba === "historico"} onClick={() => setAba("historico")}>Histórico</Tab>
-          <Tab ativo={aba === "anamnese"} onClick={() => setAba("anamnese")}>Ficha de anamnese</Tab>
-          <Tab ativo={aba === "dados"} onClick={() => setAba("dados")}>Meus dados</Tab>
-          <Tab ativo={aba === "combos"} onClick={() => setAba("combos")}>Meus combos</Tab>
-          <Tab ativo={aba === "novo"} onClick={() => setAba("novo")}>Novo agendamento</Tab>
-        </div>
-
-        {aba === "agendamento" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <Card><p className="text-sm font-bold text-slate-500">Status</p><p className="mt-3 text-3xl font-extrabold text-slate-950">{statusVisivel}</p></Card>
-              <Card><p className="text-sm font-bold text-slate-500">Data</p><p className="mt-3 text-3xl font-extrabold text-slate-950">{formatarData(agendamento?.data)}</p></Card>
-              <Card><p className="text-sm font-bold text-slate-500">Horário</p><p className="mt-3 text-3xl font-extrabold text-slate-950">{agendamento?.horario || "-"}</p></Card>
-            </div>
-
-            <Card>
-              <h3 className="text-2xl font-extrabold text-slate-950">Próximo agendamento</h3>
-              <p className="text-slate-500 mt-1">Somente agendamentos pendentes ou futuros aparecem aqui. Os já ocorridos ficam no histórico.</p>
-
-              {agendamento ? (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <Info label="Serviço" value={agendamento.servico || "-"} />
-                    <Info label="Profissional" value={agendamento.profissional || "-"} />
-                    <Info label="Cliente" value={agendamento.cliente || "-"} />
-                    <Info label="Telefone" value={agendamento.telefone || "-"} />
-                    <Info label="Observações" value={agendamento.observacoes || "-"} />
-                  </div>
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    {agendamento.status !== "confirmado" && (
-                      <button onClick={() => atualizarStatus("confirmado")} className="rounded-2xl px-6 py-3 text-white font-extrabold shadow hover:opacity-90" style={{ backgroundColor: "var(--cor-primaria)" }}>Confirmar presença</button>
-                    )}
-                    <button onClick={() => atualizarStatus("cancelado")} className="rounded-2xl px-6 py-3 bg-white border border-slate-300 text-slate-700 font-extrabold hover:bg-slate-50">Cancelar agendamento</button>
-                  </div>
-                </>
-              ) : (
-                <div className="mt-6 rounded-2xl bg-slate-50 p-5 text-slate-600 font-semibold">Nenhum agendamento pendente encontrado.</div>
-              )}
-            </Card>
+        {anamneseObrigatoria || assinaturaComplementarObrigatoria ? (
+          <div
+            style={{
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              padding: 18,
+              borderRadius: 20,
+              marginBottom: 20,
+              fontWeight: 800,
+            }}
+          >
+            {assinaturaComplementarObrigatoria
+              ? "Sua ficha já está preenchida. Assine para liberar o acesso completo."
+              : "Sua anamnese está pendente. Preencha para liberar o acesso completo."}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              marginBottom: 22,
+              flexWrap: "wrap",
+            }}
+          >
+            {botaoAba("agenda", "Agendamentos")}
+            {botaoAba("dados", "Dados pessoais")}
+            {botaoAba("anamnese", "Anamnese")}
+            {botaoAba("historico", "Histórico")}
           </div>
         )}
 
-        {aba === "historico" && (
-          <Card>
-            <h3 className="text-2xl font-extrabold">Histórico</h3>
-            <p className="text-slate-500 mt-1">Agendamentos anteriores, cancelados e finalizados permanecem aqui.</p>
-            <div className="mt-6 space-y-3">
-              {historico.length === 0 ? <p className="text-slate-500">Nenhum histórico encontrado.</p> : historico.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-wrap justify-between gap-3">
-                  <div>
-                    <p className="font-extrabold text-slate-950">{item.servico || "Serviço"}</p>
-                    <p className="text-sm text-slate-500">{formatarData(item.data)} às {item.horario} {item.profissional ? `• ${item.profissional}` : ""}</p>
-                  </div>
-                  <span className="rounded-full bg-white px-4 py-2 text-sm font-extrabold text-slate-700">{item.status || "-"}</span>
+        {(anamneseObrigatoria || assinaturaComplementarObrigatoria) &&
+          modalAnamneseAberto && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(15,23,42,.65)",
+                zIndex: 50,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 18,
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 780,
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                  background: "#fff",
+                  borderRadius: 28,
+                  padding: 28,
+                  boxShadow: "0 30px 80px rgba(0,0,0,.28)",
+                }}
+              >
+                <div
+                  style={{
+                    background: "#fff7ed",
+                    border: "1px solid #fed7aa",
+                    color: "#9a3412",
+                    padding: 14,
+                    borderRadius: 16,
+                    marginBottom: 20,
+                    fontWeight: 800,
+                  }}
+                >
+                  {assinaturaComplementarObrigatoria
+                    ? "Para continuar no Meu Espaço, assine a ficha já preenchida."
+                    : "Para continuar no Meu Espaço, preencha a ficha obrigatória abaixo."}
                 </div>
-              ))}
+
+                {assinaturaComplementarObrigatoria
+                  ? formularioAssinaturaComplementar
+                  : formularioAnamnese}
+              </div>
             </div>
-          </Card>
-        )}
+          )}
 
-        {aba === "anamnese" && (
-          <Card>
-            <h3 className="text-2xl font-extrabold">{modeloAnamnese?.titulo || "Ficha de anamnese"}</h3>
-            <p className="text-slate-500 mt-1">{modeloAnamnese?.descricao || "Preencha suas informações para um atendimento mais seguro."}</p>
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 26,
+            padding: 28,
+            boxShadow: "0 14px 35px rgba(15,23,42,.08)",
+          }}
+        >
+          {aba === "agenda" &&
+            !anamneseObrigatoria &&
+            !assinaturaComplementarObrigatoria && (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "center",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: 0 }}>Agendamentos</h2>
+                    <p style={{ color: "#64748b", margin: "6px 0 0" }}>
+                      Escolha um serviço, profissional e um horário livre para
+                      agendar.
+                    </p>
+                  </div>
 
-            {anamneseSalva && (
-              <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-emerald-700 font-semibold">
-                Ficha salva em {new Date(anamneseSalva.preenchido_em || anamneseSalva.assinado_em || "").toLocaleString("pt-BR")}.
-                {anamneseSalva.pdf_url && <a href={anamneseSalva.pdf_url} target="_blank" rel="noreferrer" className="ml-2 underline">Abrir PDF</a>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (acessoBloqueadoPorAnamnese) {
+                        levarParaAnamneseObrigatoria();
+                        return;
+                      }
+
+                      setNovoAgendamentoAberto((valor) => !valor);
+                    }}
+                    disabled={acessoBloqueadoPorAnamnese}
+                    style={{
+                      padding: "13px 18px",
+                      borderRadius: 14,
+                      border: 0,
+                      background: "#282663",
+                      color: "#fff",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {novoAgendamentoAberto ? "Fechar" : "+ Novo agendamento"}
+                  </button>
+                </div>
+
+                {novoAgendamentoAberto && (
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 22,
+                      padding: 20,
+                      marginBottom: 22,
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0 }}>Novo agendamento</h3>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 14,
+                      }}
+                    >
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Serviço *</label>
+                        <select
+                          value={servicoAgendamentoId}
+                          onChange={(e) => {
+                            setServicoAgendamentoId(e.target.value);
+                            setHorarioAgendamento("");
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                          }}
+                        >
+                          <option value="">Selecione</option>
+                          {servicos.map((servico) => (
+                            <option key={servico.id} value={servico.id}>
+                              {servico.nome} -{" "}
+                              {formatarMoeda(precoBaseServico(servico))} -{" "}
+                              {servico.duracao_padrao_minutos ||
+                                servico.duracao ||
+                                60}{" "}
+                              min
+                            </option>
+                          ))}
+                        </select>
+
+                        {servicos.length === 0 && (
+                          <p
+                            style={{
+                              marginTop: 8,
+                              color: "#b45309",
+                              fontWeight: 800,
+                              fontSize: 12,
+                            }}
+                          >
+                            Nenhum serviço disponível para esta empresa. Verifique
+                            o cadastro de serviços ou as permissões/RLS em produção.
+                          </p>
+                        )}
+
+                        {servicoAgendamentoId && (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              background: precoEspecialAplicado
+                                ? "#dcfce7"
+                                : "#fff",
+                              border: precoEspecialAplicado
+                                ? "1px solid #bbf7d0"
+                                : "1px solid #e2e8f0",
+                              color: precoEspecialAplicado
+                                ? "#166534"
+                                : "#0f172a",
+                              borderRadius: 14,
+                              padding: 12,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {carregandoValorAgendamento
+                              ? "Calculando valor..."
+                              : `Valor: ${formatarMoeda(valorAgendamentoFinal)}`}
+                            {precoEspecialAplicado && (
+                              <span style={{ display: "block", fontSize: 12 }}>
+                                Preço especial deste cliente aplicado.
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>
+                          Profissional *
+                        </label>
+                        <select
+                          value={profissionalAgendamentoId}
+                          onChange={(e) =>
+                            setProfissionalAgendamentoId(e.target.value)
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                          }}
+                        >
+                          <option value="">Selecione</option>
+                          {profissionais.map((profissional) => (
+                            <option
+                              key={profissional.id}
+                              value={profissional.id}
+                            >
+                              {profissional.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Data *</label>
+                        <input
+                          type="date"
+                          value={dataAgendamento}
+                          min={hojeISO()}
+                          onChange={(e) => setDataAgendamento(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 18 }}>
+                      <label style={{ fontWeight: 800 }}>
+                        Horários livres *
+                      </label>
+
+                      {carregandoHorarios && (
+                        <p style={{ color: "#64748b" }}>
+                          Buscando horários livres...
+                        </p>
+                      )}
+
+                      {!carregandoHorarios &&
+                        servicoAgendamentoId &&
+                        profissionalAgendamentoId &&
+                        dataAgendamento &&
+                        horariosLivres.length === 0 && (
+                          <div
+                            style={{
+                              background: "#fee2e2",
+                              color: "#991b1b",
+                              border: "1px solid #fecaca",
+                              borderRadius: 14,
+                              padding: 12,
+                              marginTop: 10,
+                              fontWeight: 800,
+                            }}
+                          >
+                            Não há horários livres para esse serviço nessa data.
+                            Escolha outra data ou outro profissional.
+                          </div>
+                        )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
+                          marginTop: 10,
+                        }}
+                      >
+                        {horariosLivres.map((horario) => (
+                          <button
+                            key={horario}
+                            type="button"
+                            onClick={() => setHorarioAgendamento(horario)}
+                            style={{
+                              padding: "11px 14px",
+                              borderRadius: 14,
+                              border:
+                                horarioAgendamento === horario
+                                  ? "2px solid #282663"
+                                  : "1px solid #cbd5e1",
+                              background:
+                                horarioAgendamento === horario
+                                  ? "#282663"
+                                  : "#fff",
+                              color:
+                                horarioAgendamento === horario
+                                  ? "#fff"
+                                  : "#0f172a",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {horario}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {servicoAgendamentoId && horarioAgendamento && (
+                      <div
+                        style={{
+                          marginTop: 18,
+                          background: "#f0f9ff",
+                          border: "1px solid #bae6fd",
+                          color: "#075985",
+                          borderRadius: 16,
+                          padding: 14,
+                          fontWeight: 800,
+                        }}
+                      >
+                        Resumo: {pegarServicoSelecionado()?.nome} em{" "}
+                        {formatarData(dataAgendamento)} às {horarioAgendamento}.
+                        <br />
+                        Valor do lançamento financeiro:{" "}
+                        {formatarMoeda(valorAgendamentoFinal)}
+                        {precoEspecialAplicado
+                          ? " (preço especial aplicado)"
+                          : ""}
+                        .
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={salvarNovoAgendamentoCliente}
+                      disabled={salvandoAgendamento}
+                      style={{
+                        marginTop: 20,
+                        padding: "14px 20px",
+                        borderRadius: 16,
+                        border: 0,
+                        background: "#282663",
+                        color: "#fff",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {salvandoAgendamento
+                        ? "Agendando..."
+                        : "Confirmar agendamento"}
+                    </button>
+                  </div>
+                )}
+
+                {agendamentos.length === 0 && (
+                  <p style={{ color: "#64748b" }}>
+                    Nenhum agendamento em aberto.
+                  </p>
+                )}
+
+                {agendamentos.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 18,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <strong>{a.servico || a.servico_nome}</strong>
+                    <div>
+                      {formatarData(a.data)} às {a.horario}
+                    </div>
+                    <div>Status: {a.status}</div>
+                  </div>
+                ))}
               </div>
             )}
 
-            <div className="mt-6 space-y-4">
-              {camposAnamnese.length === 0 ? (
-                <div className="rounded-2xl bg-orange-50 p-5 text-orange-700 font-bold">Nenhuma pergunta de anamnese configurada para esta empresa.</div>
-              ) : camposAnamnese.map((campo) => (
-                <Campo key={campo.id} campo={campo} valor={respostas[campo.id] || ""} onChange={(v) => setRespostas((atual) => ({ ...atual, [campo.id]: v }))} />
-              ))}
-
-              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                <p>{modeloAnamnese?.termo_responsabilidade || "Declaro que as informações fornecidas são verdadeiras."}</p>
-                <label className="mt-3 flex items-center gap-2 font-bold"><input type="checkbox" checked={aceiteTermo} onChange={(e) => setAceiteTermo(e.target.checked)} /> Aceito o termo</label>
-              </div>
-
+          {aba === "dados" &&
+            !anamneseObrigatoria &&
+            !assinaturaComplementarObrigatoria && (
               <div>
-                <p className="mb-2 text-sm font-extrabold text-slate-700">Assinatura</p>
-                <div className="rounded-2xl border border-slate-200 bg-white p-3"><AssinaturaCanvas onChange={setAssinatura} /></div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 18,
+                    alignItems: "center",
+                    marginBottom: 22,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", gap: 16, alignItems: "center" }}
+                  >
+                    <div
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 22,
+                        background: "linear-gradient(135deg, #282663, #5b5bd6)",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 26,
+                        fontWeight: 900,
+                        boxShadow: "0 14px 30px rgba(40,38,99,.22)",
+                      }}
+                    >
+                      {String(cliente.nome || "C")
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </div>
+
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#64748b",
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          fontSize: 12,
+                          letterSpacing: 0.6,
+                        }}
+                      >
+                        Perfil do cliente
+                      </p>
+                      <h2 style={{ margin: "4px 0 0", color: "#0f172a" }}>
+                        {cliente.nome}
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        background:
+                          anamnesePreenchida &&
+                          !anamneseEstaVencida(anamnesePreenchida)
+                            ? "#dcfce7"
+                            : "#fff7ed",
+                        color:
+                          anamnesePreenchida &&
+                          !anamneseEstaVencida(anamnesePreenchida)
+                            ? "#166534"
+                            : "#9a3412",
+                        border:
+                          anamnesePreenchida &&
+                          !anamneseEstaVencida(anamnesePreenchida)
+                            ? "1px solid #bbf7d0"
+                            : "1px solid #fed7aa",
+                        borderRadius: 999,
+                        padding: "10px 14px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      {anamnesePreenchida &&
+                      !anamneseEstaVencida(anamnesePreenchida)
+                        ? "Anamnese em dia"
+                        : "Anamnese pendente"}
+                    </div>
+
+                    {!editandoDados && (
+                      <button
+                        type="button"
+                        onClick={iniciarEdicaoDados}
+                        style={{
+                          padding: "12px 16px",
+                          borderRadius: 14,
+                          border: "1px solid #282663",
+                          background: "#fff",
+                          color: "#282663",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Editar dados
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {mensagem && (
+                  <div
+                    style={{
+                      background: mensagem.includes("sucesso") ? "#dcfce7" : "#fee2e2",
+                      color: mensagem.includes("sucesso") ? "#166534" : "#991b1b",
+                      borderRadius: 14,
+                      padding: 12,
+                      marginBottom: 16,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {mensagem}
+                  </div>
+                )}
+
+                {!editandoDados ? (
+                  <>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 14,
+                      }}
+                    >
+                      {[
+                        ["Nome completo", cliente.nome || "-"],
+                        ["Telefone", cliente.telefone || "-"],
+                        ["E-mail", cliente.email || "Não informado"],
+                        ["Nascimento", formatarData(cliente.data_nascimento)],
+                        ["CEP", cliente.cep || "Não informado"],
+                        ["Endereço", cliente.endereco || "Não informado"],
+                        ["Número", cliente.numero || "-"],
+                        ["Bairro", cliente.bairro || "-"],
+                        [
+                          "Cidade/UF",
+                          `${cliente.cidade || "-"}/${cliente.estado || "-"}`,
+                        ],
+                      ].map(([titulo, valor]) => (
+                        <div
+                          key={titulo}
+                          style={{
+                            background: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 20,
+                            padding: 18,
+                          }}
+                        >
+                          <p
+                            style={{
+                              margin: "0 0 6px",
+                              color: "#64748b",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              textTransform: "uppercase",
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            {titulo}
+                          </p>
+                          <strong style={{ color: "#0f172a", fontSize: 16 }}>
+                            {valor}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 18,
+                        background: "#eef2ff",
+                        border: "1px solid #c7d2fe",
+                        color: "#3730a3",
+                        borderRadius: 20,
+                        padding: 18,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Você pode atualizar seus dados cadastrais por aqui. O telefone não fica editável porque ele é usado como login do Meu Espaço.
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 22,
+                      padding: 20,
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0 }}>Editar dados pessoais</h3>
+                    <p style={{ color: "#64748b", marginTop: -6 }}>
+                      Atualize seus dados. Para trocar o telefone de acesso, fale com o estabelecimento.
+                    </p>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                        gap: 14,
+                      }}
+                    >
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Nome completo *</label>
+                        <input
+                          value={dadosEdicao.nome}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, nome: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Telefone/login</label>
+                        <input
+                          value={cliente.telefone || ""}
+                          disabled
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            background: "#e2e8f0",
+                            color: "#475569",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>E-mail</label>
+                        <input
+                          value={dadosEdicao.email}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, email: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Data de nascimento</label>
+                        <input
+                          type="date"
+                          value={dadosEdicao.data_nascimento || ""}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, data_nascimento: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>CEP</label>
+                        <input
+                          value={dadosEdicao.cep}
+                          onChange={(e) => buscarCepEdicao(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                        {buscandoCep && (
+                          <p style={{ color: "#64748b", margin: "6px 0 0", fontSize: 13 }}>
+                            Buscando endereço pelo CEP...
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Endereço</label>
+                        <input
+                          value={dadosEdicao.endereco}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, endereco: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Número</label>
+                        <input
+                          value={dadosEdicao.numero}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, numero: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Bairro</label>
+                        <input
+                          value={dadosEdicao.bairro}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, bairro: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>Cidade</label>
+                        <input
+                          value={dadosEdicao.cidade}
+                          onChange={(e) =>
+                            setDadosEdicao({ ...dadosEdicao, cidade: e.target.value })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontWeight: 800 }}>UF</label>
+                        <input
+                          value={dadosEdicao.estado}
+                          maxLength={2}
+                          onChange={(e) =>
+                            setDadosEdicao({
+                              ...dadosEdicao,
+                              estado: e.target.value.toUpperCase(),
+                            })
+                          }
+                          style={{
+                            width: "100%",
+                            padding: 14,
+                            borderRadius: 14,
+                            border: "1px solid #cbd5e1",
+                            marginTop: 8,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={salvarDadosCliente}
+                        disabled={salvandoDados}
+                        style={{
+                          padding: "14px 20px",
+                          borderRadius: 16,
+                          border: 0,
+                          background: "#282663",
+                          color: "#fff",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {salvandoDados ? "Salvando..." : "Salvar alterações"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={cancelarEdicaoDados}
+                        disabled={salvandoDados}
+                        style={{
+                          padding: "14px 20px",
+                          borderRadius: 16,
+                          border: "1px solid #cbd5e1",
+                          background: "#fff",
+                          color: "#334155",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
 
-              <div className="flex flex-wrap gap-3">
-                <button onClick={salvarAnamnese} disabled={salvandoAnamnese} className="rounded-2xl px-6 py-3 text-white font-extrabold shadow hover:opacity-90 disabled:opacity-60" style={{ backgroundColor: "var(--cor-primaria)" }}>{salvandoAnamnese ? "Salvando..." : "Salvar anamnese"}</button>
-                {anamneseSalva?.pdf_url && <button type="button" onClick={enviarPdfWhatsapp} className="rounded-2xl bg-emerald-600 px-6 py-3 text-white font-extrabold">Enviar PDF no WhatsApp</button>}
+          {aba === "anamnese" &&
+            (assinaturaComplementarObrigatoria ? (
+              formularioAssinaturaComplementar
+            ) : anamneseObrigatoria || modoAtualizacaoAnamnese ? (
+              formularioAnamnese
+            ) : (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: 0 }}>Anamnese</h2>
+                    <p style={{ color: "#64748b", margin: "6px 0 0" }}>
+                      A ficha fica válida por 12 meses. Se algo mudar antes
+                      disso, o cliente pode atualizar por aqui.
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        anamnesePreenchida &&
+                        !anamneseEstaVencida(anamnesePreenchida)
+                          ? "#dcfce7"
+                          : "#fff7ed",
+                      color:
+                        anamnesePreenchida &&
+                        !anamneseEstaVencida(anamnesePreenchida)
+                          ? "#166534"
+                          : "#9a3412",
+                      border:
+                        anamnesePreenchida &&
+                        !anamneseEstaVencida(anamnesePreenchida)
+                          ? "1px solid #bbf7d0"
+                          : "1px solid #fed7aa",
+                      borderRadius: 999,
+                      padding: "10px 14px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {anamnesePreenchida &&
+                    !anamneseEstaVencida(anamnesePreenchida)
+                      ? "Ficha válida"
+                      : "Atualização necessária"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 14,
+                    marginBottom: 18,
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 20,
+                      padding: 18,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: "0 0 6px",
+                        color: "#64748b",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Último preenchimento
+                    </p>
+                    <strong>
+                      {formatarDataAnamnese(
+                        obterDataBaseAnamnese(anamnesePreenchida),
+                      )}
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 20,
+                      padding: 18,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: "0 0 6px",
+                        color: "#64748b",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Próxima atualização obrigatória
+                    </p>
+                    <strong>
+                      {formatarDataAnamnese(
+                        calcularValidadeAnamnese(anamnesePreenchida),
+                      )}
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 20,
+                      padding: 18,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: "0 0 6px",
+                        color: "#64748b",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Assinatura
+                    </p>
+                    <strong>
+                      {anamnesePreenchida?.assinatura ? "Assinada" : "Pendente"}
+                    </strong>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#eef2ff",
+                    color: "#3730a3",
+                    border: "1px solid #c7d2fe",
+                    borderRadius: 18,
+                    padding: 18,
+                    fontWeight: 800,
+                  }}
+                >
+                  Caso tenha surgido alergia, doença, uso de medicamento ou
+                  qualquer mudança importante, atualize sua ficha antes do
+                  atendimento.
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginTop: 18,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={baixarPdfAnamnese}
+                    style={{
+                      padding: "13px 18px",
+                      borderRadius: 14,
+                      border: 0,
+                      background: "#282663",
+                      color: "#fff",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Baixar PDF da anamnese
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={abrirAtualizacaoAnamnese}
+                    style={{
+                      padding: "13px 18px",
+                      borderRadius: 14,
+                      border: "1px solid #282663",
+                      background: "#fff",
+                      color: "#282663",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Atualizar minha anamnese
+                  </button>
+                </div>
               </div>
-            </div>
-          </Card>
-        )}
+            ))}
 
-        {aba === "dados" && (
-          <Card>
-            <h3 className="text-2xl font-extrabold">Meus dados</h3>
-            <p className="text-slate-500 mt-1">Atualize seus dados cadastrais.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              <Input label="Nome" value={formCliente.nome} onChange={(v) => setFormCliente({ ...formCliente, nome: v })} />
-              <Input label="Telefone" value={formCliente.telefone} onChange={(v) => setFormCliente({ ...formCliente, telefone: v })} />
-              <Input label="E-mail" value={formCliente.email} onChange={(v) => setFormCliente({ ...formCliente, email: v })} />
-              <Input label="CPF" value={formCliente.cpf} onChange={(v) => setFormCliente({ ...formCliente, cpf: v })} />
-              <Input label="Data de nascimento" type="date" value={formCliente.data_nascimento} onChange={(v) => setFormCliente({ ...formCliente, data_nascimento: v })} />
-              <Select label="Sexo" value={formCliente.sexo} onChange={(v) => setFormCliente({ ...formCliente, sexo: v })} options={["Não informado", "Feminino", "Masculino", "Outro"]} />
-              <Textarea label="Alergias / restrições" value={formCliente.alergias} onChange={(v) => setFormCliente({ ...formCliente, alergias: v })} />
-              <Textarea label="Preferências" value={formCliente.preferencias} onChange={(v) => setFormCliente({ ...formCliente, preferencias: v })} />
-              <div className="md:col-span-2"><Textarea label="Observações" value={formCliente.observacoes} onChange={(v) => setFormCliente({ ...formCliente, observacoes: v })} /></div>
-            </div>
-            <button onClick={salvarDadosCliente} disabled={salvandoDados} className="mt-6 rounded-2xl px-6 py-3 text-white font-extrabold shadow hover:opacity-90 disabled:opacity-60" style={{ backgroundColor: "var(--cor-primaria)" }}>{salvandoDados ? "Salvando..." : "Salvar meus dados"}</button>
-          </Card>
-        )}
+          {aba === "historico" &&
+            !anamneseObrigatoria &&
+            !assinaturaComplementarObrigatoria && (
+              <div>
+                <h2 style={{ marginTop: 0 }}>Histórico</h2>
 
-        {aba === "combos" && (
-          <Card>
-            <h3 className="text-2xl font-extrabold">Meus combos</h3>
-            <p className="text-slate-500 mt-1">Acompanhe seus pacotes e saldos.</p>
-            <div className="mt-6 rounded-2xl bg-orange-50 p-5 text-orange-700 font-bold">Nenhum combo ativo encontrado.</div>
-          </Card>
-        )}
+                {historico.length === 0 && (
+                  <p style={{ color: "#64748b" }}>
+                    Nenhum atendimento finalizado.
+                  </p>
+                )}
 
-        {aba === "novo" && (
-          <Card>
-            <h3 className="text-2xl font-extrabold">Novo agendamento</h3>
-            <p className="text-slate-500 mt-1">Solicite um novo horário com o estabelecimento.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              <Select label="Serviço" value={novoServicoId} onChange={setNovoServicoId} options={servicos.map((s) => ({ label: s.nome, value: s.id }))} placeholder="Selecione" />
-              <Select label="Profissional" value={novoProfissionalId} onChange={setNovoProfissionalId} options={profissionais.map((p) => ({ label: p.nome, value: p.id }))} placeholder="Selecione" />
-              <Input label="Data" type="date" value={novaData} onChange={setNovaData} />
-              <Textarea label="Observações" value={novaObservacao} onChange={setNovaObservacao} />
-            </div>
-            {servicoSelecionado && <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-slate-600">Serviço: <strong>{servicoSelecionado.nome}</strong> • Duração: <strong>{duracaoServico(servicoSelecionado)} min</strong></div>}
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="font-extrabold text-slate-800">Horários disponíveis</p>
-              {horariosDisponiveis.length === 0 ? <p className="mt-3 rounded-2xl bg-orange-50 p-4 text-orange-700 font-semibold">{mensagemHorarios}</p> : <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">{horariosDisponiveis.map((h) => <button key={h} type="button" onClick={() => setNovoHorario(h)} className="rounded-2xl border px-4 py-3 font-extrabold" style={{ backgroundColor: novoHorario === h ? "var(--cor-primaria)" : "#fff", color: novoHorario === h ? "#fff" : "var(--cor-secundaria)" }}>{h}</button>)}</div>}
-            </div>
-            <button onClick={solicitarNovoAgendamento} disabled={salvandoNovo} className="mt-6 rounded-2xl px-6 py-3 text-white font-extrabold shadow hover:opacity-90 disabled:opacity-60" style={{ backgroundColor: "var(--cor-primaria)" }}>{salvandoNovo ? "Enviando..." : "Solicitar agendamento"}</button>
-          </Card>
-        )}
+                {historico.map((h) => (
+                  <div
+                    key={h.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 18,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <strong>{h.servico || h.servico_nome}</strong>
+                    <div>
+                      {formatarData(h.data)} às {h.horario}
+                    </div>
+                    <div>Status: {h.status}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+        </div>
       </div>
     </div>
   );
-
-  function ehPendenteVisivel(ag: Agendamento) {
-    return STATUS_PENDENTES.includes(normalizarStatus(ag.status)) && ag.data >= hojeISO();
-  }
-
-  function hojeISO() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  function normalizarStatus(status?: string | null) {
-    return (status || "").toLowerCase().trim();
-  }
-
-  function labelCampo(campo: CampoAnamnese) {
-    return campo.label || campo.pergunta || campo.titulo || campo.nome || campo.nome_campo || "Pergunta";
-  }
-
-  function duracaoServico(servico?: Servico) {
-    return Number(servico?.duracao_padrao_minutos || servico?.duracao || 60);
-  }
-
-  function horaParaMinutos(hora?: string | null) {
-    const [h, m] = String(hora || "00:00").slice(0, 5).split(":").map(Number);
-    return (h || 0) * 60 + (m || 0);
-  }
-
-  function minutosParaHora(total: number) {
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  }
-}
-
-function TelaCentral({ mensagem }: { mensagem: string }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-      <div className="bg-white rounded-3xl shadow p-8 font-bold text-center max-w-md">{mensagem}</div>
-    </div>
-  );
-}
-
-function Tab({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} className="rounded-2xl px-5 py-3 text-sm font-extrabold transition" style={{ backgroundColor: ativo ? "var(--cor-primaria)" : "transparent", color: ativo ? "#fff" : "var(--cor-secundaria)" }}>{children}</button>
-  );
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="bg-white rounded-[2rem] p-6 shadow ring-1 ring-slate-200">{children}</div>;
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-extrabold text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (valor: string) => void; type?: string }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 p-3 bg-slate-50" />
-    </label>
-  );
-}
-
-function Textarea({ label, value, onChange }: { label: string; value: string; onChange: (valor: string) => void }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} className="mt-2 min-h-28 w-full rounded-2xl border border-slate-200 p-3 bg-slate-50" />
-    </label>
-  );
-}
-
-function Select({ label, value, onChange, options, placeholder }: { label: string; value: string; onChange: (valor: string) => void; options: Array<string | { label: string; value: string }>; placeholder?: string }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 p-3 bg-slate-50">
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map((opcao) => {
-          const opt = typeof opcao === "string" ? { label: opcao, value: opcao } : opcao;
-          return <option key={opt.value} value={opt.value}>{opt.label}</option>;
-        })}
-      </select>
-    </label>
-  );
-}
-
-function Campo({ campo, valor, onChange }: { campo: CampoAnamnese; valor: string; onChange: (valor: string) => void }) {
-  const label = campo.label || campo.pergunta || campo.titulo || campo.nome || campo.nome_campo || "Pergunta";
-  const tipo = (campo.tipo || "texto").toLowerCase();
-  const obrigatorio = campo.obrigatorio ? " *" : "";
-
-  if (tipo.includes("sim_nao") || tipo.includes("boolean")) {
-    return <Select label={`${label}${obrigatorio}`} value={valor} onChange={onChange} options={["Não", "Sim"]} placeholder="Selecione" />;
-  }
-
-  if (tipo.includes("select") || tipo.includes("opcao")) {
-    const opcoes = Array.isArray(campo.opcoes)
-      ? campo.opcoes
-      : String(campo.opcoes || "").split(",").map((o) => o.trim()).filter(Boolean);
-    return <Select label={`${label}${obrigatorio}`} value={valor} onChange={onChange} options={opcoes} placeholder="Selecione" />;
-  }
-
-  if (tipo.includes("data")) {
-    return <Input label={`${label}${obrigatorio}`} type="date" value={valor} onChange={onChange} />;
-  }
-
-  if (tipo.includes("numero") || tipo.includes("number")) {
-    return <Input label={`${label}${obrigatorio}`} type="number" value={valor} onChange={onChange} />;
-  }
-
-  return <Textarea label={`${label}${obrigatorio}`} value={valor} onChange={onChange} />;
-}
-
-function formatarData(data?: string | null) {
-  if (!data) return "-";
-  const partes = data.split("-");
-  if (partes.length !== 3) return data;
-  return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }

@@ -20,6 +20,7 @@ type Cliente = {
   nome: string;
   telefone?: string | null;
   email?: string | null;
+  data_nascimento?: string | null;
 };
 
 type Servico = {
@@ -60,7 +61,6 @@ type Agendamento = {
   token_cliente?: string | null;
   duracao_minutos?: number | null;
   created_at?: string | null;
-  empresa_id?: string | null;
 };
 
 type PacoteDisponivel = {
@@ -260,12 +260,41 @@ function MiniCalendar({
   );
 }
 
+function filtrarAniversariantesDoMes(clientes: Cliente[]) {
+  const mesAtual = new Date().getMonth() + 1;
+
+  return clientes
+    .filter((cliente) => !!cliente.data_nascimento)
+    .filter((cliente) => {
+      const data = new Date(`${cliente.data_nascimento}T00:00:00`);
+      return data.getMonth() + 1 === mesAtual;
+    })
+    .sort((a, b) => {
+      const diaA = Number((a.data_nascimento || "").split("-")[2] || 0);
+      const diaB = Number((b.data_nascimento || "").split("-")[2] || 0);
+      return diaA - diaB;
+    });
+}
+
+function formatarDataNascimento(data?: string | null) {
+  if (!data) return "-";
+  const partes = data.split("-");
+  if (partes.length !== 3) return data;
+  return `${partes[2]}/${partes[1]}`;
+}
+
+function montarMensagemAniversario(nome: string) {
+  return `Olá, ${nome}! 🎉 Passando para te desejar um feliz aniversário! Temos uma condição especial para você este mês. 💝`;
+}
+
 export default function AgendaPage() {
-  // Controle temporário: deixe true apenas para perfil administrador.
-  const isAdmin = false;
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
+  // Controle temporário: deixe true apenas para perfil administrador.
+  const isAdmin = false;
+
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [aniversariantes, setAniversariantes] = useState<Cliente[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
@@ -302,16 +331,31 @@ export default function AgendaPage() {
   const [saldoPacoteSelecionadoId, setSaldoPacoteSelecionadoId] = useState("");
 
   useEffect(() => {
-    if (empresaId) void carregarTudo();
+    if (empresaId) {
+      void carregarTudo();
+    }
   }, [empresaId]);
 
   async function carregarTudo() {
     if (!empresaId) return;
+
     const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
       await Promise.all([
-        supabase.from("clientes").select("*").eq("empresa_id", empresaId).order("nome"),
-        supabase.from("servicos").select("*").eq("empresa_id", empresaId).order("nome"),
-        supabase.from("profissionais").select("*").eq("empresa_id", empresaId).order("nome"),
+        supabase
+          .from("clientes")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
+        supabase
+          .from("servicos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
+        supabase
+          .from("profissionais")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
         supabase
           .from("agendamentos")
           .select("*")
@@ -320,10 +364,24 @@ export default function AgendaPage() {
           .order("horario", { ascending: true }),
       ]);
 
-    setClientes((clientesRes.data || []) as Cliente[]);
+    const clientesData = (clientesRes.data || []) as Cliente[];
+
+    setClientes(clientesData);
+    setAniversariantes(filtrarAniversariantesDoMes(clientesData));
     setServicos((servicosRes.data || []) as Servico[]);
     setProfissionais((profissionaisRes.data || []) as Profissional[]);
     setAgendamentos((agendamentosRes.data || []) as Agendamento[]);
+  }
+
+  function abrirWhatsAppAniversario(cliente: Cliente) {
+    if (!cliente.telefone) {
+      alert("Cliente sem telefone cadastrado.");
+      return;
+    }
+
+    const numero = normalizarTelefoneWhatsapp(cliente.telefone);
+    const mensagem = encodeURIComponent(montarMensagemAniversario(cliente.nome));
+    window.open(`https://wa.me/${numero}?text=${mensagem}`, "_blank");
   }
 
   async function carregarAlertas(nomeCliente: string) {
@@ -355,11 +413,6 @@ export default function AgendaPage() {
   }
 
   async function salvarAgendamento() {
-    if (!empresaId) {
-      alert("Empresa não encontrada. Faça login novamente.");
-      return;
-    }
-
     if (!cliente || !servico || !profissional || !data || !hora) {
       alert("Preencha cliente, serviço, profissional, data e horário.");
       return;
@@ -415,6 +468,7 @@ export default function AgendaPage() {
 
     const { error } = await supabase.from("agendamentos").insert([
       {
+        empresa_id: empresaId,
         cliente,
         servico,
         profissional,
@@ -427,13 +481,17 @@ export default function AgendaPage() {
         duracao_minutos: duracaoTotal,
         status: "agendado",
         no_show: false,
-        empresa_id: empresaId,
       },
     ]);
 
     setLoadingSalvar(false);
 
     if (error) {
+      if (error.message.includes("agendamento_unico")) {
+        alert("Esse horário já está ocupado para esse profissional. Escolha outro horário.");
+        return;
+      }
+
       alert(`Erro ao salvar agendamento: ${error.message}`);
       return;
     }
@@ -448,8 +506,7 @@ export default function AgendaPage() {
     const { error } = await supabase
       .from("agendamentos")
       .update({ status: "cancelado" })
-      .eq("id", id)
-      .eq("empresa_id", empresaId);
+      .eq("id", id);
 
     if (error) {
       alert(`Erro ao cancelar: ${error.message}`);
@@ -603,10 +660,6 @@ export default function AgendaPage() {
 
   async function finalizarComPagamento() {
     if (!agendamentoSelecionado) return;
-    if (!empresaId) {
-      alert("Empresa não encontrada. Faça login novamente.");
-      return;
-    }
 
     const pacoteSelecionado = pacotesDisponiveis.find(
       (item) => item.saldo_id === saldoPacoteSelecionadoId
@@ -679,14 +732,12 @@ export default function AgendaPage() {
           usarPacote && pacoteSelecionado
             ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
             : null,
-        empresa_id: empresaId,
       };
 
       const { data: existente, error: erroBusca } = await supabase
         .from("financeiro")
         .select("id")
         .eq("agendamento_id", agendamentoSelecionado.id)
-        .eq("empresa_id", empresaId)
         .maybeSingle();
 
       if (erroBusca) {
@@ -694,7 +745,7 @@ export default function AgendaPage() {
       }
 
       const respostaFinanceiro = existente?.id
-        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id).eq("empresa_id", empresaId)
+        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id)
         : await supabase.from("financeiro").insert([payloadFinanceiro]);
 
       if (respostaFinanceiro.error) {
@@ -730,11 +781,51 @@ export default function AgendaPage() {
           status_pagamento: statusFinal,
           no_show: false,
         })
-        .eq("id", agendamentoSelecionado.id)
-        .eq("empresa_id", empresaId);
+        .eq("id", agendamentoSelecionado.id);
 
       if (erroAgendamento) {
         throw new Error(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
+      }
+
+      if (empresaId && agendamentoSelecionado.servico_id) {
+        const { data: servicoRetorno, error: erroServicoRetorno } = await supabase
+          .from("servicos")
+          .select("id,nome,retorno_automatico,retorno_dias,retorno_alerta_dias,retorno_tipo")
+          .eq("id", agendamentoSelecionado.servico_id)
+          .eq("empresa_id", empresaId)
+          .maybeSingle();
+
+        if (erroServicoRetorno) {
+          console.warn("Não foi possível verificar retorno automático:", erroServicoRetorno.message);
+        }
+
+        if (servicoRetorno?.retorno_automatico && servicoRetorno?.retorno_dias) {
+          const base = new Date();
+          const dataRetorno = new Date(base);
+          dataRetorno.setDate(base.getDate() + Number(servicoRetorno.retorno_dias || 0));
+
+          const dataAlerta = new Date(dataRetorno);
+          dataAlerta.setDate(dataRetorno.getDate() - Number(servicoRetorno.retorno_alerta_dias || 0));
+
+          const retornoPayload = {
+            empresa_id: empresaId,
+            cliente_id: agendamentoSelecionado.cliente_id || null,
+            agendamento_id: agendamentoSelecionado.id,
+            procedimento: servicoRetorno.nome || agendamentoSelecionado.servico || "Procedimento",
+            data_retorno: dataRetorno.toISOString().slice(0, 10),
+            data_alerta: dataAlerta.toISOString().slice(0, 10),
+            observacao: servicoRetorno.retorno_tipo || null,
+            status: "pendente",
+          };
+
+          const { error: erroRetorno } = await supabase
+            .from("retornos")
+            .insert([retornoPayload]);
+
+          if (erroRetorno) {
+            console.warn("Atendimento finalizado, mas não foi possível criar retorno automático:", erroRetorno.message);
+          }
+        }
       }
 
       alert("Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.");
@@ -812,20 +903,11 @@ export default function AgendaPage() {
       : null;
 
   if (carregandoEmpresa) {
-    return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-sm font-semibold text-slate-500">Carregando empresa...</p>
-      </div>
-    );
+    return <div className="p-6">Carregando empresa...</div>;
   }
 
   if (!empresaId) {
-    return (
-      <div className="rounded-3xl border border-red-200 bg-red-50 p-8 text-center shadow-sm">
-        <p className="text-lg font-bold text-red-700">Empresa não encontrada</p>
-        <p className="mt-2 text-sm text-red-600">Faça login novamente para carregar sua agenda.</p>
-      </div>
-    );
+    return <div className="p-6">Empresa não encontrada.</div>;
   }
 
   return (
@@ -852,6 +934,43 @@ export default function AgendaPage() {
             setSelectedDate(date);
             setData(date);
           }} />
+
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-amber-900">🎉 Aniversariantes do mês</p>
+                <p className="mt-1 text-xs text-amber-700">Envie promoções e felicitações pelo WhatsApp.</p>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-700">
+                {aniversariantes.length}
+              </span>
+            </div>
+
+            {aniversariantes.length === 0 ? (
+              <p className="mt-4 text-sm text-amber-700">Nenhum aniversariante este mês.</p>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {aniversariantes.map((cliente) => (
+                  <div
+                    key={cliente.id}
+                    className="rounded-2xl border border-amber-200 bg-white p-3"
+                  >
+                    <p className="font-bold text-slate-900">{cliente.nome}</p>
+                    <p className="text-xs text-slate-500">
+                      {formatarDataNascimento(cliente.data_nascimento)} · {cliente.telefone || "sem telefone"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => abrirWhatsAppAniversario(cliente)}
+                      className="mt-3 w-full rounded-xl bg-green-600 px-3 py-2 text-xs font-bold text-white hover:bg-green-700"
+                    >
+                      Enviar promoção
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm font-semibold text-slate-800">Busca rápida</p>
@@ -1023,6 +1142,9 @@ export default function AgendaPage() {
                   const mins = parseTimeToMinutes(item.horario);
                   const top = ((mins - 8 * 60) / 60) * 88 + 8;
                   const visual = classByStatus(item.status);
+                  const duracao = Number(item.duracao_minutos || 30);
+                  const alturaCard = Math.max((duracao / 30) * 88 - 10, 78);
+                  const horarioFim = somarMinutos(item.horario, duracao);
 
                   if (mins < 8 * 60 || mins > 20 * 60 + 59) return null;
 
@@ -1032,6 +1154,7 @@ export default function AgendaPage() {
                       className="absolute left-3 right-3 rounded-2xl border px-4 py-3 shadow-sm"
                       style={{
                         top: `${top}px`,
+                        minHeight: `${alturaCard}px`,
                         backgroundColor: visual.bg,
                         borderColor: visual.border,
                         color: visual.text,
@@ -1047,7 +1170,7 @@ export default function AgendaPage() {
                           </div>
                           <p className="mt-1 text-sm font-medium">{item.servico || "Serviço"}</p>
                           <p className="text-xs opacity-80">
-                            {item.horario} · {item.profissional || "Sem profissional"}
+                            {item.horario} às {horarioFim} · {item.profissional || "Sem profissional"}
                           </p>
                           {item.observacoes && (
                             <p className="mt-2 text-xs opacity-80">{item.observacoes}</p>

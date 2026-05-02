@@ -40,11 +40,21 @@ type Despesa = {
   empresa_id?: string | null;
 };
 
+type Produto = {
+  id: string;
+  nome: string;
+  preco: number | null;
+  estoque: number | null;
+  status?: string | null;
+  empresa_id?: string | null;
+};
+
 export default function FinanceiroPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [tipo, setTipo] = useState("entrada");
@@ -61,6 +71,13 @@ export default function FinanceiroPage() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
+  const [modalVendaProduto, setModalVendaProduto] = useState(false);
+  const [produtoIdVenda, setProdutoIdVenda] = useState("");
+  const [quantidadeVenda, setQuantidadeVenda] = useState("1");
+  const [formaPagamentoVenda, setFormaPagamentoVenda] = useState("pix");
+  const [observacaoVenda, setObservacaoVenda] = useState("");
+  const [salvandoVenda, setSalvandoVenda] = useState(false);
+
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
   const [filtroDataFim, setFiltroDataFim] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
@@ -76,36 +93,50 @@ export default function FinanceiroPage() {
     if (!empresaId) {
       setLancamentos([]);
       setDespesas([]);
+      setProdutos([]);
       setLoading(false);
       return;
     }
 
-    const { data: dataFinanceiro, error: errorFinanceiro } = await supabase
-      .from("financeiro")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .order("data_lancamento", { ascending: false })
-      .order("created_at", { ascending: false });
+    const [resFinanceiro, resDespesas, resProdutos] = await Promise.all([
+      supabase
+        .from("financeiro")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("data_lancamento", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("despesas")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("data_lancamento", { ascending: false }),
+      supabase
+        .from("produtos")
+        .select("id,nome,preco,estoque,status,empresa_id")
+        .eq("empresa_id", empresaId)
+        .order("nome", { ascending: true }),
+    ]);
 
-    const { data: dataDespesas, error: errorDespesas } = await supabase
-      .from("despesas")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .order("data_lancamento", { ascending: false });
-
-    if (errorFinanceiro) {
-      console.error("Erro ao carregar financeiro:", errorFinanceiro);
-      alert("Erro ao carregar financeiro: " + errorFinanceiro.message);
+    if (resFinanceiro.error) {
+      console.error("Erro ao carregar financeiro:", resFinanceiro.error);
+      alert("Erro ao carregar financeiro: " + resFinanceiro.error.message);
       setLancamentos([]);
     } else {
-      setLancamentos((dataFinanceiro || []) as Lancamento[]);
+      setLancamentos((resFinanceiro.data || []) as Lancamento[]);
     }
 
-    if (errorDespesas) {
-      console.warn("Erro ao carregar despesas:", errorDespesas);
+    if (resDespesas.error) {
+      console.warn("Erro ao carregar despesas:", resDespesas.error);
       setDespesas([]);
     } else {
-      setDespesas((dataDespesas || []) as Despesa[]);
+      setDespesas((resDespesas.data || []) as Despesa[]);
+    }
+
+    if (resProdutos.error) {
+      console.warn("Erro ao carregar produtos:", resProdutos.error);
+      setProdutos([]);
+    } else {
+      setProdutos((resProdutos.data || []) as Produto[]);
     }
 
     setLoading(false);
@@ -126,13 +157,19 @@ export default function FinanceiroPage() {
     setMostrarFormulario(false);
   }
 
+  function limparVendaProduto() {
+    setProdutoIdVenda("");
+    setQuantidadeVenda("1");
+    setFormaPagamentoVenda("pix");
+    setObservacaoVenda("");
+    setModalVendaProduto(false);
+    setSalvandoVenda(false);
+  }
+
   function normalizarNumero(valorDigitado: string) {
     if (!valorDigitado) return null;
-
     const numero = Number(String(valorDigitado).replace(",", "."));
-
     if (Number.isNaN(numero)) return null;
-
     return numero;
   }
 
@@ -186,6 +223,93 @@ export default function FinanceiroPage() {
     }
 
     limparFormulario();
+    await carregarDados();
+  }
+
+  async function salvarVendaProduto() {
+    if (!empresaId) return;
+
+    const produto = produtos.find((item) => item.id === produtoIdVenda);
+    const quantidade = normalizarNumero(quantidadeVenda);
+
+    if (!produto) {
+      alert("Selecione um produto.");
+      return;
+    }
+
+    if (quantidade === null || quantidade <= 0) {
+      alert("Informe uma quantidade válida.");
+      return;
+    }
+
+    const estoqueAtual = Number(produto.estoque || 0);
+    const precoUnitario = Number(produto.preco || 0);
+
+    if (quantidade > estoqueAtual) {
+      alert("Estoque insuficiente para essa venda.");
+      return;
+    }
+
+    if (precoUnitario <= 0) {
+      alert("Este produto não possui preço cadastrado.");
+      return;
+    }
+
+    setSalvandoVenda(true);
+
+    const valorTotal = precoUnitario * quantidade;
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    const { error: erroVenda } = await supabase.from("produto_vendas").insert({
+      empresa_id: empresaId,
+      produto_id: produto.id,
+      quantidade,
+      valor_unitario: precoUnitario,
+      valor_total: valorTotal,
+      forma_pagamento: formaPagamentoVenda || null,
+      observacao: observacaoVenda.trim() || null,
+    });
+
+    if (erroVenda) {
+      setSalvandoVenda(false);
+      alert("Erro ao registrar venda: " + erroVenda.message);
+      return;
+    }
+
+    const { error: erroEstoque } = await supabase
+      .from("produtos")
+      .update({ estoque: estoqueAtual - quantidade })
+      .eq("id", produto.id)
+      .eq("empresa_id", empresaId);
+
+    if (erroEstoque) {
+      setSalvandoVenda(false);
+      alert("Venda salva, mas erro ao baixar estoque: " + erroEstoque.message);
+      return;
+    }
+
+    const { error: erroFinanceiro } = await supabase.from("financeiro").insert({
+      empresa_id: empresaId,
+      tipo: "entrada",
+      descricao: `Venda de produto: ${produto.nome}`,
+      valor: valorTotal,
+      data_lancamento: hoje,
+      status: "pago",
+      forma_pagamento: formaPagamentoVenda || null,
+      data_pagamento: new Date().toISOString(),
+      cliente: null,
+      profissional: null,
+      servico: "Produto",
+      observacoes: observacaoVenda.trim() || null,
+    });
+
+    if (erroFinanceiro) {
+      setSalvandoVenda(false);
+      alert("Venda e estoque atualizados, mas erro ao lançar financeiro: " + erroFinanceiro.message);
+      return;
+    }
+
+    limparVendaProduto();
     await carregarDados();
   }
 
@@ -286,6 +410,10 @@ export default function FinanceiroPage() {
     return despesas.filter((item) => dentroDoPeriodo(dataDespesa(item)));
   }, [despesas, filtroDataInicio, filtroDataFim]);
 
+  const produtoVendaSelecionado = produtos.find((item) => item.id === produtoIdVenda);
+  const quantidadeVendaNumero = normalizarNumero(quantidadeVenda) || 0;
+  const valorVendaProduto = Number(produtoVendaSelecionado?.preco || 0) * quantidadeVendaNumero;
+
   const totalReceitas = lancamentosFiltrados
     .filter((item) => item.tipo === "entrada" && item.status !== "cancelado")
     .reduce((acc, item) => acc + Number(item.valor || 0), 0);
@@ -334,18 +462,24 @@ export default function FinanceiroPage() {
         title="Financeiro"
         description="Controle receitas, saídas, despesas, pagamentos vindos da agenda e lucro líquido."
         action={
-          <PrimaryButton
-            type="button"
-            onClick={() => {
-              if (mostrarFormulario) {
-                limparFormulario();
-              } else {
-                setMostrarFormulario(true);
-              }
-            }}
-          >
-            {mostrarFormulario ? "Fechar" : "+ Novo lançamento"}
-          </PrimaryButton>
+          <div className="flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={() => setModalVendaProduto(true)}>
+              + Venda de produto
+            </SecondaryButton>
+
+            <PrimaryButton
+              type="button"
+              onClick={() => {
+                if (mostrarFormulario) {
+                  limparFormulario();
+                } else {
+                  setMostrarFormulario(true);
+                }
+              }}
+            >
+              {mostrarFormulario ? "Fechar" : "+ Novo lançamento"}
+            </PrimaryButton>
+          </div>
         }
       />
 
@@ -581,6 +715,89 @@ export default function FinanceiroPage() {
           </div>
         )}
       </SectionCard>
+
+      {modalVendaProduto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold uppercase text-slate-500">Estoque</p>
+                <h2 className="text-2xl font-extrabold text-slate-900">Venda de produto</h2>
+                <p className="text-sm text-slate-500">Registre a venda, baixe estoque e lance no financeiro.</p>
+              </div>
+
+              <SecondaryButton type="button" onClick={limparVendaProduto}>
+                Fechar
+              </SecondaryButton>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <select
+                value={produtoIdVenda}
+                onChange={(e) => setProdutoIdVenda(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
+              >
+                <option value="">Selecione o produto</option>
+                {produtos.map((produto) => (
+                  <option key={produto.id} value={produto.id}>
+                    {produto.nome} — estoque: {Number(produto.estoque || 0)} — {formatarMoeda(Number(produto.preco || 0))}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={quantidadeVenda}
+                onChange={(e) => setQuantidadeVenda(e.target.value)}
+                placeholder="Quantidade"
+                className="rounded-2xl border border-slate-200 p-3"
+              />
+
+              <select
+                value={formaPagamentoVenda}
+                onChange={(e) => setFormaPagamentoVenda(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
+              >
+                <option value="dinheiro">Dinheiro</option>
+                <option value="pix">Pix</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="outro">Outro</option>
+              </select>
+
+              <textarea
+                value={observacaoVenda}
+                onChange={(e) => setObservacaoVenda(e.target.value)}
+                placeholder="Observações da venda"
+                className="rounded-2xl border border-slate-200 p-3"
+              />
+
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>Produto</span>
+                  <strong>{produtoVendaSelecionado?.nome || "-"}</strong>
+                </div>
+                <div className="mt-2 flex justify-between text-sm text-slate-600">
+                  <span>Total da venda</span>
+                  <strong>{formatarMoeda(valorVendaProduto)}</strong>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                <SecondaryButton type="button" onClick={limparVendaProduto}>
+                  Cancelar
+                </SecondaryButton>
+
+                <PrimaryButton type="button" onClick={salvarVendaProduto} disabled={salvandoVenda}>
+                  {salvandoVenda ? "Salvando..." : "Salvar venda"}
+                </PrimaryButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

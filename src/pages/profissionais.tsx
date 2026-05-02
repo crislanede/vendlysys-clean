@@ -16,6 +16,17 @@ type Profissional = {
   ativo?: boolean | null;
 };
 
+type Servico = {
+  id: string;
+  nome: string;
+  ativo?: boolean | null;
+};
+
+type ProfissionalServico = {
+  profissional_id: string;
+  servico_id: string;
+};
+
 const formInicial = {
   nome: "",
   telefone: "",
@@ -32,14 +43,23 @@ export default function ProfissionaisPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
   const [lista, setLista] = useState<Profissional[]>([]);
+  const [servicos, setServicos] = useState<Servico[]>([]);
+  const [profissionalServicos, setProfissionalServicos] = useState<ProfissionalServico[]>([]);
+  const [servicosSelecionados, setServicosSelecionados] = useState<string[]>([]);
+
   const [busca, setBusca] = useState("");
   const [form, setForm] = useState(formInicial);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    if (empresaId) carregar();
+    if (empresaId) carregarTudo();
   }, [empresaId]);
+
+  async function carregarTudo() {
+    await Promise.all([carregar(), carregarServicos(), carregarProfissionalServicos()]);
+  }
 
   async function carregar() {
     if (!empresaId) return;
@@ -62,6 +82,38 @@ export default function ProfissionaisPage() {
     setLista(data || []);
   }
 
+  async function carregarServicos() {
+    if (!empresaId) return;
+
+    const { data, error } = await supabase
+      .from("servicos")
+      .select("id,nome,ativo")
+      .eq("empresa_id", empresaId)
+      .order("nome");
+
+    if (error) {
+      console.warn("Erro ao carregar serviços:", error.message);
+      setServicos([]);
+      return;
+    }
+
+    setServicos(data || []);
+  }
+
+  async function carregarProfissionalServicos() {
+    const { data, error } = await supabase
+      .from("profissional_servicos")
+      .select("profissional_id,servico_id");
+
+    if (error) {
+      console.warn("Erro ao carregar vínculos de serviços:", error.message);
+      setProfissionalServicos([]);
+      return;
+    }
+
+    setProfissionalServicos(data || []);
+  }
+
   async function salvar() {
     if (!empresaId) {
       alert("Empresa não encontrada.");
@@ -75,7 +127,7 @@ export default function ProfissionaisPage() {
 
     setSalvando(true);
 
-    const { error } = await supabase.from("profissionais").insert({
+    const payload = {
       ...form,
       nome: form.nome.trim(),
       telefone: form.telefone.trim() || null,
@@ -84,17 +136,98 @@ export default function ProfissionaisPage() {
       intervalo_minutos: Number(form.intervalo_minutos || 0),
       empresa_id: empresaId,
       ativo: true,
-    });
+    };
 
-    setSalvando(false);
+    let profissionalId = editandoId;
 
-    if (error) {
-      alert("Erro ao salvar profissional: " + error.message);
-      return;
+    if (editandoId) {
+      const { error } = await supabase
+        .from("profissionais")
+        .update(payload)
+        .eq("id", editandoId)
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        setSalvando(false);
+        alert("Erro ao atualizar profissional: " + error.message);
+        return;
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("profissionais")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error) {
+        setSalvando(false);
+        alert("Erro ao salvar profissional: " + error.message);
+        return;
+      }
+
+      profissionalId = data.id;
     }
 
+    if (profissionalId) {
+      const { error: deleteError } = await supabase
+        .from("profissional_servicos")
+        .delete()
+        .eq("profissional_id", profissionalId);
+
+      if (deleteError) {
+        setSalvando(false);
+        alert("Profissional salvo, mas erro ao atualizar serviços: " + deleteError.message);
+        return;
+      }
+
+      if (servicosSelecionados.length > 0) {
+        const { error: insertError } = await supabase.from("profissional_servicos").insert(
+          servicosSelecionados.map((servicoId) => ({
+            profissional_id: profissionalId,
+            servico_id: servicoId,
+          }))
+        );
+
+        if (insertError) {
+          setSalvando(false);
+          alert("Profissional salvo, mas erro ao vincular serviços: " + insertError.message);
+          return;
+        }
+      }
+    }
+
+    setSalvando(false);
+    limparFormulario();
+    carregarTudo();
+  }
+
+  function editar(profissional: Profissional) {
+    setEditandoId(profissional.id);
+    setForm({
+      nome: profissional.nome || "",
+      telefone: profissional.telefone || "",
+      email: profissional.email || "",
+      especialidade: profissional.especialidade || "",
+      hora_inicio: profissional.hora_inicio || "08:00",
+      hora_fim: profissional.hora_fim || "18:00",
+      inicio_almoco: profissional.inicio_almoco || "12:00",
+      fim_almoco: profissional.fim_almoco || "13:00",
+      intervalo_minutos: Number(profissional.intervalo_minutos || 0),
+    });
+
+    setServicosSelecionados(
+      profissionalServicos
+        .filter((item) => item.profissional_id === profissional.id)
+        .map((item) => item.servico_id)
+    );
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function limparFormulario() {
+    setEditandoId(null);
     setForm(formInicial);
-    carregar();
+    setServicosSelecionados([]);
   }
 
   async function remover(id: string) {
@@ -111,18 +244,38 @@ export default function ProfissionaisPage() {
       return;
     }
 
-    carregar();
+    carregarTudo();
+  }
+
+  function alternarServico(servicoId: string) {
+    setServicosSelecionados((atual) =>
+      atual.includes(servicoId)
+        ? atual.filter((id) => id !== servicoId)
+        : [...atual, servicoId]
+    );
+  }
+
+  function nomesServicosDoProfissional(profissionalId: string) {
+    const ids = profissionalServicos
+      .filter((item) => item.profissional_id === profissionalId)
+      .map((item) => item.servico_id);
+
+    const nomes = servicos
+      .filter((servico) => ids.includes(servico.id))
+      .map((servico) => servico.nome);
+
+    return nomes.length > 0 ? nomes.join(", ") : "-";
   }
 
   const filtrados = useMemo(() => {
     const termo = busca.toLowerCase();
 
     return lista.filter((p) =>
-      `${p.nome} ${p.telefone || ""} ${p.email || ""} ${p.especialidade || ""}`
+      `${p.nome} ${p.telefone || ""} ${p.email || ""} ${p.especialidade || ""} ${nomesServicosDoProfissional(p.id)}`
         .toLowerCase()
         .includes(termo)
     );
-  }, [lista, busca]);
+  }, [lista, busca, profissionalServicos, servicos]);
 
   if (carregandoEmpresa) {
     return <div className="p-6">Carregando empresa...</div>;
@@ -136,18 +289,20 @@ export default function ProfissionaisPage() {
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
-          className="text-sm font-bold uppercase">
+          <p
+            style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+            className="text-sm font-bold uppercase"
+          >
             Cadastros
           </p>
           <h1 className="text-3xl font-bold text-slate-900">Profissionais</h1>
           <p className="text-slate-500">
-            Cadastre profissionais, horários de trabalho e intervalos.
+            Cadastre profissionais, horários de trabalho, intervalos e serviços atendidos.
           </p>
         </div>
 
         <button
-          onClick={carregar}
+          onClick={carregarTudo}
           className="border px-4 py-2 rounded-xl font-bold bg-white"
         >
           Atualizar
@@ -157,18 +312,26 @@ export default function ProfissionaisPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card title="Total" value={lista.length} />
         <Card title="Ativos" value={lista.filter((p) => p.ativo !== false).length} />
-        <Card
-          title="Com especialidade"
-          value={lista.filter((p) => !!p.especialidade).length}
-        />
-        <Card
-          title="Com telefone"
-          value={lista.filter((p) => !!p.telefone).length}
-        />
+        <Card title="Com especialidade" value={lista.filter((p) => !!p.especialidade).length} />
+        <Card title="Com telefone" value={lista.filter((p) => !!p.telefone).length} />
       </div>
 
       <div className="bg-white rounded-2xl border shadow-sm p-5">
-        <h2 className="font-bold text-slate-900 mb-4">Novo profissional</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="font-bold text-slate-900">
+            {editandoId ? "Editar profissional" : "Novo profissional"}
+          </h2>
+
+          {editandoId && (
+            <button
+              type="button"
+              onClick={limparFormulario}
+              className="border px-4 py-2 rounded-xl font-bold bg-white"
+            >
+              Cancelar edição
+            </button>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <input
@@ -195,30 +358,22 @@ export default function ProfissionaisPage() {
           <input
             placeholder="Especialidade"
             value={form.especialidade}
-            onChange={(e) =>
-              setForm({ ...form, especialidade: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, especialidade: e.target.value })}
             className="border rounded-xl px-4 py-3"
           />
 
           <div>
-            <label className="text-xs font-bold text-slate-500">
-              Início expediente
-            </label>
+            <label className="text-xs font-bold text-slate-500">Início expediente</label>
             <input
               type="time"
               value={form.hora_inicio}
-              onChange={(e) =>
-                setForm({ ...form, hora_inicio: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })}
               className="mt-1 w-full border rounded-xl px-4 py-3"
             />
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500">
-              Fim expediente
-            </label>
+            <label className="text-xs font-bold text-slate-500">Fim expediente</label>
             <input
               type="time"
               value={form.hora_fim}
@@ -228,29 +383,21 @@ export default function ProfissionaisPage() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500">
-              Início almoço
-            </label>
+            <label className="text-xs font-bold text-slate-500">Início almoço</label>
             <input
               type="time"
               value={form.inicio_almoco}
-              onChange={(e) =>
-                setForm({ ...form, inicio_almoco: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, inicio_almoco: e.target.value })}
               className="mt-1 w-full border rounded-xl px-4 py-3"
             />
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500">
-              Fim almoço
-            </label>
+            <label className="text-xs font-bold text-slate-500">Fim almoço</label>
             <input
               type="time"
               value={form.fim_almoco}
-              onChange={(e) =>
-                setForm({ ...form, fim_almoco: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, fim_almoco: e.target.value })}
               className="mt-1 w-full border rounded-xl px-4 py-3"
             />
           </div>
@@ -268,13 +415,41 @@ export default function ProfissionaisPage() {
             className="border rounded-xl px-4 py-3"
           />
 
+          <div className="md:col-span-3 border rounded-2xl p-4 bg-slate-50">
+            <p className="font-bold text-slate-900 mb-3">Serviços que este profissional realiza</p>
+
+            {servicos.length === 0 ? (
+              <p className="text-sm text-slate-500">Nenhum serviço cadastrado para esta empresa.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {servicos.map((servico) => (
+                  <label
+                    key={servico.id}
+                    className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={servicosSelecionados.includes(servico.id)}
+                      onChange={() => alternarServico(servico.id)}
+                    />
+                    <span>{servico.nome}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             onClick={salvar}
             disabled={salvando}
             style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
-            className="text-white rounded-xl px-5 py-3 font-bold hover:opacity-90 transition disabled:opacity-60 md:col-span-3"
+            className="text-white rounded-xl px-5 py-3 font-bold hover:opacity-90 transition disabled:opacity-60 md:col-span-4"
           >
-            {salvando ? "Salvando..." : "Salvar profissional"}
+            {salvando
+              ? "Salvando..."
+              : editandoId
+                ? "Atualizar profissional"
+                : "Salvar profissional"}
           </button>
         </div>
       </div>
@@ -282,16 +457,14 @@ export default function ProfissionaisPage() {
       <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
         <div className="p-5 border-b flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="font-bold text-slate-900">
-              Profissionais cadastrados
-            </h2>
+            <h2 className="font-bold text-slate-900">Profissionais cadastrados</h2>
             <p className="text-sm text-slate-500">
               {filtrados.length} profissional(is) encontrado(s).
             </p>
           </div>
 
           <input
-            placeholder="Buscar por nome, telefone, e-mail ou especialidade..."
+            placeholder="Buscar por nome, telefone, e-mail, especialidade ou serviço..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="border rounded-xl px-4 py-3 w-full md:w-96"
@@ -308,6 +481,7 @@ export default function ProfissionaisPage() {
                   <th className="p-4">Profissional</th>
                   <th>Contato</th>
                   <th>Especialidade</th>
+                  <th>Serviços</th>
                   <th>Expediente</th>
                   <th>Almoço</th>
                   <th>Intervalo</th>
@@ -324,27 +498,35 @@ export default function ProfissionaisPage() {
                       <p className="text-xs text-slate-400">{p.email || "-"}</p>
                     </td>
                     <td>{p.especialidade || "-"}</td>
-                    <td>
-                      {p.hora_inicio || "-"} às {p.hora_fim || "-"}
+                    <td className="max-w-xs text-xs text-slate-600">
+                      {nomesServicosDoProfissional(p.id)}
                     </td>
-                    <td>
-                      {p.inicio_almoco || "-"} às {p.fim_almoco || "-"}
-                    </td>
+                    <td>{p.hora_inicio || "-"} às {p.hora_fim || "-"}</td>
+                    <td>{p.inicio_almoco || "-"} às {p.fim_almoco || "-"}</td>
                     <td>{p.intervalo_minutos || 0} min</td>
                     <td className="text-right pr-4">
-                      <button
-                        onClick={() => remover(p.id)}
-                        className="bg-red-50 text-red-600 px-3 py-2 rounded-xl text-xs font-bold"
-                      >
-                        Excluir
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => editar(p)}
+                          className="border px-3 py-2 rounded-xl text-xs font-bold bg-white"
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          onClick={() => remover(p.id)}
+                          className="bg-red-50 text-red-600 px-3 py-2 rounded-xl text-xs font-bold"
+                        >
+                          Excluir
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
 
                 {filtrados.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-10 text-center text-slate-500">
+                    <td colSpan={8} className="p-10 text-center text-slate-500">
                       Nenhum profissional encontrado.
                     </td>
                   </tr>

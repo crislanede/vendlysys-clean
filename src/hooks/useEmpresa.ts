@@ -4,7 +4,8 @@ import { supabase } from "../lib/supabase";
 export type EmpresaUsuario = {
   id: string;
   nome: string;
-  slug: string | null;
+  nome_fantasia?: string | null;
+  slug?: string | null;
 
   cor_primaria?: string | null;
   cor_secundaria?: string | null;
@@ -13,25 +14,65 @@ export type EmpresaUsuario = {
   logo_url?: string | null;
   favicon_url?: string | null;
 
-  ativa?: boolean | null;
-  bloqueada?: boolean | null;
+  ativa?: boolean | string | null;
+  bloqueada?: boolean | string | null;
   plano?: string | null;
   status_assinatura?: string | null;
-  licenca_vitalicia?: boolean | null;
+  licenca_vitalicia?: boolean | string | null;
   trial_inicio?: string | null;
   trial_fim?: string | null;
+
+  perfil?: string | null;
+};
+
+type Retorno = {
+  empresa: EmpresaUsuario | null;
+  empresaId: string | null;
+  empresaNome: string;
+  corPrimaria: string;
+  corSecundaria: string;
+  corFundo: string;
+  logoUrl: string | null;
+
+  empresas: EmpresaUsuario[];
+  trocarEmpresa: (novaEmpresaId: string) => void;
+  carregandoEmpresa: boolean;
+  recarregarEmpresa: () => Promise<void>;
+
+  licencaAtiva: boolean;
+  empresaBloqueada: boolean;
+  statusAssinatura: string | null;
+  trialFim: string | null;
 };
 
 const STORAGE_KEY = "vendlysys_empresa_ativa_id";
 
-export function useEmpresa() {
+const TEMA_PADRAO = {
+  primaria: "#4b2f3f",
+  secundaria: "#4d6f53",
+  fundo: "#f1f9f5",
+};
+
+function normalizarTexto(valor?: string | null) {
+  return String(valor || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function valorBooleano(valor: boolean | string | null | undefined) {
+  return valor === true || valor === "true";
+}
+
+export function useEmpresa(): Retorno {
+  const [empresa, setEmpresa] = useState<EmpresaUsuario | null>(null);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
-  const [empresaNome, setEmpresaNome] = useState("");
+  const [empresaNome, setEmpresaNome] = useState("VendlySys");
 
-  const [corPrimaria, setCorPrimaria] = useState("#4b2f3f");
-  const [corSecundaria, setCorSecundaria] = useState("#4d6f53");
-  const [corFundo, setCorFundo] = useState("#f1f9f5");
-
+  const [corPrimaria, setCorPrimaria] = useState(TEMA_PADRAO.primaria);
+  const [corSecundaria, setCorSecundaria] = useState(TEMA_PADRAO.secundaria);
+  const [corFundo, setCorFundo] = useState(TEMA_PADRAO.fundo);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const [empresas, setEmpresas] = useState<EmpresaUsuario[]>([]);
@@ -46,17 +87,41 @@ export function useEmpresa() {
     carregarEmpresa();
   }, []);
 
-  // 🎨 aplica tema + favicon + logo
-  function aplicarTema(empresa: EmpresaUsuario) {
-    const primaria = empresa.cor_primaria || "#4b2f3f";
-    const secundaria = empresa.cor_secundaria || "#4d6f53";
-    const fundo = empresa.cor_fundo || "#f1f9f5";
+  function normalizarEmpresa(raw: any, perfil?: string | null): EmpresaUsuario | null {
+    if (!raw?.id) return null;
+
+    const nome = raw.nome_fantasia || raw.nome || "VendlySys";
+
+    return {
+      id: raw.id,
+      nome,
+      nome_fantasia: raw.nome_fantasia || null,
+      slug: raw.slug || null,
+      cor_primaria: raw.cor_primaria || null,
+      cor_secundaria: raw.cor_secundaria || null,
+      cor_fundo: raw.cor_fundo || null,
+      logo_url: raw.logo_url || null,
+      favicon_url: raw.favicon_url || null,
+      ativa: raw.ativa,
+      bloqueada: raw.bloqueada,
+      plano: raw.plano || null,
+      status_assinatura: raw.status_assinatura || null,
+      licenca_vitalicia: raw.licenca_vitalicia,
+      trial_inicio: raw.trial_inicio || null,
+      trial_fim: raw.trial_fim || null,
+      perfil: perfil || null,
+    };
+  }
+
+  function aplicarTema(empresaAtual: EmpresaUsuario) {
+    const primaria = empresaAtual.cor_primaria || TEMA_PADRAO.primaria;
+    const secundaria = empresaAtual.cor_secundaria || TEMA_PADRAO.secundaria;
+    const fundo = empresaAtual.cor_fundo || TEMA_PADRAO.fundo;
 
     setCorPrimaria(primaria);
     setCorSecundaria(secundaria);
     setCorFundo(fundo);
-
-    setLogoUrl(empresa.logo_url || null);
+    setLogoUrl(empresaAtual.logo_url || null);
 
     document.documentElement.style.setProperty("--cor-primaria", primaria);
     document.documentElement.style.setProperty("--cor-secundaria", secundaria);
@@ -66,9 +131,8 @@ export function useEmpresa() {
     document.documentElement.style.setProperty("--color-secondary", secundaria);
     document.documentElement.style.setProperty("--color-background", fundo);
 
-    // 🔥 favicon dinâmico
-    if (empresa.favicon_url) {
-      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (empresaAtual.favicon_url) {
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
 
       if (!link) {
         link = document.createElement("link");
@@ -76,80 +140,77 @@ export function useEmpresa() {
         document.head.appendChild(link);
       }
 
-      link.href = empresa.favicon_url;
+      link.href = empresaAtual.favicon_url;
     }
   }
 
-  // 🔐 licenciamento
-  function calcularLicenca(empresa: EmpresaUsuario) {
-    const ativa = empresa.ativa !== false;
-    const bloqueada = empresa.bloqueada === true;
-    const vitalicia = empresa.licenca_vitalicia === true;
-    const status = empresa.status_assinatura || "trial";
+  function calcularLicenca(empresaAtual: EmpresaUsuario) {
+    const ativa = empresaAtual.ativa !== false && empresaAtual.ativa !== "false";
+    const bloqueada = valorBooleano(empresaAtual.bloqueada);
+
+    const plano = normalizarTexto(empresaAtual.plano);
+    const status = normalizarTexto(empresaAtual.status_assinatura || "trial");
+
+    const vitalicia =
+      valorBooleano(empresaAtual.licenca_vitalicia) ||
+      plano === "vitalicio" ||
+      status === "vitalicio";
+
+    const assinaturaAtiva =
+      status === "ativo" ||
+      status === "ativa" ||
+      status === "pago" ||
+      status === "paga";
 
     const trialValido =
       status === "trial" &&
-      !!empresa.trial_fim &&
-      new Date(empresa.trial_fim).getTime() >= Date.now();
+      !!empresaAtual.trial_fim &&
+      new Date(empresaAtual.trial_fim).getTime() >= Date.now();
 
-    const assinaturaAtiva = status === "ativo";
-
-    const temAcesso =
-      ativa && !bloqueada && (vitalicia || assinaturaAtiva || trialValido);
+    const temAcesso = ativa && !bloqueada && (vitalicia || assinaturaAtiva || trialValido);
 
     setLicencaAtiva(temAcesso);
     setEmpresaBloqueada(!temAcesso);
-    setStatusAssinatura(status);
-    setTrialFim(empresa.trial_fim || null);
+    setStatusAssinatura(empresaAtual.status_assinatura || status || null);
+    setTrialFim(empresaAtual.trial_fim || null);
+
+    return temAcesso;
   }
 
   async function carregarEmpresa() {
     setCarregandoEmpresa(true);
 
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
     const userId = userData.user?.id;
 
-    if (!userId) {
+    if (userError || !userId) {
       finalizarSemEmpresa();
       return;
     }
 
     let lista: EmpresaUsuario[] = [];
 
-    const { data: vinculos } = await supabase
+    const { data: vinculos, error: vinculosError } = await supabase
       .from("usuarios_empresas")
-      .select(`
-        empresa_id,
-        empresas (
-          id,
-          nome,
-          slug,
-          cor_primaria,
-          cor_secundaria,
-          cor_fundo,
-          logo_url,
-          favicon_url,
-          ativa,
-          bloqueada,
-          status_assinatura,
-          licenca_vitalicia,
-          trial_inicio,
-          trial_fim
-        )
-      `)
+      .select("empresa_id, perfil")
       .eq("user_id", userId)
       .eq("ativo", true);
 
-    if (vinculos && vinculos.length > 0) {
-      lista = vinculos.map((v: any) => v.empresas).filter(Boolean);
+    if (vinculosError) {
+      console.warn("Erro ao buscar vínculos de empresas:", vinculosError);
     }
 
-    if (lista.length === 0) {
-      const { data: empresaDireta } = await supabase
+    const empresaIds = (vinculos || [])
+      .map((v: any) => v.empresa_id)
+      .filter(Boolean);
+
+    if (empresaIds.length > 0) {
+      const { data: empresasBanco, error: empresasError } = await supabase
         .from("empresas")
         .select(`
           id,
           nome,
+          nome_fantasia,
           slug,
           cor_primaria,
           cor_secundaria,
@@ -158,6 +219,44 @@ export function useEmpresa() {
           favicon_url,
           ativa,
           bloqueada,
+          plano,
+          status_assinatura,
+          licenca_vitalicia,
+          trial_inicio,
+          trial_fim
+        `)
+        .in("id", empresaIds);
+
+      if (empresasError) {
+        console.warn("Erro ao buscar empresas vinculadas:", empresasError);
+      }
+
+      lista = (empresasBanco || [])
+        .map((empresaBanco: any) => {
+          const vinculo = (vinculos || []).find(
+            (v: any) => v.empresa_id === empresaBanco.id
+          );
+          return normalizarEmpresa(empresaBanco, vinculo?.perfil);
+        })
+        .filter(Boolean) as EmpresaUsuario[];
+    }
+
+    if (lista.length === 0) {
+      const { data: empresaDireta, error: empresaDiretaError } = await supabase
+        .from("empresas")
+        .select(`
+          id,
+          nome,
+          nome_fantasia,
+          slug,
+          cor_primaria,
+          cor_secundaria,
+          cor_fundo,
+          logo_url,
+          favicon_url,
+          ativa,
+          bloqueada,
+          plano,
           status_assinatura,
           licenca_vitalicia,
           trial_inicio,
@@ -165,7 +264,13 @@ export function useEmpresa() {
         `)
         .eq("user_id", userId);
 
-      lista = empresaDireta || [];
+      if (empresaDiretaError) {
+        console.warn("Erro ao buscar empresa direta:", empresaDiretaError);
+      }
+
+      lista = (empresaDireta || [])
+        .map((empresaBanco: any) => normalizarEmpresa(empresaBanco, "admin"))
+        .filter(Boolean) as EmpresaUsuario[];
     }
 
     if (lista.length === 0) {
@@ -173,32 +278,34 @@ export function useEmpresa() {
       return;
     }
 
-    const salva = localStorage.getItem(STORAGE_KEY);
-    const ativa = lista.find((e) => e.id === salva) || lista[0];
+    const empresaSalvaId = localStorage.getItem(STORAGE_KEY);
+    const empresaAtiva = lista.find((e) => e.id === empresaSalvaId) || lista[0];
 
-    localStorage.setItem(STORAGE_KEY, ativa.id);
+    localStorage.setItem(STORAGE_KEY, empresaAtiva.id);
 
     setEmpresas(lista);
-    setEmpresaId(ativa.id);
-    setEmpresaNome(ativa.nome);
+    setEmpresa(empresaAtiva);
+    setEmpresaId(empresaAtiva.id);
+    setEmpresaNome(empresaAtiva.nome);
 
-    aplicarTema(ativa);
-    calcularLicenca(ativa);
+    aplicarTema(empresaAtiva);
+    calcularLicenca(empresaAtiva);
 
     setCarregandoEmpresa(false);
   }
 
   function trocarEmpresa(novaEmpresaId: string) {
-    const empresa = empresas.find((e) => e.id === novaEmpresaId);
-    if (!empresa) return;
+    const novaEmpresa = empresas.find((e) => e.id === novaEmpresaId);
+    if (!novaEmpresa) return;
 
-    localStorage.setItem(STORAGE_KEY, empresa.id);
+    localStorage.setItem(STORAGE_KEY, novaEmpresa.id);
 
-    setEmpresaId(empresa.id);
-    setEmpresaNome(empresa.nome);
+    setEmpresa(novaEmpresa);
+    setEmpresaId(novaEmpresa.id);
+    setEmpresaNome(novaEmpresa.nome);
 
-    aplicarTema(empresa);
-    calcularLicenca(empresa);
+    aplicarTema(novaEmpresa);
+    calcularLicenca(novaEmpresa);
 
     window.location.reload();
   }
@@ -206,11 +313,12 @@ export function useEmpresa() {
   function finalizarSemEmpresa() {
     localStorage.removeItem(STORAGE_KEY);
 
+    setEmpresa(null);
     setEmpresaId(null);
-    setEmpresaNome("");
-    setCorPrimaria("#4b2f3f");
-    setCorSecundaria("#4d6f53");
-    setCorFundo("#f1f9f5");
+    setEmpresaNome("VendlySys");
+    setCorPrimaria(TEMA_PADRAO.primaria);
+    setCorSecundaria(TEMA_PADRAO.secundaria);
+    setCorFundo(TEMA_PADRAO.fundo);
     setLogoUrl(null);
     setEmpresas([]);
 
@@ -223,6 +331,7 @@ export function useEmpresa() {
   }
 
   return {
+    empresa,
     empresaId,
     empresaNome,
     corPrimaria,

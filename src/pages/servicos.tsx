@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -12,11 +13,13 @@ import EmptyState from "../components/ui/EmptyState";
 type CategoriaServico = {
   id: string;
   nome: string;
+  empresa_id?: string | null;
   created_at?: string | null;
 };
 
 type Servico = {
   id: string;
+  empresa_id?: string | null;
   nome: string;
   categoria: string | null;
   preco: number | null;
@@ -27,6 +30,10 @@ type Servico = {
   preco_residencial?: number | null;
   ativo: boolean;
   descricao?: string | null;
+  retorno_automatico?: boolean | null;
+  retorno_dias?: number | null;
+  retorno_alerta_dias?: number | null;
+  retorno_tipo?: string | null;
   created_at?: string | null;
 };
 
@@ -66,6 +73,8 @@ const categoriasPadrao = [
 ];
 
 export default function ServicosPage() {
+  const { empresaId, carregandoEmpresa } = useEmpresa();
+
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [categorias, setCategorias] = useState<CategoriaServico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +90,10 @@ export default function ServicosPage() {
   const [duracao, setDuracao] = useState("60");
   const [atendimentoResidencial, setAtendimentoResidencial] = useState(false);
   const [ativo, setAtivo] = useState(true);
+  const [retornoAutomatico, setRetornoAutomatico] = useState(false);
+  const [retornoDias, setRetornoDias] = useState("");
+  const [retornoAlertaDias, setRetornoAlertaDias] = useState("0");
+  const [retornoTipo, setRetornoTipo] = useState("");
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -96,10 +109,11 @@ export default function ServicosPage() {
   } | null>(null);
 
   useEffect(() => {
-    carregarTudo();
-  }, []);
+    if (empresaId) carregarTudo();
+  }, [empresaId]);
 
   async function carregarTudo() {
+    if (!empresaId) return;
     setLoading(true);
     await Promise.all([carregarServicos(), carregarCategorias()]);
     setLoading(false);
@@ -109,6 +123,7 @@ export default function ServicosPage() {
     const { data, error } = await supabase
       .from("servicos")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("categoria", { ascending: true })
       .order("nome", { ascending: true });
 
@@ -126,6 +141,7 @@ export default function ServicosPage() {
     const { data, error } = await supabase
       .from("categorias_servicos")
       .select("*")
+      .eq("empresa_id", empresaId)
       .order("nome", { ascending: true });
 
     if (error) {
@@ -148,6 +164,10 @@ export default function ServicosPage() {
     setDuracao("60");
     setAtendimentoResidencial(false);
     setAtivo(true);
+    setRetornoAutomatico(false);
+    setRetornoDias("");
+    setRetornoAlertaDias("0");
+    setRetornoTipo("");
     setEditandoId(null);
     setMostrarFormulario(false);
   }
@@ -170,6 +190,11 @@ export default function ServicosPage() {
 
   async function salvarCategoria(e: FormEvent) {
     e.preventDefault();
+
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
 
     const nomeFinal = nomeCategoria.trim();
 
@@ -195,7 +220,8 @@ export default function ServicosPage() {
       const { error } = await supabase
         .from("categorias_servicos")
         .update({ nome: nomeFinal })
-        .eq("id", categoriaEditandoId);
+        .eq("id", categoriaEditandoId)
+        .eq("empresa_id", empresaId);
 
       if (error) {
         alert("Erro ao editar categoria: " + error.message);
@@ -206,7 +232,8 @@ export default function ServicosPage() {
         const { error: erroServicos } = await supabase
           .from("servicos")
           .update({ categoria: nomeFinal })
-          .eq("categoria", categoriaAntiga.nome);
+          .eq("categoria", categoriaAntiga.nome)
+          .eq("empresa_id", empresaId);
 
         if (erroServicos) {
           alert("Categoria editada, mas não foi possível atualizar os serviços: " + erroServicos.message);
@@ -215,7 +242,7 @@ export default function ServicosPage() {
     } else {
       const { error } = await supabase
         .from("categorias_servicos")
-        .insert([{ nome: nomeFinal }]);
+        .insert([{ nome: nomeFinal, empresa_id: empresaId }]);
 
       if (error) {
         alert("Erro ao criar categoria: " + error.message);
@@ -230,6 +257,10 @@ export default function ServicosPage() {
   }
 
   async function excluirCategoria(nomeDaCategoria: string) {
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
     const categoriaUsada = servicos.some((item) => item.categoria === nomeDaCategoria);
 
     if (categoriaUsada) {
@@ -252,7 +283,8 @@ export default function ServicosPage() {
     const { error } = await supabase
       .from("categorias_servicos")
       .delete()
-      .eq("id", categoriaExistente.id);
+      .eq("id", categoriaExistente.id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       alert("Erro ao excluir categoria: " + error.message);
@@ -265,10 +297,17 @@ export default function ServicosPage() {
   async function salvarServico(e: FormEvent) {
     e.preventDefault();
 
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
+
     const precoNormalizado = normalizarNumero(preco);
     const precoPromocionalNormalizado = normalizarNumero(precoPromocional);
     const precoResidencialNormalizado = normalizarNumero(precoResidencial);
     const duracaoNormalizada = normalizarNumero(duracao);
+    const retornoDiasNormalizado = normalizarNumero(retornoDias);
+    const retornoAlertaNormalizado = normalizarNumero(retornoAlertaDias);
 
     if (!nome.trim()) {
       alert("Informe o nome do serviço.");
@@ -287,6 +326,16 @@ export default function ServicosPage() {
 
     if (duracaoNormalizada !== null && duracaoNormalizada <= 0) {
       alert("Informe uma duração válida.");
+      return;
+    }
+
+    if (retornoAutomatico && (!retornoDiasNormalizado || retornoDiasNormalizado <= 0)) {
+      alert("Informe o prazo de retorno em dias.");
+      return;
+    }
+
+    if (retornoAutomatico && retornoAlertaNormalizado !== null && retornoAlertaNormalizado < 0) {
+      alert("O alerta de retorno não pode ser negativo.");
       return;
     }
 
@@ -313,10 +362,15 @@ export default function ServicosPage() {
       duracao_padrao_minutos:
         duracaoNormalizada && duracaoNormalizada > 0 ? duracaoNormalizada : 60,
       ativo,
+      retorno_automatico: retornoAutomatico,
+      retorno_dias: retornoAutomatico ? retornoDiasNormalizado : null,
+      retorno_alerta_dias: retornoAutomatico ? retornoAlertaNormalizado || 0 : 0,
+      retorno_tipo: retornoAutomatico ? retornoTipo.trim() || null : null,
+      empresa_id: empresaId,
     };
 
     const resposta = editandoId
-      ? await supabase.from("servicos").update(payload).eq("id", editandoId)
+      ? await supabase.from("servicos").update(payload).eq("id", editandoId).eq("empresa_id", empresaId)
       : await supabase.from("servicos").insert([payload]);
 
     if (resposta.error) {
@@ -348,16 +402,25 @@ export default function ServicosPage() {
     );
     setAtendimentoResidencial(!!item.atendimento_residencial);
     setAtivo(item.ativo ?? true);
+    setRetornoAutomatico(!!item.retorno_automatico);
+    setRetornoDias(item.retorno_dias != null ? String(item.retorno_dias) : "");
+    setRetornoAlertaDias(item.retorno_alerta_dias != null ? String(item.retorno_alerta_dias) : "0");
+    setRetornoTipo(item.retorno_tipo || "");
     setEditandoId(item.id);
     setMostrarFormulario(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function toggleAtivo(id: string, ativoAtual: boolean) {
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
     const { error } = await supabase
       .from("servicos")
       .update({ ativo: !ativoAtual })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao atualizar status do serviço:", error);
@@ -496,6 +559,12 @@ export default function ServicosPage() {
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
 
+    if (!empresaId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      e.target.value = "";
+      return;
+    }
+
     setImportando(true);
     setResumoImportacao(null);
 
@@ -536,6 +605,7 @@ export default function ServicosPage() {
         descricao: string | null;
         duracao_padrao_minutos: number;
         ativo: boolean;
+        empresa_id: string;
       }> = [];
 
       const categoriasParaCriar = new Set<string>();
@@ -653,12 +723,14 @@ export default function ServicosPage() {
           duracao_padrao_minutos:
             duracaoServico && duracaoServico > 0 ? duracaoServico : 60,
           ativo: ativoNormalizado ?? true,
+          empresa_id: empresaId,
         });
       });
 
       if (categoriasParaCriar.size > 0) {
         const payloadCategorias = Array.from(categoriasParaCriar).map((nomeCategoria) => ({
           nome: nomeCategoria,
+          empresa_id: empresaId,
         }));
 
         const { error: erroCategorias } = await supabase
@@ -702,6 +774,22 @@ export default function ServicosPage() {
       ...prev,
       [nomeCategoria]: prev[nomeCategoria] === false ? true : false,
     }));
+  }
+
+  if (carregandoEmpresa) {
+    return (
+      <SectionCard>
+        <p>Carregando empresa...</p>
+      </SectionCard>
+    );
+  }
+
+  if (!empresaId) {
+    return (
+      <SectionCard>
+        <p>Empresa não encontrada. Faça login novamente.</p>
+      </SectionCard>
+    );
   }
 
   return (
@@ -908,6 +996,50 @@ export default function ServicosPage() {
                 />
                 Serviço ativo
               </label>
+            </div>
+
+            <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={retornoAutomatico}
+                  onChange={(e) => setRetornoAutomatico(e.target.checked)}
+                />
+                Criar retorno automático ao finalizar atendimento
+              </label>
+
+              {retornoAutomatico && (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Prazo do retorno (dias)"
+                    value={retornoDias}
+                    onChange={(e) => setRetornoDias(e.target.value)}
+                    className="rounded-2xl border border-slate-200 p-3"
+                  />
+
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Alertar antes (dias)"
+                    value={retornoAlertaDias}
+                    onChange={(e) => setRetornoAlertaDias(e.target.value)}
+                    className="rounded-2xl border border-slate-200 p-3"
+                  />
+
+                  <input
+                    placeholder="Tipo de retorno (manutenção, avaliação...)"
+                    value={retornoTipo}
+                    onChange={(e) => setRetornoTipo(e.target.value)}
+                    className="rounded-2xl border border-slate-200 p-3"
+                  />
+                </div>
+              )}
+
+              <p className="mt-2 text-xs text-slate-500">
+                Exemplo: prazo 20 dias e alerta 3 dias antes → o alerta aparece 17 dias após o atendimento.
+              </p>
             </div>
 
             <div className="md:col-span-2 flex gap-2">

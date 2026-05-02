@@ -1,35 +1,50 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export function useEmpresaPublica() {
-  const [empresa, setEmpresa] = useState<any>(null);
+export type EmpresaPublica = {
+  id: string;
+  nome: string;
+  slug: string;
+  cor_primaria?: string | null;
+  cor_secundaria?: string | null;
+  cor_fundo?: string | null;
+  telefone?: string | null;
+  endereco?: string | null;
+};
+
+export function useEmpresaPublica(slug?: string) {
+  const [empresa, setEmpresa] = useState<EmpresaPublica | null>(null);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    carregar();
-  }, []);
-
-  async function carregar() {
-    setCarregando(true);
-
-    const path = window.location.pathname;
-    const slug = path.split("/")[1]; // 👈 pega /fabio
-
     if (!slug) {
       setCarregando(false);
       return;
     }
 
-    const { data } = await supabase
+    carregar();
+  }, [slug]);
+
+  async function carregar() {
+    setCarregando(true);
+
+    const { data, error } = await supabase
       .from("empresas")
       .select("*")
       .eq("slug", slug)
       .maybeSingle();
 
-    if (data) {
-      setEmpresa(data);
+    if (error) {
+      console.error("Erro ao carregar empresa pública:", error);
+      setEmpresa(null);
+      setCarregando(false);
+      return;
+    }
 
-      // 🎨 aplica tema
+    setEmpresa(data);
+
+    // 🎨 aplica cores no layout público (Meu Espaço)
+    if (data) {
       document.documentElement.style.setProperty(
         "--cor-primaria",
         data.cor_primaria || "#4b2f3f"

@@ -153,6 +153,41 @@ export default function AnamneseConfiguracao() {
     ]);
   }
 
+
+  function adicionarAvaliacaoProfissional() {
+    setCampos((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        modelo_id: modeloId || undefined,
+        nome_campo: "avaliacao_profissional",
+        label: "Como você avalia o profissional que realizou seu atendimento?",
+        tipo: "select",
+        obrigatorio: true,
+        placeholder: "",
+        ajuda: "Essa informação ajuda a empresa a acompanhar a qualidade do atendimento.",
+        opcoes: ["Excelente", "Bom", "Regular", "Ruim"],
+        ordem: prev.length,
+        ativo: true,
+        gera_alerta: false,
+      },
+      {
+        id: crypto.randomUUID(),
+        modelo_id: modeloId || undefined,
+        nome_campo: "comentario_profissional",
+        label: "Deseja deixar algum comentário sobre o atendimento?",
+        tipo: "textarea",
+        obrigatorio: false,
+        placeholder: "Digite aqui seu comentário",
+        ajuda: "Campo opcional.",
+        opcoes: [],
+        ordem: prev.length + 1,
+        ativo: true,
+        gera_alerta: false,
+      },
+    ]);
+  }
+
   function atualizarCampo(id: string, campo: Partial<Campo>) {
     setCampos((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...campo } : c))
@@ -482,14 +517,24 @@ export default function AnamneseConfiguracao() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={adicionarCampo}
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-white"
-            style={{ backgroundColor: "var(--color-primary)" }}
-          >
-            + Adicionar campo
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={adicionarAvaliacaoProfissional}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              + Avaliação do profissional
+            </button>
+
+            <button
+              type="button"
+              onClick={adicionarCampo}
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-white"
+              style={{ backgroundColor: "var(--color-primary)" }}
+            >
+              + Adicionar campo
+            </button>
+          </div>
         </div>
 
         {campos.length === 0 ? (

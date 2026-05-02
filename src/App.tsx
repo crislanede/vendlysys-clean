@@ -1,17 +1,17 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppLayout from "./components/layout/AppLayout";
-import AdminLayout from "./components/admin/AdminLayout";
+import AdminSaasLayout from "./components/AdminSaasLayout";
 import AdminRoute from "./components/AdminRoute";
 import ThemeLoader from "./components/theme/ThemeLoader";
 import BloqueioTrial from "./components/BloqueioTrial";
 
-
-
 import Login from "./pages/login";
+import ResetarSenha from "./pages/resetar-senha";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 import Licencas from "./pages/licencas";
 import AdminEmpresas from "./pages/admin-empresas";
+import AdminUsuarios from "./pages/admin-usuarios";
 import NovaEmpresa from "./pages/NovaEmpresa";
 import UsuariosEmpresa from "./pages/usuarios-empresa";
 
@@ -41,35 +41,47 @@ import WhatsappMensagens from "./pages/whatsapp-mensagens";
 
 import MeuEspaco from "./pages/meu-espaco";
 
-export default function App() {
+function AppContent() {
+  const location = useLocation();
+
+  const rotasSemBloqueio =
+    location.pathname === "/login" ||
+    location.pathname === "/resetar-senha" ||
+    location.pathname === "/cadastro-empresa" ||
+    location.pathname.startsWith("/admin") ||
+    location.pathname.startsWith("/meu-espaco");
+
   return (
-    <BrowserRouter>
+    <>
       <ThemeLoader />
-      <BloqueioTrial />
+      {!rotasSemBloqueio && <BloqueioTrial />}
 
       <Routes>
+        {/* Rotas públicas */}
         <Route path="/login" element={<Login />} />
+        <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
-        <Route path="/" element={<AppLayout />}></Route>
 
+        {/* Ambiente Admin SaaS - fora do layout da empresa */}
         <Route
           path="/admin"
           element={
             <AdminRoute>
-              <AdminLayout />
+              <AdminSaasLayout />
             </AdminRoute>
           }
         >
-          <Route index element={<Navigate to="/admin/licencas" replace />} />
-          <Route path="licencas" element={<Licencas />} />
+          <Route index element={<Navigate to="/admin/empresas" replace />} />
           <Route path="empresas" element={<AdminEmpresas />} />
+          <Route path="usuarios" element={<AdminUsuarios />} />
+          <Route path="licencas" element={<Licencas />} />
         </Route>
-        <Route path="nova-empresa" element={<NovaEmpresa />} />
 
+        {/* Sistema da empresa */}
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/:slug" element={<MeuEspaco />} />
+          <Route path=":slug" element={<MeuEspaco />} />
 
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agenda" element={<Agenda />} />
@@ -99,10 +111,17 @@ export default function App() {
           <Route path="relatorios" element={<Relatorios />} />
           <Route path="relatorios-retorno" element={<RelatoriosRetorno />} />
           <Route path="configuracoes" element={<Configuracoes />} />
-
           <Route path="nova-empresa" element={<NovaEmpresa />} />
         </Route>
       </Routes>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
   );
 }
