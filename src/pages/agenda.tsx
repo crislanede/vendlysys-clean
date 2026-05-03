@@ -279,9 +279,12 @@ function formatarData(data?: string | null) {
   if (!data) return "-";
   return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
 }
+
 function formatarDataNascimento(data?: string | null) {
   if (!data) return "-";
-  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+  const partes = data.split("-");
+  if (partes.length !== 3) return data;
+  return `${partes[2]}/${partes[1]}`;
 }
 
 function montarMensagemAniversario(nome: string) {
@@ -517,11 +520,11 @@ export default function AgendaPage() {
     await carregarTudo();
   }
 
-  async function confirmarAgendamento(id: string) {
+  async function confirmarAgendamento(agendamento: Agendamento) {
     const { error } = await supabase
       .from("agendamentos")
       .update({ status: "confirmado" })
-      .eq("id", id);
+      .eq("id", agendamento.id);
 
     if (error) {
       alert(`Erro ao confirmar: ${error.message}`);
@@ -529,9 +532,17 @@ export default function AgendaPage() {
     }
 
     await carregarTudo();
+
+    const enviarWhatsapp = window.confirm(
+      "Agendamento confirmado. Deseja abrir o WhatsApp para enviar a confirmação ao cliente?",
+    );
+
+    if (enviarWhatsapp) {
+      await enviarConfirmacaoWhatsapp({ ...agendamento, status: "confirmado" });
+    }
   }
 
-  async function cancelarAgendamento(id: string) {
+  async function cancelarAgendamento(agendamento: Agendamento) {
     const confirmarCancelamento = window.confirm(
       "Deseja cancelar este agendamento? Ao cancelar, o horário será liberado para novo agendamento.",
     );
@@ -550,7 +561,7 @@ export default function AgendaPage() {
     let resultado = await supabase
       .from("agendamentos")
       .update(payloadCompleto)
-      .eq("id", id);
+      .eq("id", agendamento.id);
 
     if (resultado.error) {
       const mensagemErro = String(resultado.error.message || "").toLowerCase();
@@ -564,7 +575,7 @@ export default function AgendaPage() {
         resultado = await supabase
           .from("agendamentos")
           .update(payloadMinimo)
-          .eq("id", id);
+          .eq("id", agendamento.id);
       }
     }
 
@@ -573,8 +584,15 @@ export default function AgendaPage() {
       return;
     }
 
-    alert("Agendamento cancelado. O horário foi liberado para novo agendamento.");
     await carregarTudo();
+
+    const enviarWhatsapp = window.confirm(
+      "Agendamento cancelado e horário liberado. Deseja abrir o WhatsApp para avisar o cliente?",
+    );
+
+    if (enviarWhatsapp) {
+      await enviarCancelamentoWhatsapp({ ...agendamento, status: "cancelado" });
+    }
   }
 
   function abrirModalReagendar(agendamento: Agendamento) {
@@ -830,6 +848,62 @@ export default function AgendaPage() {
     }
 
     return novoToken;
+  }
+
+  async function enviarConfirmacaoWhatsapp(agendamento: Agendamento) {
+    const telefone = telefoneDoAgendamento(agendamento);
+
+    if (!telefone) {
+      alert(
+        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
+      );
+      return;
+    }
+
+    const token = await garantirTokenReagendamento(agendamento);
+
+    if (!token) return;
+
+    const linkMeuEspaco = montarLinkMeuEspaco(token);
+    const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu agendamento foi confirmado.
+
+Serviço: ${agendamento.servico || "não informado"}
+Data: ${formatarData(agendamento.data)}
+Horário: ${agendamento.horario || "não informado"}
+Profissional: ${agendamento.profissional || "não informado"}
+
+Para confirmar ou acompanhar seu agendamento, acesse:
+${linkMeuEspaco}`;
+
+    const numero = normalizarTelefoneWhatsapp(telefone);
+    const texto = encodeURIComponent(mensagem);
+
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+  }
+
+  async function enviarCancelamentoWhatsapp(agendamento: Agendamento) {
+    const telefone = telefoneDoAgendamento(agendamento);
+
+    if (!telefone) {
+      alert(
+        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
+      );
+      return;
+    }
+
+    const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu agendamento foi cancelado.
+
+Serviço: ${agendamento.servico || "não informado"}
+Data: ${formatarData(agendamento.data)}
+Horário: ${agendamento.horario || "não informado"}
+Profissional: ${agendamento.profissional || "não informado"}
+
+Caso queira remarcar, entre em contato conosco.`;
+
+    const numero = normalizarTelefoneWhatsapp(telefone);
+    const texto = encodeURIComponent(mensagem);
+
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
   }
 
   async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
@@ -1126,6 +1200,7 @@ ${linkMeuEspaco}`;
   const agendamentosDoDia = useMemo(() => {
     return agendamentos
       .filter((item) => item.data === selectedDate)
+      .filter((item) => item.status !== "cancelado")
       .filter((item) =>
         statusFilter === "todos" ? true : (item.status || "") === statusFilter,
       )
@@ -1502,7 +1577,7 @@ ${linkMeuEspaco}`;
                                 {item.status !== "confirmado" && (
                                   <SecondaryButton
                                     onClick={() =>
-                                      void confirmarAgendamento(item.id)
+                                      void confirmarAgendamento(item)
                                     }
                                   >
                                     Confirmar
@@ -1517,7 +1592,7 @@ ${linkMeuEspaco}`;
 
                                 <SecondaryButton
                                   onClick={() =>
-                                    void cancelarAgendamento(item.id)
+                                    void cancelarAgendamento(item)
                                   }
                                 >
                                   Cancelar
