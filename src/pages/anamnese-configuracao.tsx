@@ -23,10 +23,12 @@ type Campo = {
 type Modelo = {
   id: string;
   empresa_id?: string | null;
-  titulo: string;
+  nome?: string | null;
+  titulo?: string | null;
   descricao: string | null;
-  termo_responsabilidade: string | null;
-  obrigatoria: boolean;
+  termo_responsabilidade?: string | null;
+  obrigatoria?: boolean | null;
+  obrigatorio?: boolean | null;
   ativo: boolean;
 };
 
@@ -91,10 +93,10 @@ export default function AnamneseConfiguracao() {
       const modelo = modeloData as Modelo;
 
       setModeloId(modelo.id);
-      setTitulo(modelo.titulo || "Ficha de Anamnese");
+      setTitulo(modelo.titulo || modelo.nome || "Ficha de Anamnese");
       setDescricao(modelo.descricao || "");
       setTermoResponsabilidade(modelo.termo_responsabilidade || "");
-      setObrigatoria(Boolean(modelo.obrigatoria));
+      setObrigatoria(Boolean(modelo.obrigatoria ?? modelo.obrigatorio ?? true));
       setAtivo(Boolean(modelo.ativo));
 
       const { data: camposData, error: camposError } = await supabase
@@ -113,8 +115,8 @@ export default function AnamneseConfiguracao() {
       const carregados = ((camposData || []) as any[]).map((campo, index) => ({
         id: campo.id,
         modelo_id: campo.modelo_id,
-        nome_campo: campo.nome_campo || "",
-        label: campo.label || "",
+        nome_campo: campo.nome_campo || campo.pergunta?.toLowerCase()?.replace(/[^a-z0-9]+/gi, "_") || "",
+        label: campo.label || campo.pergunta || "",
         tipo: campo.tipo || "text",
         obrigatorio: Boolean(campo.obrigatorio),
         placeholder: campo.placeholder || "",
@@ -246,6 +248,29 @@ export default function AnamneseConfiguracao() {
     }
   }
 
+  function normalizarNomeCampo(valor: string, fallback: string) {
+    const base = (valor || fallback || "campo")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    return base || "campo";
+  }
+
+  function tituloSeguro() {
+    return titulo.trim() || "Ficha de Anamnese";
+  }
+
+  function tipoSeguro(tipo: string) {
+    return tipo?.trim() || "text";
+  }
+
+  function perguntaSegura(campo: Campo, index: number) {
+    return campo.label.trim() || `Pergunta ${index + 1}`;
+  }
+
   function validarAntesDeSalvar() {
     if (!titulo.trim()) {
       alert("Preencha o título da ficha.");
@@ -294,10 +319,12 @@ export default function AnamneseConfiguracao() {
       if (!idModelo) {
         const payloadModelo = {
           empresa_id: empresaId,
-          titulo,
-          descricao,
-          termo_responsabilidade: termoResponsabilidade,
+          nome: tituloSeguro(),
+          titulo: tituloSeguro(),
+          descricao: descricao.trim(),
+          termo_responsabilidade: termoResponsabilidade.trim(),
           obrigatoria,
+          obrigatorio: obrigatoria,
           ativo,
         };
 
@@ -321,10 +348,12 @@ export default function AnamneseConfiguracao() {
           .from("anamnese_modelos")
           .update({
             empresa_id: empresaId,
-            titulo,
-            descricao,
-            termo_responsabilidade: termoResponsabilidade,
+            nome: tituloSeguro(),
+            titulo: tituloSeguro(),
+            descricao: descricao.trim(),
+            termo_responsabilidade: termoResponsabilidade.trim(),
             obrigatoria,
+            obrigatorio: obrigatoria,
             ativo,
           })
           .eq("id", idModelo);
@@ -352,20 +381,27 @@ export default function AnamneseConfiguracao() {
       const vistos = new Set<string>();
 
       const payloadCampos = campos
-        .map((campo, index) => ({
-          modelo_id: idModelo,
-          nome_campo: campo.nome_campo.trim().toLowerCase(),
-          label: campo.label.trim(),
-          tipo: campo.tipo,
-          obrigatorio: campo.obrigatorio,
-          placeholder: campo.placeholder || "",
-          ajuda: campo.ajuda || "",
-          opcoes:
-            campo.tipo === "sim_nao_justificativa" ? [] : campo.opcoes || [],
-          ordem: index,
-          ativo: campo.ativo,
-          gera_alerta: campo.gera_alerta ?? false,
-        }))
+        .map((campo, index) => {
+          const pergunta = perguntaSegura(campo, index);
+          const nomeCampo = normalizarNomeCampo(campo.nome_campo, pergunta);
+          const tipo = tipoSeguro(campo.tipo);
+
+          return {
+            modelo_id: idModelo,
+            nome_campo: nomeCampo,
+            label: pergunta,
+            pergunta,
+            tipo,
+            obrigatorio: campo.obrigatorio,
+            placeholder: campo.placeholder || "",
+            ajuda: campo.ajuda || "",
+            opcoes:
+              tipo === "sim_nao_justificativa" ? [] : campo.opcoes || [],
+            ordem: index,
+            ativo: campo.ativo,
+            gera_alerta: campo.gera_alerta ?? false,
+          };
+        })
         .filter((campo) => {
           const chave = campo.nome_campo;
           if (!chave || vistos.has(chave)) return false;
