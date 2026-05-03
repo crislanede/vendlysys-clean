@@ -29,6 +29,12 @@ type ServicoCliente = {
 type ProfissionalCliente = {
   id: string;
   nome: string;
+  inicio_expediente?: string | null;
+  fim_expediente?: string | null;
+  inicio_almoco?: string | null;
+  fim_almoco?: string | null;
+  intervalo_minutos?: number | string | null;
+  intervalo?: number | string | null;
 };
 
 function limparTelefone(valor: string) {
@@ -102,13 +108,42 @@ function somarMinutos(horario: string, minutos: number) {
   return data.toTimeString().slice(0, 5);
 }
 
-function gerarHorariosBase() {
-  const horarios: string[] = [];
-  let atual = "08:00";
+function normalizarHorario(valor?: string | null, fallback = "") {
+  if (!valor) return fallback;
+  return String(valor).slice(0, 5);
+}
 
-  while (atual <= "18:00") {
+function obterIntervaloAgenda(profissional: ProfissionalCliente | null) {
+  const intervalo = Number(
+    profissional?.intervalo_minutos || profissional?.intervalo || 30,
+  );
+
+  return !Number.isNaN(intervalo) && intervalo > 0 ? intervalo : 30;
+}
+
+function horarioSobrepoeIntervalo(
+  inicioServico: string,
+  duracaoMinutos: number,
+  inicioBloqueio?: string | null,
+  fimBloqueio?: string | null,
+) {
+  const inicio = normalizarHorario(inicioBloqueio);
+  const fim = normalizarHorario(fimBloqueio);
+
+  if (!inicio || !fim) return false;
+
+  const fimServico = somarMinutos(inicioServico, duracaoMinutos);
+
+  return inicioServico < fim && fimServico > inicio;
+}
+
+function gerarHorariosBase(inicio = "08:00", fim = "18:00", intervalo = 30) {
+  const horarios: string[] = [];
+  let atual = inicio;
+
+  while (atual <= fim) {
     horarios.push(atual);
-    atual = somarMinutos(atual, 30);
+    atual = somarMinutos(atual, intervalo);
   }
 
   return horarios;
@@ -877,6 +912,27 @@ export default function MeuEspaco() {
     setHorarioAgendamento("");
 
     const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+    const profissionalSelecionado = pegarProfissionalSelecionado();
+
+    if (!profissionalSelecionado) {
+      setHorariosLivres([]);
+      setCarregandoHorarios(false);
+      return;
+    }
+
+    const inicioExpediente = normalizarHorario(
+      profissionalSelecionado.inicio_expediente,
+      "08:00",
+    );
+    const fimExpediente = normalizarHorario(
+      profissionalSelecionado.fim_expediente,
+      "18:00",
+    );
+    const inicioAlmoco = normalizarHorario(
+      profissionalSelecionado.inicio_almoco,
+    );
+    const fimAlmoco = normalizarHorario(profissionalSelecionado.fim_almoco);
+    const intervaloAgenda = obterIntervaloAgenda(profissionalSelecionado);
 
     const { data: agendamentosDia, error } = await supabase
       .from("agendamentos")
@@ -894,10 +950,27 @@ export default function MeuEspaco() {
       return;
     }
 
-    const livres = gerarHorariosBase().filter((horario) => {
+    const livres = gerarHorariosBase(
+      inicioExpediente,
+      fimExpediente,
+      intervaloAgenda,
+    ).filter((horario) => {
       const fimServico = somarMinutos(horario, duracaoTotal);
 
-      if (fimServico > "18:30") return false;
+      if (horario < inicioExpediente) return false;
+      if (fimServico > fimExpediente) return false;
+
+      if (
+        horarioSobrepoeIntervalo(
+          horario,
+          duracaoTotal,
+          inicioAlmoco,
+          fimAlmoco,
+        )
+      ) {
+        return false;
+      }
+
       return !existeConflitoHorario(
         horario,
         duracaoTotal,
@@ -939,6 +1012,37 @@ export default function MeuEspaco() {
     }
 
     const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+
+    const inicioExpediente = normalizarHorario(
+      profissionalSelecionado.inicio_expediente,
+      "08:00",
+    );
+    const fimExpediente = normalizarHorario(
+      profissionalSelecionado.fim_expediente,
+      "18:00",
+    );
+
+    if (
+      horarioAgendamento < inicioExpediente ||
+      somarMinutos(horarioAgendamento, duracaoTotal) > fimExpediente
+    ) {
+      alert("Este horário está fora do expediente do profissional.");
+      await carregarHorariosLivres();
+      return;
+    }
+
+    if (
+      horarioSobrepoeIntervalo(
+        horarioAgendamento,
+        duracaoTotal,
+        profissionalSelecionado.inicio_almoco,
+        profissionalSelecionado.fim_almoco,
+      )
+    ) {
+      alert("Este horário está no intervalo de almoço do profissional. Escolha outro horário.");
+      await carregarHorariosLivres();
+      return;
+    }
 
     const { data: agendamentosDia, error: erroConsulta } = await supabase
       .from("agendamentos")
