@@ -1197,6 +1197,22 @@ export default function MeuEspaco() {
       error = resultado.error;
     }
 
+    if (error) {
+      console.error(
+        agendamentoReagendandoId
+          ? "Erro ao reagendar agendamento:"
+          : "Erro ao criar agendamento:",
+        error,
+      );
+      setSalvandoAgendamento(false);
+      alert(
+        agendamentoReagendandoId
+          ? "Erro ao reagendar agendamento: " + error.message
+          : "Erro ao criar agendamento: " + error.message,
+      );
+      return;
+    }
+
     if (!agendamentoReagendandoId) {
       await criarLancamentoFinanceiroAgendamento(
         agendamentoCriado?.id || null,
