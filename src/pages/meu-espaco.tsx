@@ -1729,9 +1729,9 @@ export default function MeuEspaco() {
     const estiloCampo = {
       width: "100%",
       padding: 14,
-      borderRadius: 14,
+      borderRadius: isMobile ? 12 : 14,
       border: "1px solid #cbd5e1",
-      marginTop: 8,
+      marginTop: isMobile ? 5 : 8,
       boxSizing: "border-box" as const,
     };
 
@@ -1843,7 +1843,7 @@ export default function MeuEspaco() {
           border: "1px solid #fed7aa",
           color: "#9a3412",
           borderRadius: 18,
-          padding: 18,
+          padding: isMobile ? 12 : 18,
           marginBottom: 20,
           fontWeight: 800,
         }}
@@ -1858,7 +1858,7 @@ export default function MeuEspaco() {
             background: "#f8fafc",
             border: "1px solid #e2e8f0",
             borderRadius: 18,
-            padding: 18,
+            padding: isMobile ? 12 : 18,
             marginTop: 20,
           }}
         >
@@ -1881,7 +1881,7 @@ export default function MeuEspaco() {
           background: "#f8fafc",
           border: "1px solid #e2e8f0",
           borderRadius: 18,
-          padding: 18,
+          padding: isMobile ? 12 : 18,
           marginTop: 20,
         }}
       >
@@ -1944,7 +1944,7 @@ export default function MeuEspaco() {
             background: "#f8fafc",
             border: "1px solid #e2e8f0",
             borderRadius: 18,
-            padding: 18,
+            padding: isMobile ? 12 : 18,
             marginTop: 20,
           }}
         >
@@ -1967,7 +1967,7 @@ export default function MeuEspaco() {
           background: "#f8fafc",
           border: "1px solid #e2e8f0",
           borderRadius: 18,
-          padding: 18,
+          padding: isMobile ? 12 : 18,
           marginTop: 20,
         }}
       >
@@ -2083,14 +2083,14 @@ export default function MeuEspaco() {
             width: "100%",
             maxWidth: 520,
             background: "#fff",
-            borderRadius: isMobile ? 24 : 28,
-            padding: isMobile ? 18 : 36,
+            borderRadius: isMobile ? 20 : 28,
+            padding: isMobile ? 14 : 36,
             boxShadow: "0 24px 60px rgba(15,23,42,.16)",
             maxHeight: "calc(100vh - 48px)",
             overflowY: "auto",
           }}
         >
-          <h1 style={{ margin: 0, color: "#0f172a", fontSize: isMobile ? 26 : 30 }}>
+          <h1 style={{ margin: 0, color: "#0f172a", fontSize: isMobile ? 22 : 30 }}>
             Meu Espaço
           </h1>
 
@@ -2108,11 +2108,11 @@ export default function MeuEspaco() {
                 placeholder="Ex: 11999999999"
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
-                  fontSize: 16,
+                  marginTop: isMobile ? 5 : 8,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2122,8 +2122,8 @@ export default function MeuEspaco() {
                   style={{
                     background: "#fee2e2",
                     color: "#991b1b",
-                    borderRadius: 14,
-                    padding: 12,
+                    borderRadius: isMobile ? 12 : 14,
+                    padding: isMobile ? 10 : 12,
                     marginTop: 14,
                   }}
                 >
@@ -2138,13 +2138,13 @@ export default function MeuEspaco() {
                 style={{
                   width: "100%",
                   marginTop: 18,
-                  padding: 15,
+                  padding: isMobile ? 12 : 15,
                   borderRadius: 16,
                   border: 0,
                   background: "#282663",
                   color: "#fff",
                   fontWeight: 900,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   cursor: "pointer",
                 }}
               >
@@ -2196,12 +2196,12 @@ export default function MeuEspaco() {
                 placeholder="Seu nome completo"
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 12,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2215,12 +2215,12 @@ export default function MeuEspaco() {
                 placeholder="Ex: 11999999999"
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 12,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2234,12 +2234,12 @@ export default function MeuEspaco() {
                 placeholder="seuemail@exemplo.com"
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 12,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2253,12 +2253,12 @@ export default function MeuEspaco() {
                 }
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 12,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2270,12 +2270,12 @@ export default function MeuEspaco() {
                 placeholder="Ex: 05888160"
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 8,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2297,12 +2297,12 @@ export default function MeuEspaco() {
                 placeholder="Rua, avenida..."
                 style={{
                   width: "100%",
-                  padding: "15px 16px",
+                  padding: isMobile ? "11px 12px" : "15px 16px",
                   borderRadius: 16,
                   border: "1px solid #cbd5e1",
-                  marginTop: 8,
+                  marginTop: isMobile ? 5 : 8,
                   marginBottom: 12,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   boxSizing: "border-box",
                 }}
               />
@@ -2324,12 +2324,12 @@ export default function MeuEspaco() {
                     placeholder="Número"
                     style={{
                       width: "100%",
-                      padding: "15px 16px",
+                      padding: isMobile ? "11px 12px" : "15px 16px",
                       borderRadius: 16,
                       border: "1px solid #cbd5e1",
-                      marginTop: 8,
+                      marginTop: isMobile ? 5 : 8,
                       marginBottom: 12,
-                      fontSize: 16,
+                      fontSize: isMobile ? 14 : 16,
                       boxSizing: "border-box",
                     }}
                   />
@@ -2345,12 +2345,12 @@ export default function MeuEspaco() {
                     placeholder="Bairro"
                     style={{
                       width: "100%",
-                      padding: "15px 16px",
+                      padding: isMobile ? "11px 12px" : "15px 16px",
                       borderRadius: 16,
                       border: "1px solid #cbd5e1",
-                      marginTop: 8,
+                      marginTop: isMobile ? 5 : 8,
                       marginBottom: 12,
-                      fontSize: 16,
+                      fontSize: isMobile ? 14 : 16,
                       boxSizing: "border-box",
                     }}
                   />
@@ -2374,12 +2374,12 @@ export default function MeuEspaco() {
                     placeholder="Cidade"
                     style={{
                       width: "100%",
-                      padding: "15px 16px",
+                      padding: isMobile ? "11px 12px" : "15px 16px",
                       borderRadius: 16,
                       border: "1px solid #cbd5e1",
-                      marginTop: 8,
+                      marginTop: isMobile ? 5 : 8,
                       marginBottom: 12,
-                      fontSize: 16,
+                      fontSize: isMobile ? 14 : 16,
                       boxSizing: "border-box",
                     }}
                   />
@@ -2399,12 +2399,12 @@ export default function MeuEspaco() {
                     maxLength={2}
                     style={{
                       width: "100%",
-                      padding: "15px 16px",
+                      padding: isMobile ? "11px 12px" : "15px 16px",
                       borderRadius: 16,
                       border: "1px solid #cbd5e1",
-                      marginTop: 8,
+                      marginTop: isMobile ? 5 : 8,
                       marginBottom: 12,
-                      fontSize: 16,
+                      fontSize: isMobile ? 14 : 16,
                       boxSizing: "border-box",
                     }}
                   />
@@ -2416,8 +2416,8 @@ export default function MeuEspaco() {
                   style={{
                     background: "#fee2e2",
                     color: "#991b1b",
-                    borderRadius: 14,
-                    padding: 12,
+                    borderRadius: isMobile ? 12 : 14,
+                    padding: isMobile ? 10 : 12,
                     marginTop: 14,
                   }}
                 >
@@ -2432,13 +2432,13 @@ export default function MeuEspaco() {
                 style={{
                   width: "100%",
                   marginTop: 18,
-                  padding: 15,
+                  padding: isMobile ? 12 : 15,
                   borderRadius: 16,
                   border: 0,
                   background: "#282663",
                   color: "#fff",
                   fontWeight: 900,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   cursor: "pointer",
                 }}
               >
@@ -2531,8 +2531,8 @@ export default function MeuEspaco() {
               background: "#fff7ed",
               border: "1px solid #fed7aa",
               color: "#9a3412",
-              padding: 18,
-              borderRadius: 20,
+              padding: isMobile ? 12 : 18,
+              borderRadius: isMobile ? 16 : 20,
               marginBottom: 20,
               fontWeight: 800,
             }}
@@ -2709,10 +2709,10 @@ export default function MeuEspaco() {
                           }}
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                           }}
                         >
                           <option value="">Selecione</option>
@@ -2731,10 +2731,10 @@ export default function MeuEspaco() {
                         {servicos.length === 0 && (
                           <p
                             style={{
-                              marginTop: 8,
+                              marginTop: isMobile ? 5 : 8,
                               color: "#b45309",
                               fontWeight: 800,
-                              fontSize: 12,
+                              fontSize: isMobile ? 11 : 12,
                             }}
                           >
                             Nenhum serviço disponível para esta empresa. Verifique
@@ -2755,8 +2755,8 @@ export default function MeuEspaco() {
                               color: precoEspecialAplicado
                                 ? "#166534"
                                 : "#0f172a",
-                              borderRadius: 14,
-                              padding: 12,
+                              borderRadius: isMobile ? 12 : 14,
+                              padding: isMobile ? 10 : 12,
                               fontWeight: 900,
                             }}
                           >
@@ -2764,7 +2764,7 @@ export default function MeuEspaco() {
                               ? "Calculando valor..."
                               : `Valor: ${formatarMoeda(valorAgendamentoFinal)}`}
                             {precoEspecialAplicado && (
-                              <span style={{ display: "block", fontSize: 12 }}>
+                              <span style={{ display: "block", fontSize: isMobile ? 11 : 12 }}>
                                 Preço especial deste cliente aplicado.
                               </span>
                             )}
@@ -2783,10 +2783,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                           }}
                         >
                           <option value="">Selecione</option>
@@ -2810,10 +2810,10 @@ export default function MeuEspaco() {
                           onChange={(e) => setDataAgendamento(e.target.value)}
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -2841,8 +2841,8 @@ export default function MeuEspaco() {
                               background: "#fee2e2",
                               color: "#991b1b",
                               border: "1px solid #fecaca",
-                              borderRadius: 14,
-                              padding: 12,
+                              borderRadius: isMobile ? 12 : 14,
+                              padding: isMobile ? 10 : 12,
                               marginTop: 10,
                               fontWeight: 800,
                             }}
@@ -2867,7 +2867,7 @@ export default function MeuEspaco() {
                             onClick={() => setHorarioAgendamento(horario)}
                             style={{
                               padding: "11px 14px",
-                              borderRadius: 14,
+                              borderRadius: isMobile ? 12 : 14,
                               border:
                                 horarioAgendamento === horario
                                   ? "2px solid #282663"
@@ -2957,7 +2957,7 @@ export default function MeuEspaco() {
                       style={{
                         border: "1px solid #e2e8f0",
                         borderRadius: 18,
-                        padding: 18,
+                        padding: isMobile ? 12 : 18,
                         marginBottom: 14,
                       }}
                     >
@@ -2982,7 +2982,7 @@ export default function MeuEspaco() {
                             disabled={jaConfirmado}
                             style={{
                               padding: "11px 14px",
-                              borderRadius: 14,
+                              borderRadius: isMobile ? 12 : 14,
                               border: 0,
                               background: jaConfirmado ? "#dcfce7" : "#16a34a",
                               color: jaConfirmado ? "#166534" : "#fff",
@@ -2998,7 +2998,7 @@ export default function MeuEspaco() {
                             onClick={() => iniciarReagendamentoCliente(a)}
                             style={{
                               padding: "11px 14px",
-                              borderRadius: 14,
+                              borderRadius: isMobile ? 12 : 14,
                               border: "1px solid #282663",
                               background: "#fff",
                               color: "#282663",
@@ -3014,7 +3014,7 @@ export default function MeuEspaco() {
                             onClick={() => cancelarAgendamentoCliente(a)}
                             style={{
                               padding: "11px 14px",
-                              borderRadius: 14,
+                              borderRadius: isMobile ? 12 : 14,
                               border: "1px solid #fecaca",
                               background: "#fee2e2",
                               color: "#991b1b",
@@ -3053,7 +3053,7 @@ export default function MeuEspaco() {
                       style={{
                         width: 64,
                         height: 64,
-                        borderRadius: 22,
+                        borderRadius: isMobile ? 18 : 22,
                         background: "linear-gradient(135deg, #282663, #5b5bd6)",
                         color: "#fff",
                         display: "flex",
@@ -3076,7 +3076,7 @@ export default function MeuEspaco() {
                           color: "#64748b",
                           fontWeight: 800,
                           textTransform: "uppercase",
-                          fontSize: 12,
+                          fontSize: isMobile ? 11 : 12,
                           letterSpacing: 0.6,
                         }}
                       >
@@ -3122,8 +3122,8 @@ export default function MeuEspaco() {
                         type="button"
                         onClick={iniciarEdicaoDados}
                         style={{
-                          padding: "12px 16px",
-                          borderRadius: 14,
+                          padding: isMobile ? "9px 12px" : "12px 16px",
+                          borderRadius: isMobile ? 12 : 14,
                           border: "1px solid #282663",
                           background: "#fff",
                           color: "#282663",
@@ -3142,9 +3142,9 @@ export default function MeuEspaco() {
                     style={{
                       background: mensagem.includes("sucesso") ? "#dcfce7" : "#fee2e2",
                       color: mensagem.includes("sucesso") ? "#166534" : "#991b1b",
-                      borderRadius: 14,
-                      padding: 12,
-                      marginBottom: 16,
+                      borderRadius: isMobile ? 12 : 14,
+                      padding: isMobile ? 10 : 12,
+                      marginBottom: isMobile ? 12 : 16,
                       fontWeight: 800,
                     }}
                   >
@@ -3158,7 +3158,7 @@ export default function MeuEspaco() {
                       style={{
                         display: "grid",
                         gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap: 14,
+                        gap: isMobile ? 10 : 14,
                       }}
                     >
                       {[
@@ -3180,23 +3180,23 @@ export default function MeuEspaco() {
                           style={{
                             background: "#f8fafc",
                             border: "1px solid #e2e8f0",
-                            borderRadius: 20,
-                            padding: 18,
+                            borderRadius: isMobile ? 16 : 20,
+                            padding: isMobile ? 12 : 18,
                           }}
                         >
                           <p
                             style={{
                               margin: "0 0 6px",
                               color: "#64748b",
-                              fontSize: 12,
+                              fontSize: isMobile ? 11 : 12,
                               fontWeight: 800,
                               textTransform: "uppercase",
-                              letterSpacing: 0.5,
+                              letterSpacing: isMobile ? 0.3 : 0.5,
                             }}
                           >
                             {titulo}
                           </p>
-                          <strong style={{ color: "#0f172a", fontSize: 16 }}>
+                          <strong style={{ color: "#0f172a", fontSize: isMobile ? 14 : 16 }}>
                             {valor}
                           </strong>
                         </div>
@@ -3209,8 +3209,8 @@ export default function MeuEspaco() {
                         background: "#eef2ff",
                         border: "1px solid #c7d2fe",
                         color: "#3730a3",
-                        borderRadius: 20,
-                        padding: 18,
+                        borderRadius: isMobile ? 16 : 20,
+                        padding: isMobile ? 12 : 18,
                         fontWeight: 800,
                       }}
                     >
@@ -3222,8 +3222,8 @@ export default function MeuEspaco() {
                     style={{
                       background: "#f8fafc",
                       border: "1px solid #e2e8f0",
-                      borderRadius: 22,
-                      padding: 20,
+                      borderRadius: isMobile ? 18 : 22,
+                      padding: isMobile ? 14 : 20,
                     }}
                   >
                     <h3 style={{ marginTop: 0 }}>Editar dados pessoais</h3>
@@ -3235,7 +3235,7 @@ export default function MeuEspaco() {
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-                        gap: 14,
+                        gap: isMobile ? 10 : 14,
                       }}
                     >
                       <div>
@@ -3247,10 +3247,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3263,12 +3263,12 @@ export default function MeuEspaco() {
                           disabled
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
                             background: "#e2e8f0",
                             color: "#475569",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3283,10 +3283,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3302,10 +3302,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3318,10 +3318,10 @@ export default function MeuEspaco() {
                           onChange={(e) => buscarCepEdicao(e.target.value)}
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3341,10 +3341,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3359,10 +3359,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3377,10 +3377,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3395,10 +3395,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3417,10 +3417,10 @@ export default function MeuEspaco() {
                           }
                           style={{
                             width: "100%",
-                            padding: isMobile ? 11 : 14,
-                            borderRadius: 14,
+                            padding: isMobile ? 9 : 14,
+                            borderRadius: isMobile ? 12 : 14,
                             border: "1px solid #cbd5e1",
-                            marginTop: 8,
+                            marginTop: isMobile ? 5 : 8,
                             boxSizing: "border-box",
                           }}
                         />
@@ -3525,7 +3525,7 @@ export default function MeuEspaco() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
+                    gap: isMobile ? 10 : 14,
                     marginBottom: 18,
                   }}
                 >
@@ -3533,15 +3533,15 @@ export default function MeuEspaco() {
                     style={{
                       background: "#f8fafc",
                       border: "1px solid #e2e8f0",
-                      borderRadius: 20,
-                      padding: 18,
+                      borderRadius: isMobile ? 16 : 20,
+                      padding: isMobile ? 12 : 18,
                     }}
                   >
                     <p
                       style={{
                         margin: "0 0 6px",
                         color: "#64748b",
-                        fontSize: 12,
+                        fontSize: isMobile ? 11 : 12,
                         fontWeight: 800,
                       }}
                     >
@@ -3558,15 +3558,15 @@ export default function MeuEspaco() {
                     style={{
                       background: "#f8fafc",
                       border: "1px solid #e2e8f0",
-                      borderRadius: 20,
-                      padding: 18,
+                      borderRadius: isMobile ? 16 : 20,
+                      padding: isMobile ? 12 : 18,
                     }}
                   >
                     <p
                       style={{
                         margin: "0 0 6px",
                         color: "#64748b",
-                        fontSize: 12,
+                        fontSize: isMobile ? 11 : 12,
                         fontWeight: 800,
                       }}
                     >
@@ -3583,15 +3583,15 @@ export default function MeuEspaco() {
                     style={{
                       background: "#f8fafc",
                       border: "1px solid #e2e8f0",
-                      borderRadius: 20,
-                      padding: 18,
+                      borderRadius: isMobile ? 16 : 20,
+                      padding: isMobile ? 12 : 18,
                     }}
                   >
                     <p
                       style={{
                         margin: "0 0 6px",
                         color: "#64748b",
-                        fontSize: 12,
+                        fontSize: isMobile ? 11 : 12,
                         fontWeight: 800,
                       }}
                     >
@@ -3609,7 +3609,7 @@ export default function MeuEspaco() {
                     color: "#3730a3",
                     border: "1px solid #c7d2fe",
                     borderRadius: 18,
-                    padding: 18,
+                    padding: isMobile ? 12 : 18,
                     fontWeight: 800,
                   }}
                 >
@@ -3631,7 +3631,7 @@ export default function MeuEspaco() {
                     onClick={baixarPdfAnamnese}
                     style={{
                       padding: "13px 18px",
-                      borderRadius: 14,
+                      borderRadius: isMobile ? 12 : 14,
                       border: 0,
                       background: "#282663",
                       color: "#fff",
@@ -3647,7 +3647,7 @@ export default function MeuEspaco() {
                     onClick={abrirAtualizacaoAnamnese}
                     style={{
                       padding: "13px 18px",
-                      borderRadius: 14,
+                      borderRadius: isMobile ? 12 : 14,
                       border: "1px solid #282663",
                       background: "#fff",
                       color: "#282663",
