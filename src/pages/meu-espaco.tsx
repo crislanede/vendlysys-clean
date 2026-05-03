@@ -5,63 +5,24 @@ import { gerarHash } from "../lib/hash";
 import { gerarPdfBlob } from "../lib/pdfAnamnese";
 import { uploadPdfAnamnese } from "../lib/uploadAnamnese";
 
-type CampoAnamnese = {
-  id: string;
-  label: string;
-  tipo: string;
-  obrigatorio?: boolean;
-  ordem?: number;
-  placeholder?: string | null;
-  ajuda?: string | null;
-  opcoes?: string[] | null;
-};
+import type {
+  CampoAnamnese,
+  ServicoCliente,
+  ProfissionalCliente,
+} from "./meu-espaco/types";
 
-type ServicoCliente = {
-  id: string;
-  nome: string;
-  duracao?: number | null;
-  duracao_padrao_minutos?: number | null;
-  preco?: number | string | null;
-  valor?: number | string | null;
-  preco_promocional?: number | string | null;
-};
-
-type ProfissionalCliente = {
-  id: string;
-  nome: string;
-  inicio_expediente?: string | null;
-  fim_expediente?: string | null;
-  inicio_almoco?: string | null;
-  fim_almoco?: string | null;
-  intervalo_minutos?: number | string | null;
-  intervalo?: number | string | null;
-};
-
-function limparTelefone(valor: string) {
-  return valor.replace(/\D/g, "");
-}
-
-function formatarData(data?: string | null) {
-  if (!data) return "-";
-  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-function formatarMoeda(valor?: number | null) {
-  return Number(valor || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function primeiroNome(nome?: string | null) {
-  return String(nome || "")
-    .trim()
-    .split(/\s+/)[0] || "cliente";
-}
-
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+import {
+  limparTelefone,
+  formatarData,
+  formatarMoeda,
+  primeiroNome,
+  hojeISO,
+  somarMinutos,
+  normalizarHorario,
+  obterIntervaloAgenda,
+  horarioSobrepoeIntervalo,
+  gerarHorariosBase,
+} from "./meu-espaco/utils";
 
 function obterDataBaseAnamnese(ficha: any) {
   return (
@@ -99,54 +60,6 @@ function formatarDataAnamnese(data?: string | Date | null) {
   if (Number.isNaN(dataObj.getTime())) return "-";
 
   return dataObj.toLocaleDateString("pt-BR");
-}
-
-function somarMinutos(horario: string, minutos: number) {
-  const [h, m] = horario.split(":").map(Number);
-  const data = new Date(2000, 0, 1, h || 0, m || 0);
-  data.setMinutes(data.getMinutes() + minutos);
-  return data.toTimeString().slice(0, 5);
-}
-
-function normalizarHorario(valor?: string | null, fallback = "") {
-  if (!valor) return fallback;
-  return String(valor).slice(0, 5);
-}
-
-function obterIntervaloAgenda(profissional: ProfissionalCliente | null) {
-  const intervalo = Number(
-    profissional?.intervalo_minutos || profissional?.intervalo || 30,
-  );
-
-  return !Number.isNaN(intervalo) && intervalo > 0 ? intervalo : 30;
-}
-
-function horarioSobrepoeIntervalo(
-  inicioServico: string,
-  duracaoMinutos: number,
-  inicioBloqueio?: string | null,
-  fimBloqueio?: string | null,
-) {
-  const inicio = normalizarHorario(inicioBloqueio);
-  const fim = normalizarHorario(fimBloqueio);
-
-  if (!inicio || !fim) return false;
-
-  const fimServico = somarMinutos(inicioServico, duracaoMinutos);
-
-  return inicioServico < fim && fimServico > inicio;
-}
-
-function gerarHorariosBase(inicio = "08:00", fim = "18:00", intervalo = 30) {
-  const horarios: string[] = [];
-  let atual = inicio;
-
-  while (atual <= fim) {
-    horarios.push(atual);
-    atual = somarMinutos(atual, intervalo);
-  }
-
-  return horarios;
 }
 
 export default function MeuEspaco() {
@@ -211,6 +124,15 @@ export default function MeuEspaco() {
 
   const acessoBloqueadoPorAnamnese =
     anamneseObrigatoria || assinaturaComplementarObrigatoria;
+
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const atualizarMobile = () => setIsMobile(window.innerWidth < 640);
+    atualizarMobile();
+    window.addEventListener("resize", atualizarMobile);
+    return () => window.removeEventListener("resize", atualizarMobile);
+  }, []);
 
   function levarParaAnamneseObrigatoria() {
     setAba("anamnese");
@@ -2128,9 +2050,12 @@ export default function MeuEspaco() {
           border: aba === valor ? "2px solid #282663" : "1px solid #cbd5e1",
           background: aba === valor ? "#282663" : "#fff",
           color: aba === valor ? "#fff" : "#282663",
-          padding: "13px 18px",
+          padding: isMobile ? "11px 14px" : "13px 18px",
           borderRadius: 16,
           fontWeight: 900,
+          fontSize: isMobile ? 13 : 14,
+          whiteSpace: "nowrap",
+          flex: isMobile ? "0 0 auto" : undefined,
           cursor: abaBloqueada ? "not-allowed" : "pointer",
           opacity: abaBloqueada ? 0.55 : 1,
         }}
@@ -2149,7 +2074,7 @@ export default function MeuEspaco() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: 24,
+          padding: isMobile ? 14 : 24,
         }}
       >
         <div
@@ -2157,8 +2082,8 @@ export default function MeuEspaco() {
             width: "100%",
             maxWidth: 520,
             background: "#fff",
-            borderRadius: 28,
-            padding: 36,
+            borderRadius: isMobile ? 22 : 28,
+            padding: isMobile ? 22 : 36,
             boxShadow: "0 24px 60px rgba(15,23,42,.16)",
             maxHeight: "calc(100vh - 48px)",
             overflowY: "auto",
@@ -2548,25 +2473,27 @@ export default function MeuEspaco() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#eef3fb", padding: 28 }}>
+    <div style={{ minHeight: "100vh", background: "#eef3fb", padding: isMobile ? 12 : 28 }}>
       <div style={{ maxWidth: 1160, margin: "0 auto" }}>
         <div
           style={{
             background: "#282663",
             color: "#fff",
-            borderRadius: 24,
-            padding: 24,
-            marginBottom: 24,
+            borderRadius: isMobile ? 20 : 24,
+            padding: isMobile ? 18 : 24,
+            marginBottom: isMobile ? 16 : 24,
             display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            gap: isMobile ? 14 : 0,
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: isMobile ? "stretch" : "center",
           }}
         >
           <div>
             <p style={{ margin: 0, opacity: 0.8, fontWeight: 700 }}>
               Meu Espaço
             </p>
-            <h1 style={{ margin: "4px 0 0", fontSize: 30 }}>
+            <h1 style={{ margin: "4px 0 0", fontSize: isMobile ? 24 : 30 }}>
               Olá, {primeiroNome(cliente.nome)}
             </h1>
           </div>
@@ -2580,6 +2507,7 @@ export default function MeuEspaco() {
               border: 0,
               borderRadius: 14,
               padding: "12px 16px",
+              width: isMobile ? "100%" : undefined,
               fontWeight: 900,
               cursor: "pointer",
             }}
@@ -2608,9 +2536,12 @@ export default function MeuEspaco() {
           <div
             style={{
               display: "flex",
-              gap: 12,
-              marginBottom: 22,
-              flexWrap: "wrap",
+              gap: 10,
+              marginBottom: isMobile ? 16 : 22,
+              flexWrap: isMobile ? "nowrap" : "wrap",
+              overflowX: isMobile ? "auto" : undefined,
+              paddingBottom: isMobile ? 6 : 0,
+              WebkitOverflowScrolling: "touch",
             }}
           >
             {botaoAba("agenda", "Agendamentos")}
@@ -2631,7 +2562,7 @@ export default function MeuEspaco() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: 18,
+                padding: isMobile ? 10 : 18,
               }}
             >
               <div
@@ -2641,8 +2572,8 @@ export default function MeuEspaco() {
                   maxHeight: "90vh",
                   overflowY: "auto",
                   background: "#fff",
-                  borderRadius: 28,
-                  padding: 28,
+                  borderRadius: isMobile ? 20 : 28,
+                  padding: isMobile ? 16 : 28,
                   boxShadow: "0 30px 80px rgba(0,0,0,.28)",
                 }}
               >
@@ -2672,8 +2603,8 @@ export default function MeuEspaco() {
         <div
           style={{
             background: "#fff",
-            borderRadius: 26,
-            padding: 28,
+            borderRadius: isMobile ? 20 : 26,
+            padding: isMobile ? 16 : 28,
             boxShadow: "0 14px 35px rgba(15,23,42,.08)",
           }}
         >
@@ -2684,9 +2615,10 @@ export default function MeuEspaco() {
                 <div
                   style={{
                     display: "flex",
+                    flexDirection: isMobile ? "column" : "row",
                     justifyContent: "space-between",
                     gap: 12,
-                    alignItems: "center",
+                    alignItems: isMobile ? "stretch" : "center",
                     marginBottom: 18,
                   }}
                 >
@@ -2717,6 +2649,7 @@ export default function MeuEspaco() {
                     disabled={acessoBloqueadoPorAnamnese}
                     style={{
                       padding: "13px 18px",
+                      width: isMobile ? "100%" : undefined,
                       borderRadius: 14,
                       border: 0,
                       background: "#282663",
@@ -2736,8 +2669,8 @@ export default function MeuEspaco() {
                     style={{
                       background: "#f8fafc",
                       border: "1px solid #e2e8f0",
-                      borderRadius: 22,
-                      padding: 20,
+                      borderRadius: isMobile ? 18 : 22,
+                      padding: isMobile ? 14 : 20,
                       marginBottom: 22,
                     }}
                   >
@@ -2750,8 +2683,9 @@ export default function MeuEspaco() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(220px, 1fr))",
+                        gridTemplateColumns: isMobile
+                          ? "1fr"
+                          : "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 14,
                       }}
                     >
@@ -3213,7 +3147,7 @@ export default function MeuEspaco() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 14,
                       }}
                     >
@@ -3580,7 +3514,7 @@ export default function MeuEspaco() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 14,
                     marginBottom: 18,
                   }}
@@ -3753,3 +3687,4 @@ export default function MeuEspaco() {
     </div>
   );
 }
+
