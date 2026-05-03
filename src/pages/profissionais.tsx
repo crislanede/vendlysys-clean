@@ -25,6 +25,7 @@ type Servico = {
 type ProfissionalServico = {
   profissional_id: string;
   servico_id: string;
+  comissao_percentual?: number | null;
 };
 
 const formInicial = {
@@ -46,6 +47,7 @@ export default function ProfissionaisPage() {
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [profissionalServicos, setProfissionalServicos] = useState<ProfissionalServico[]>([]);
   const [servicosSelecionados, setServicosSelecionados] = useState<string[]>([]);
+  const [comissoesServicos, setComissoesServicos] = useState<Record<string, string>>({});
 
   const [busca, setBusca] = useState("");
   const [form, setForm] = useState(formInicial);
@@ -103,7 +105,7 @@ export default function ProfissionaisPage() {
   async function carregarProfissionalServicos() {
     const { data, error } = await supabase
       .from("profissional_servicos")
-      .select("profissional_id,servico_id");
+      .select("profissional_id,servico_id,comissao_percentual");
 
     if (error) {
       console.warn("Erro ao carregar vínculos de serviços:", error.message);
@@ -185,6 +187,10 @@ export default function ProfissionaisPage() {
           servicosSelecionados.map((servicoId) => ({
             profissional_id: profissionalId,
             servico_id: servicoId,
+            comissao_percentual:
+              comissoesServicos[servicoId] === "" || comissoesServicos[servicoId] == null
+                ? 0
+                : Number(comissoesServicos[servicoId]),
           }))
         );
 
@@ -215,10 +221,17 @@ export default function ProfissionaisPage() {
       intervalo_minutos: Number(profissional.intervalo_minutos || 0),
     });
 
-    setServicosSelecionados(
-      profissionalServicos
-        .filter((item) => item.profissional_id === profissional.id)
-        .map((item) => item.servico_id)
+    const vinculos = profissionalServicos.filter(
+      (item) => item.profissional_id === profissional.id
+    );
+
+    setServicosSelecionados(vinculos.map((item) => item.servico_id));
+
+    setComissoesServicos(
+      vinculos.reduce<Record<string, string>>((acc, item) => {
+        acc[item.servico_id] = String(item.comissao_percentual ?? 0);
+        return acc;
+      }, {})
     );
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -228,6 +241,7 @@ export default function ProfissionaisPage() {
     setEditandoId(null);
     setForm(formInicial);
     setServicosSelecionados([]);
+    setComissoesServicos({});
   }
 
   async function remover(id: string) {
@@ -248,21 +262,60 @@ export default function ProfissionaisPage() {
   }
 
   function alternarServico(servicoId: string) {
-    setServicosSelecionados((atual) =>
-      atual.includes(servicoId)
-        ? atual.filter((id) => id !== servicoId)
-        : [...atual, servicoId]
-    );
+    setServicosSelecionados((atual) => {
+      if (atual.includes(servicoId)) {
+        setComissoesServicos((comissoesAtuais) => {
+          const copia = { ...comissoesAtuais };
+          delete copia[servicoId];
+          return copia;
+        });
+
+        return atual.filter((id) => id !== servicoId);
+      }
+
+      setComissoesServicos((comissoesAtuais) => ({
+        ...comissoesAtuais,
+        [servicoId]: comissoesAtuais[servicoId] ?? "0",
+      }));
+
+      return [...atual, servicoId];
+    });
+  }
+
+  function atualizarComissaoServico(servicoId: string, valor: string) {
+    const valorLimpo = valor.replace(",", ".");
+
+    if (valorLimpo === "") {
+      setComissoesServicos((atual) => ({ ...atual, [servicoId]: "" }));
+      return;
+    }
+
+    const numero = Number(valorLimpo);
+
+    if (Number.isNaN(numero)) return;
+
+    const limitado = Math.min(Math.max(numero, 0), 100);
+
+    setComissoesServicos((atual) => ({
+      ...atual,
+      [servicoId]: String(limitado),
+    }));
   }
 
   function nomesServicosDoProfissional(profissionalId: string) {
-    const ids = profissionalServicos
-      .filter((item) => item.profissional_id === profissionalId)
-      .map((item) => item.servico_id);
+    const vinculos = profissionalServicos.filter(
+      (item) => item.profissional_id === profissionalId
+    );
 
-    const nomes = servicos
-      .filter((servico) => ids.includes(servico.id))
-      .map((servico) => servico.nome);
+    const nomes = vinculos
+      .map((vinculo) => {
+        const servico = servicos.find((item) => item.id === vinculo.servico_id);
+        if (!servico) return null;
+
+        const comissao = Number(vinculo.comissao_percentual || 0);
+        return `${servico.nome} (${comissao}% comissão)`;
+      })
+      .filter(Boolean);
 
     return nomes.length > 0 ? nomes.join(", ") : "-";
   }
@@ -416,25 +469,59 @@ export default function ProfissionaisPage() {
           />
 
           <div className="md:col-span-3 border rounded-2xl p-4 bg-slate-50">
-            <p className="font-bold text-slate-900 mb-3">Serviços que este profissional realiza</p>
+            <p className="font-bold text-slate-900 mb-1">Serviços que este profissional realiza</p>
+            <p className="text-xs text-slate-500 mb-3">
+              Marque o serviço e informe o percentual de comissão deste profissional.
+            </p>
 
             {servicos.length === 0 ? (
               <p className="text-sm text-slate-500">Nenhum serviço cadastrado para esta empresa.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {servicos.map((servico) => (
-                  <label
-                    key={servico.id}
-                    className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={servicosSelecionados.includes(servico.id)}
-                      onChange={() => alternarServico(servico.id)}
-                    />
-                    <span>{servico.nome}</span>
-                  </label>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {servicos.map((servico) => {
+                  const selecionado = servicosSelecionados.includes(servico.id);
+
+                  return (
+                    <div
+                      key={servico.id}
+                      className={`bg-white border rounded-xl px-3 py-3 text-sm ${
+                        selecionado ? "border-violet-300 ring-2 ring-violet-100" : ""
+                      }`}
+                    >
+                      <label className="flex items-center gap-2 font-semibold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={selecionado}
+                          onChange={() => alternarServico(servico.id)}
+                        />
+                        <span>{servico.nome}</span>
+                      </label>
+
+                      {selecionado && (
+                        <div className="mt-3">
+                          <label className="text-xs font-bold text-slate-500">
+                            Comissão do profissional (%)
+                          </label>
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step="0.01"
+                              value={comissoesServicos[servico.id] ?? "0"}
+                              onChange={(e) =>
+                                atualizarComissaoServico(servico.id, e.target.value)
+                              }
+                              className="w-full border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-violet-100"
+                              placeholder="Ex: 40"
+                            />
+                            <span className="text-sm font-bold text-slate-500">%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
