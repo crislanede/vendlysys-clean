@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 import {
   baixarModeloExcelAnamnese,
   lerModeloExcelAnamnese,
@@ -33,6 +34,8 @@ type Modelo = {
 };
 
 export default function AnamneseConfiguracao() {
+  const { empresaId: empresaIdAtiva, carregandoEmpresa } = useEmpresa();
+
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
@@ -48,34 +51,64 @@ export default function AnamneseConfiguracao() {
   const [campos, setCampos] = useState<Campo[]>([]);
 
   useEffect(() => {
+    if (carregandoEmpresa) return;
     void carregarConfiguracao();
-  }, []);
+  }, [carregandoEmpresa, empresaIdAtiva]);
+
+  async function resolverEmpresaId() {
+    if (empresaIdAtiva) return empresaIdAtiva;
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+
+    if (userId) {
+      const { data: usuarioData } = await supabase
+        .from("usuarios")
+        .select("empresa_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (usuarioData?.empresa_id) return usuarioData.empresa_id as string;
+
+      const { data: empresaData } = await supabase
+        .from("empresas")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (empresaData?.id) return empresaData.id as string;
+    }
+
+    const { data: configData } = await supabase
+      .from("configuracoes")
+      .select("empresa_id")
+      .limit(1)
+      .maybeSingle();
+
+    return (configData?.empresa_id as string | null) || null;
+  }
 
   async function carregarConfiguracao() {
     setLoading(true);
 
     try {
-      const { data: configData } = await supabase
-        .from("configuracoes")
-        .select("empresa_id")
-        .limit(1)
-        .maybeSingle();
-
-      const empresaIdAtual = configData?.empresa_id || null;
+      const empresaIdAtual = await resolverEmpresaId();
       setEmpresaId(empresaIdAtual);
 
-      let modeloQuery = supabase
+      if (!empresaIdAtual) {
+        console.warn("Empresa não encontrada para carregar a anamnese.");
+        setModeloId(null);
+        setCampos([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data: modelosData, error: modeloError } = await supabase
         .from("anamnese_modelos")
         .select("*")
-        .eq("ativo", true)
+        .eq("empresa_id", empresaIdAtual)
+        .order("created_at", { ascending: false })
         .limit(1);
-
-      modeloQuery = empresaIdAtual
-        ? modeloQuery.eq("empresa_id", empresaIdAtual)
-        : modeloQuery.is("empresa_id", null);
-
-      const { data: modeloData, error: modeloError } =
-        await modeloQuery.maybeSingle();
 
       if (modeloError) {
         console.error("Erro ao carregar modelo:", modeloError);
@@ -83,8 +116,15 @@ export default function AnamneseConfiguracao() {
         return;
       }
 
+      const modeloData = modelosData?.[0] || null;
+
       if (!modeloData) {
         setModeloId(null);
+        setTitulo("Ficha de Anamnese");
+        setDescricao("");
+        setTermoResponsabilidade("");
+        setObrigatoria(true);
+        setAtivo(true);
         setCampos([]);
         setLoading(false);
         return;
@@ -112,20 +152,26 @@ export default function AnamneseConfiguracao() {
         return;
       }
 
-      const carregados = ((camposData || []) as any[]).map((campo, index) => ({
-        id: campo.id,
-        modelo_id: campo.modelo_id,
-        nome_campo: campo.nome_campo || campo.pergunta?.toLowerCase()?.replace(/[^a-z0-9]+/gi, "_") || "",
-        label: campo.label || campo.pergunta || "",
-        tipo: campo.tipo || "text",
-        obrigatorio: Boolean(campo.obrigatorio),
-        placeholder: campo.placeholder || "",
-        ajuda: campo.ajuda || "",
-        opcoes: Array.isArray(campo.opcoes) ? campo.opcoes : [],
-        ordem: typeof campo.ordem === "number" ? campo.ordem : index,
-        ativo: campo.ativo !== false,
-        gera_alerta: campo.gera_alerta === true,
-      }));
+      const carregados = ((camposData || []) as any[]).map((campo, index) => {
+        const pergunta = campo.label || campo.pergunta || `Pergunta ${index + 1}`;
+
+        return {
+          id: campo.id,
+          modelo_id: campo.modelo_id,
+          nome_campo:
+            campo.nome_campo ||
+            normalizarNomeCampo(pergunta, `campo_${index + 1}`),
+          label: pergunta,
+          tipo: campo.tipo || "text",
+          obrigatorio: Boolean(campo.obrigatorio),
+          placeholder: campo.placeholder || "",
+          ajuda: campo.ajuda || "",
+          opcoes: Array.isArray(campo.opcoes) ? campo.opcoes : [],
+          ordem: typeof campo.ordem === "number" ? campo.ordem : index,
+          ativo: campo.ativo !== false,
+          gera_alerta: campo.gera_alerta === true,
+        };
+      });
 
       setCampos(carregados);
     } catch (error) {
@@ -209,7 +255,7 @@ export default function AnamneseConfiguracao() {
   }
 
   async function importarExcel(
-    event: React.ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>
   ) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -314,11 +360,20 @@ export default function AnamneseConfiguracao() {
     setSalvando(true);
 
     try {
+      const empresaIdParaSalvar = empresaId || (await resolverEmpresaId());
+
+      if (!empresaIdParaSalvar) {
+        alert("Não foi possível identificar a empresa para salvar a anamnese.");
+        setSalvando(false);
+        return;
+      }
+
+      setEmpresaId(empresaIdParaSalvar);
       let idModelo = modeloId;
 
       if (!idModelo) {
         const payloadModelo = {
-          empresa_id: empresaId,
+          empresa_id: empresaIdParaSalvar,
           nome: tituloSeguro(),
           titulo: tituloSeguro(),
           descricao: descricao.trim(),
@@ -347,7 +402,7 @@ export default function AnamneseConfiguracao() {
         const { error } = await supabase
           .from("anamnese_modelos")
           .update({
-            empresa_id: empresaId,
+            empresa_id: empresaIdParaSalvar,
             nome: tituloSeguro(),
             titulo: tituloSeguro(),
             descricao: descricao.trim(),
@@ -430,7 +485,7 @@ export default function AnamneseConfiguracao() {
     }
   }
 
-  if (loading) {
+  if (loading || carregandoEmpresa) {
     return (
       <div className="space-y-6 p-6">
         <p className="text-slate-600">Carregando configuração da anamnese...</p>
