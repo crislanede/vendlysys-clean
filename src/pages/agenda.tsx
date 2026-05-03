@@ -142,7 +142,7 @@ function somarMinutos(horario: string, minutos: number) {
   date.setHours(hours, minutes + minutos, 0, 0);
 
   return `${String(date.getHours()).padStart(2, "0")}:${String(
-    date.getMinutes()
+    date.getMinutes(),
   ).padStart(2, "0")}`;
 }
 
@@ -212,7 +212,7 @@ function MiniCalendar({
       </div>
 
       <div className="mb-2 grid grid-cols-7 text-center text-[11px] uppercase tracking-wide text-slate-400">
-        {['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((day) => (
+        {["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map((day) => (
           <span key={day}>{day}</span>
         ))}
       </div>
@@ -224,10 +224,9 @@ function MiniCalendar({
           }
 
           const date = new Date(year, month, day);
-          const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-            2,
-            "0"
-          )}-${String(date.getDate()).padStart(2, "0")}`;
+          const iso = `${date.getFullYear()}-${String(
+            date.getMonth() + 1,
+          ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
           const isSelected = iso === selectedDate;
           const isToday = iso === getTodayString();
 
@@ -241,13 +240,13 @@ function MiniCalendar({
                 backgroundColor: isSelected
                   ? "var(--color-primary)"
                   : isToday
-                  ? "rgba(249, 115, 22, 0.12)"
-                  : "transparent",
+                    ? "rgba(249, 115, 22, 0.12)"
+                    : "transparent",
                 color: isSelected
                   ? "#fff"
                   : isToday
-                  ? "var(--color-primary)"
-                  : "#0f172a",
+                    ? "var(--color-primary)"
+                    : "#0f172a",
                 fontWeight: isSelected || isToday ? 700 : 500,
               }}
             >
@@ -276,11 +275,13 @@ function filtrarAniversariantesDoMes(clientes: Cliente[]) {
     });
 }
 
+function formatarData(data?: string | null) {
+  if (!data) return "-";
+  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+}
 function formatarDataNascimento(data?: string | null) {
   if (!data) return "-";
-  const partes = data.split("-");
-  if (partes.length !== 3) return data;
-  return `${partes[2]}/${partes[1]}`;
+  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
 }
 
 function montarMensagemAniversario(nome: string) {
@@ -330,7 +331,9 @@ export default function AgendaPage() {
   const [horaReagendamento, setHoraReagendamento] = useState("09:00");
   const [loadingReagendar, setLoadingReagendar] = useState(false);
 
-  const [pacotesDisponiveis, setPacotesDisponiveis] = useState<PacoteDisponivel[]>([]);
+  const [pacotesDisponiveis, setPacotesDisponiveis] = useState<
+    PacoteDisponivel[]
+  >([]);
   const [usarPacote, setUsarPacote] = useState(false);
   const [saldoPacoteSelecionadoId, setSaldoPacoteSelecionadoId] = useState("");
 
@@ -384,12 +387,16 @@ export default function AgendaPage() {
     }
 
     const numero = normalizarTelefoneWhatsapp(cliente.telefone);
-    const mensagem = encodeURIComponent(montarMensagemAniversario(cliente.nome));
+    const mensagem = encodeURIComponent(
+      montarMensagemAniversario(cliente.nome),
+    );
     window.open(`https://wa.me/${numero}?text=${mensagem}`, "_blank");
   }
 
   async function carregarAlertas(nomeCliente: string) {
-    const clienteEncontrado = clientes.find((item) => item.nome === nomeCliente);
+    const clienteEncontrado = clientes.find(
+      (item) => item.nome === nomeCliente,
+    );
     if (!clienteEncontrado) {
       setAlertas([]);
       return;
@@ -429,7 +436,9 @@ export default function AgendaPage() {
 
     const clienteItem = clientes.find((item) => item.nome === cliente);
     const servicoItem = servicos.find((item) => item.nome === servico);
-    const profissionalItem = profissionais.find((item) => item.nome === profissional);
+    const profissionalItem = profissionais.find(
+      (item) => item.nome === profissional,
+    );
 
     if (!profissionalItem) {
       alert("Selecione um profissional válido.");
@@ -455,7 +464,7 @@ export default function AgendaPage() {
       const inicioExistente = item.horario;
       const fimExistente = somarMinutos(
         item.horario,
-        item.duracao_minutos || 60
+        item.duracao_minutos || 60,
       );
 
       return hora < fimExistente && horarioFim > inicioExistente;
@@ -463,7 +472,7 @@ export default function AgendaPage() {
 
     if (conflito) {
       alert(
-        "Já existe um agendamento nesse horário para esse profissional. Escolha outro horário."
+        "Já existe um agendamento nesse horário para esse profissional. Escolha outro horário.",
       );
       return;
     }
@@ -492,7 +501,9 @@ export default function AgendaPage() {
 
     if (error) {
       if (error.message.includes("agendamento_unico")) {
-        alert("Esse horário já está ocupado para esse profissional. Escolha outro horário.");
+        alert(
+          "Esse horário já está ocupado para esse profissional. Escolha outro horário.",
+        );
         return;
       }
 
@@ -522,21 +533,47 @@ export default function AgendaPage() {
 
   async function cancelarAgendamento(id: string) {
     const confirmarCancelamento = window.confirm(
-      "Deseja cancelar este agendamento?"
+      "Deseja cancelar este agendamento? Ao cancelar, o horário será liberado para novo agendamento.",
     );
 
     if (!confirmarCancelamento) return;
 
-    const { error } = await supabase
+    const payloadCompleto = {
+      status: "cancelado",
+      cancelado_em: new Date().toISOString(),
+    };
+
+    const payloadMinimo = {
+      status: "cancelado",
+    };
+
+    let resultado = await supabase
       .from("agendamentos")
-      .update({ status: "cancelado" })
+      .update(payloadCompleto)
       .eq("id", id);
 
-    if (error) {
-      alert(`Erro ao cancelar: ${error.message}`);
+    if (resultado.error) {
+      const mensagemErro = String(resultado.error.message || "").toLowerCase();
+      const erroColunaCanceladoEm =
+        mensagemErro.includes("cancelado_em") ||
+        mensagemErro.includes("schema cache") ||
+        mensagemErro.includes("could not find") ||
+        mensagemErro.includes("column");
+
+      if (erroColunaCanceladoEm) {
+        resultado = await supabase
+          .from("agendamentos")
+          .update(payloadMinimo)
+          .eq("id", id);
+      }
+    }
+
+    if (resultado.error) {
+      alert(`Erro ao cancelar: ${resultado.error.message}`);
       return;
     }
 
+    alert("Agendamento cancelado. O horário foi liberado para novo agendamento.");
     await carregarTudo();
   }
 
@@ -561,13 +598,14 @@ export default function AgendaPage() {
     const conflito = agendamentos.some((item) => {
       if (item.id === agendamentoReagendar.id) return false;
       if (item.status === "cancelado") return false;
-      if (item.profissional_id !== agendamentoReagendar.profissional_id) return false;
+      if (item.profissional_id !== agendamentoReagendar.profissional_id)
+        return false;
       if (item.data !== dataReagendamento) return false;
 
       const inicioExistente = item.horario;
       const fimExistente = somarMinutos(
         item.horario,
-        item.duracao_minutos || 60
+        item.duracao_minutos || 60,
       );
 
       return horaReagendamento < fimExistente && horarioFim > inicioExistente;
@@ -575,7 +613,7 @@ export default function AgendaPage() {
 
     if (conflito) {
       alert(
-        "Já existe um agendamento nesse intervalo para esse profissional. Escolha outro horário."
+        "Já existe um agendamento nesse intervalo para esse profissional. Escolha outro horário.",
       );
       return;
     }
@@ -601,23 +639,45 @@ export default function AgendaPage() {
       return;
     }
 
+    const agendamentoAtualizado: Agendamento = {
+      ...agendamentoReagendar,
+      data: dataReagendamento,
+      horario: horaReagendamento,
+      status:
+        agendamentoReagendar.status === "confirmado"
+          ? "confirmado"
+          : "agendado",
+    };
+
     setModalReagendarAberto(false);
     setAgendamentoReagendar(null);
     setSelectedDate(dataReagendamento);
     setData(dataReagendamento);
     await carregarTudo();
+
+    const enviarWhatsapp = window.confirm(
+      "Reagendamento salvo. Deseja abrir o WhatsApp para enviar a mensagem manualmente ao cliente?",
+    );
+
+    if (enviarWhatsapp) {
+      await enviarReagendamentoWhatsapp(agendamentoAtualizado);
+    }
   }
 
   function valorPadraoDoAgendamento(agendamento: Agendamento) {
     let valor = "";
 
     if (agendamento.servico_id) {
-      const servicoBanco = servicos.find((item) => item.id === agendamento.servico_id);
+      const servicoBanco = servicos.find(
+        (item) => item.id === agendamento.servico_id,
+      );
       valor = String(servicoBanco?.valor ?? servicoBanco?.preco ?? "");
     }
 
     if (!valor && agendamento.servico) {
-      const servicoPorNome = servicos.find((item) => item.nome === agendamento.servico);
+      const servicoPorNome = servicos.find(
+        (item) => item.nome === agendamento.servico,
+      );
       valor = String(servicoPorNome?.valor ?? servicoPorNome?.preco ?? "");
     }
 
@@ -642,9 +702,15 @@ export default function AgendaPage() {
     setModalFinalizarAberto(true);
   }
 
-  async function buscarPacotesDisponiveis(agendamento: Agendamento): Promise<PacoteDisponivel[]> {
-    const clienteId = agendamento.cliente_id || clientes.find((item) => item.nome === agendamento.cliente)?.id;
-    const servicoId = agendamento.servico_id || servicos.find((item) => item.nome === agendamento.servico)?.id;
+  async function buscarPacotesDisponiveis(
+    agendamento: Agendamento,
+  ): Promise<PacoteDisponivel[]> {
+    const clienteId =
+      agendamento.cliente_id ||
+      clientes.find((item) => item.nome === agendamento.cliente)?.id;
+    const servicoId =
+      agendamento.servico_id ||
+      servicos.find((item) => item.nome === agendamento.servico)?.id;
 
     if (!clienteId || !servicoId) return [];
 
@@ -670,7 +736,9 @@ export default function AgendaPage() {
 
     const { data: saldos, error: erroSaldos } = await supabase
       .from("cliente_pacote_saldos")
-      .select("id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada")
+      .select(
+        "id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada",
+      )
       .in("cliente_pacote_id", clientePacoteIds)
       .eq("servico_id", servicoId);
 
@@ -680,20 +748,35 @@ export default function AgendaPage() {
     }
 
     const saldosDisponiveis = (saldos || []).filter((saldo: any) => {
-      return Number(saldo.quantidade_total || 0) - Number(saldo.quantidade_usada || 0) > 0;
+      return (
+        Number(saldo.quantidade_total || 0) -
+          Number(saldo.quantidade_usada || 0) >
+        0
+      );
     });
 
     if (saldosDisponiveis.length === 0) return [];
 
-    const pacoteIds = pacotesAtivos.map((item: any) => item.pacote_id).filter(Boolean);
+    const pacoteIds = pacotesAtivos
+      .map((item: any) => item.pacote_id)
+      .filter(Boolean);
 
     const pacotesBase = pacoteIds.length
-      ? (await supabase.from("marketing_pacotes").select("id, nome").in("id", pacoteIds)).data || []
+      ? (
+          await supabase
+            .from("marketing_pacotes")
+            .select("id, nome")
+            .in("id", pacoteIds)
+        ).data || []
       : [];
 
     return saldosDisponiveis.map((saldo: any) => {
-      const clientePacote = pacotesAtivos.find((item: any) => item.id === saldo.cliente_pacote_id);
-      const pacoteBase = pacotesBase.find((item: any) => item.id === clientePacote?.pacote_id);
+      const clientePacote = pacotesAtivos.find(
+        (item: any) => item.id === saldo.cliente_pacote_id,
+      );
+      const pacoteBase = pacotesBase.find(
+        (item: any) => item.id === clientePacote?.pacote_id,
+      );
       const total = Number(saldo.quantidade_total || 0);
       const usada = Number(saldo.quantidade_usada || 0);
 
@@ -715,18 +798,78 @@ export default function AgendaPage() {
     if (agendamento.telefone) return agendamento.telefone;
 
     const clienteBanco = clientes.find((item) => {
-      if (agendamento.cliente_id && item.id === agendamento.cliente_id) return true;
+      if (agendamento.cliente_id && item.id === agendamento.cliente_id)
+        return true;
       return item.nome === agendamento.cliente;
     });
 
     return clienteBanco?.telefone || "";
   }
 
+  async function garantirTokenReagendamento(agendamento: Agendamento) {
+    const tokenExistente = agendamento.token_cliente || agendamento.token || "";
+
+    if (tokenExistente) return tokenExistente;
+
+    const novoToken =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const { error } = await supabase
+      .from("agendamentos")
+      .update({ token_cliente: novoToken })
+      .eq("id", agendamento.id);
+
+    if (error) {
+      console.error("Erro ao gerar token de reagendamento:", error);
+      alert(
+        "Reagendamento salvo, mas não foi possível gerar o link do Meu Espaço para WhatsApp.",
+      );
+      return "";
+    }
+
+    return novoToken;
+  }
+
+  async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
+    const telefone = telefoneDoAgendamento(agendamento);
+
+    if (!telefone) {
+      alert(
+        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
+      );
+      return;
+    }
+
+    const token = await garantirTokenReagendamento(agendamento);
+
+    if (!token) return;
+
+    const linkMeuEspaco = montarLinkMeuEspaco(token);
+    const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu atendimento foi reagendado.
+
+Serviço: ${agendamento.servico || "não informado"}
+Data: ${formatarData(agendamento.data)}
+Horário: ${agendamento.horario || "não informado"}
+Profissional: ${agendamento.profissional || "não informado"}
+
+Para confirmar ou acompanhar seu agendamento, acesse:
+${linkMeuEspaco}`;
+
+    const numero = normalizarTelefoneWhatsapp(telefone);
+    const texto = encodeURIComponent(mensagem);
+
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+  }
+
   async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
     const telefone = telefoneDoAgendamento(agendamento);
 
     if (!telefone) {
-      alert("Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.");
+      alert(
+        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
+      );
       return;
     }
 
@@ -754,7 +897,7 @@ export default function AgendaPage() {
     if (!agendamentoSelecionado) return;
 
     const pacoteSelecionado = pacotesDisponiveis.find(
-      (item) => item.saldo_id === saldoPacoteSelecionadoId
+      (item) => item.saldo_id === saldoPacoteSelecionadoId,
     );
 
     if (usarPacote && !pacoteSelecionado) {
@@ -768,7 +911,7 @@ export default function AgendaPage() {
     }
 
     const confirmar = window.confirm(
-      "Deseja finalizar este atendimento? Esta ação vai registrar o pagamento e, se selecionado, baixar o saldo do combo."
+      "Deseja finalizar este atendimento? Esta ação vai registrar o pagamento e, se selecionado, baixar o saldo do combo.",
     );
 
     if (!confirmar) return;
@@ -783,20 +926,26 @@ export default function AgendaPage() {
           .eq("id", pacoteSelecionado.saldo_id);
 
         if (erroSaldo) {
-          throw new Error(`Erro ao baixar saldo do pacote: ${erroSaldo.message}`);
+          throw new Error(
+            `Erro ao baixar saldo do pacote: ${erroSaldo.message}`,
+          );
         }
 
-        const { error: erroUso } = await supabase.from("cliente_pacote_usos").insert([
-          {
-            cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
-            agendamento_id: agendamentoSelecionado.id,
-            servico_id: pacoteSelecionado.servico_id,
-            quantidade_usada: 1,
-          },
-        ]);
+        const { error: erroUso } = await supabase
+          .from("cliente_pacote_usos")
+          .insert([
+            {
+              cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
+              agendamento_id: agendamentoSelecionado.id,
+              servico_id: pacoteSelecionado.servico_id,
+              quantidade_usada: 1,
+            },
+          ]);
 
         if (erroUso) {
-          throw new Error(`Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`);
+          throw new Error(
+            `Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`,
+          );
         }
       }
 
@@ -837,29 +986,38 @@ export default function AgendaPage() {
       }
 
       const respostaFinanceiro = existente?.id
-        ? await supabase.from("financeiro").update(payloadFinanceiro).eq("id", existente.id)
+        ? await supabase
+            .from("financeiro")
+            .update(payloadFinanceiro)
+            .eq("id", existente.id)
         : await supabase.from("financeiro").insert([payloadFinanceiro]);
 
       if (respostaFinanceiro.error) {
-        throw new Error(`Erro ao salvar no financeiro: ${respostaFinanceiro.error.message}`);
+        throw new Error(
+          `Erro ao salvar no financeiro: ${respostaFinanceiro.error.message}`,
+        );
       }
 
-      const { error: erroPagamento } = await supabase.from("pagamentos").insert([
-        {
-          agendamento_id: agendamentoSelecionado.id,
-          valor: valorFinal,
-          forma_pagamento: formaFinal,
-          status: statusFinal,
-          data_pagamento: statusFinal === "pago" ? agora : null,
-          observacao:
-            usarPacote && pacoteSelecionado
-              ? `Pagamento via pacote ${pacoteSelecionado.pacote_nome}`
-              : null,
-        },
-      ]);
+      const { error: erroPagamento } = await supabase
+        .from("pagamentos")
+        .insert([
+          {
+            agendamento_id: agendamentoSelecionado.id,
+            valor: valorFinal,
+            forma_pagamento: formaFinal,
+            status: statusFinal,
+            data_pagamento: statusFinal === "pago" ? agora : null,
+            observacao:
+              usarPacote && pacoteSelecionado
+                ? `Pagamento via pacote ${pacoteSelecionado.pacote_nome}`
+                : null,
+          },
+        ]);
 
       if (erroPagamento) {
-        throw new Error(`Financeiro salvo, mas houve erro ao registrar pagamento: ${erroPagamento.message}`);
+        throw new Error(
+          `Financeiro salvo, mas houve erro ao registrar pagamento: ${erroPagamento.message}`,
+        );
       }
 
       const { error: erroAgendamento } = await supabase
@@ -876,34 +1034,53 @@ export default function AgendaPage() {
         .eq("id", agendamentoSelecionado.id);
 
       if (erroAgendamento) {
-        throw new Error(`Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`);
+        throw new Error(
+          `Financeiro salvo, mas houve erro ao finalizar: ${erroAgendamento.message}`,
+        );
       }
 
       if (empresaId && agendamentoSelecionado.servico_id) {
-        const { data: servicoRetorno, error: erroServicoRetorno } = await supabase
-          .from("servicos")
-          .select("id,nome,retorno_automatico,retorno_dias,retorno_alerta_dias,retorno_tipo")
-          .eq("id", agendamentoSelecionado.servico_id)
-          .eq("empresa_id", empresaId)
-          .maybeSingle();
+        const { data: servicoRetorno, error: erroServicoRetorno } =
+          await supabase
+            .from("servicos")
+            .select(
+              "id,nome,retorno_automatico,retorno_dias,retorno_alerta_dias,retorno_tipo",
+            )
+            .eq("id", agendamentoSelecionado.servico_id)
+            .eq("empresa_id", empresaId)
+            .maybeSingle();
 
         if (erroServicoRetorno) {
-          console.warn("Não foi possível verificar retorno automático:", erroServicoRetorno.message);
+          console.warn(
+            "Não foi possível verificar retorno automático:",
+            erroServicoRetorno.message,
+          );
         }
 
-        if (servicoRetorno?.retorno_automatico && servicoRetorno?.retorno_dias) {
+        if (
+          servicoRetorno?.retorno_automatico &&
+          servicoRetorno?.retorno_dias
+        ) {
           const base = new Date();
           const dataRetorno = new Date(base);
-          dataRetorno.setDate(base.getDate() + Number(servicoRetorno.retorno_dias || 0));
+          dataRetorno.setDate(
+            base.getDate() + Number(servicoRetorno.retorno_dias || 0),
+          );
 
           const dataAlerta = new Date(dataRetorno);
-          dataAlerta.setDate(dataRetorno.getDate() - Number(servicoRetorno.retorno_alerta_dias || 0));
+          dataAlerta.setDate(
+            dataRetorno.getDate() -
+              Number(servicoRetorno.retorno_alerta_dias || 0),
+          );
 
           const retornoPayload = {
             empresa_id: empresaId,
             cliente_id: agendamentoSelecionado.cliente_id || null,
             agendamento_id: agendamentoSelecionado.id,
-            procedimento: servicoRetorno.nome || agendamentoSelecionado.servico || "Procedimento",
+            procedimento:
+              servicoRetorno.nome ||
+              agendamentoSelecionado.servico ||
+              "Procedimento",
             data_retorno: dataRetorno.toISOString().slice(0, 10),
             data_alerta: dataAlerta.toISOString().slice(0, 10),
             observacao: servicoRetorno.retorno_tipo || null,
@@ -915,12 +1092,17 @@ export default function AgendaPage() {
             .insert([retornoPayload]);
 
           if (erroRetorno) {
-            console.warn("Atendimento finalizado, mas não foi possível criar retorno automático:", erroRetorno.message);
+            console.warn(
+              "Atendimento finalizado, mas não foi possível criar retorno automático:",
+              erroRetorno.message,
+            );
           }
         }
       }
 
-      alert("Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.");
+      alert(
+        "Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.",
+      );
 
       await enviarAgradecimentoWhatsapp(agendamentoSelecionado);
 
@@ -945,13 +1127,14 @@ export default function AgendaPage() {
     return agendamentos
       .filter((item) => item.data === selectedDate)
       .filter((item) =>
-        statusFilter === "todos" ? true : (item.status || "") === statusFilter
+        statusFilter === "todos" ? true : (item.status || "") === statusFilter,
       )
       .filter((item) =>
         profissionalFilter === "todos"
           ? true
-          : (item.profissional_id || item.profissional || "") === profissionalFilter ||
-            (item.profissional || "") === profissionalFilter
+          : (item.profissional_id || item.profissional || "") ===
+              profissionalFilter ||
+            (item.profissional || "") === profissionalFilter,
       )
       .filter((item) => {
         const term = search.trim().toLowerCase();
@@ -960,15 +1143,23 @@ export default function AgendaPage() {
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(term));
       })
-      .sort((a, b) => parseTimeToMinutes(a.horario) - parseTimeToMinutes(b.horario));
+      .sort(
+        (a, b) => parseTimeToMinutes(a.horario) - parseTimeToMinutes(b.horario),
+      );
   }, [agendamentos, selectedDate, statusFilter, profissionalFilter, search]);
 
   const totaisDia = useMemo(() => {
     return {
       total: agendamentosDoDia.length,
-      confirmados: agendamentosDoDia.filter((item) => item.status === "confirmado").length,
-      finalizados: agendamentosDoDia.filter((item) => item.status === "finalizado").length,
-      cancelados: agendamentosDoDia.filter((item) => item.status === "cancelado").length,
+      confirmados: agendamentosDoDia.filter(
+        (item) => item.status === "confirmado",
+      ).length,
+      finalizados: agendamentosDoDia.filter(
+        (item) => item.status === "finalizado",
+      ).length,
+      cancelados: agendamentosDoDia.filter(
+        (item) => item.status === "cancelado",
+      ).length,
     };
   }, [agendamentosDoDia]);
 
@@ -990,9 +1181,7 @@ export default function AgendaPage() {
   })();
 
   const topNowLine =
-    currentMinutes !== null
-      ? ((currentMinutes - 8 * 60) / 60) * 88
-      : null;
+    currentMinutes !== null ? ((currentMinutes - 8 * 60) / 60) * 88 : null;
 
   if (carregandoEmpresa) {
     return <div className="p-6">Carregando empresa...</div>;
@@ -1022,16 +1211,23 @@ export default function AgendaPage() {
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <MiniCalendar selectedDate={selectedDate} onSelect={(date) => {
-            setSelectedDate(date);
-            setData(date);
-          }} />
+          <MiniCalendar
+            selectedDate={selectedDate}
+            onSelect={(date) => {
+              setSelectedDate(date);
+              setData(date);
+            }}
+          />
 
           <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-bold text-amber-900">🎉 Aniversariantes do mês</p>
-                <p className="mt-1 text-xs text-amber-700">Envie promoções e felicitações pelo WhatsApp.</p>
+                <p className="text-sm font-bold text-amber-900">
+                  🎉 Aniversariantes do mês
+                </p>
+                <p className="mt-1 text-xs text-amber-700">
+                  Envie promoções e felicitações pelo WhatsApp.
+                </p>
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-700">
                 {aniversariantes.length}
@@ -1039,7 +1235,9 @@ export default function AgendaPage() {
             </div>
 
             {aniversariantes.length === 0 ? (
-              <p className="mt-4 text-sm text-amber-700">Nenhum aniversariante este mês.</p>
+              <p className="mt-4 text-sm text-amber-700">
+                Nenhum aniversariante este mês.
+              </p>
             ) : (
               <div className="mt-4 space-y-2">
                 {aniversariantes.map((cliente) => (
@@ -1049,7 +1247,8 @@ export default function AgendaPage() {
                   >
                     <p className="font-bold text-slate-900">{cliente.nome}</p>
                     <p className="text-xs text-slate-500">
-                      {formatarDataNascimento(cliente.data_nascimento)} · {cliente.telefone || "sem telefone"}
+                      {formatarDataNascimento(cliente.data_nascimento)} ·{" "}
+                      {cliente.telefone || "sem telefone"}
                     </p>
                     <button
                       type="button"
@@ -1107,9 +1306,13 @@ export default function AgendaPage() {
                     onClick={() => setStatusFilter(item.value)}
                     className="rounded-full px-3 py-2 text-xs font-semibold transition"
                     style={{
-                      backgroundColor: active ? "var(--color-primary)" : "#f8fafc",
+                      backgroundColor: active
+                        ? "var(--color-primary)"
+                        : "#f8fafc",
                       color: active ? "#fff" : "#334155",
-                      border: active ? "none" : "1px solid rgba(148, 163, 184, 0.24)",
+                      border: active
+                        ? "none"
+                        : "1px solid rgba(148, 163, 184, 0.24)",
                     }}
                   >
                     {item.label}
@@ -1120,24 +1323,34 @@ export default function AgendaPage() {
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-800">Resumo do dia</p>
+            <p className="text-sm font-semibold text-slate-800">
+              Resumo do dia
+            </p>
             <div className="mt-4 grid gap-3">
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
                 <p className="text-xs text-slate-500">Total</p>
-                <p className="text-2xl font-bold text-slate-900">{totaisDia.total}</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {totaisDia.total}
+                </p>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-2xl bg-blue-50 px-3 py-3 text-center">
                   <p className="text-xs text-blue-600">Confirmados</p>
-                  <p className="text-lg font-bold text-blue-700">{totaisDia.confirmados}</p>
+                  <p className="text-lg font-bold text-blue-700">
+                    {totaisDia.confirmados}
+                  </p>
                 </div>
                 <div className="rounded-2xl bg-emerald-50 px-3 py-3 text-center">
                   <p className="text-xs text-emerald-600">Finalizados</p>
-                  <p className="text-lg font-bold text-emerald-700">{totaisDia.finalizados}</p>
+                  <p className="text-lg font-bold text-emerald-700">
+                    {totaisDia.finalizados}
+                  </p>
                 </div>
                 <div className="rounded-2xl bg-rose-50 px-3 py-3 text-center">
                   <p className="text-xs text-rose-600">Cancelados</p>
-                  <p className="text-lg font-bold text-rose-700">{totaisDia.cancelados}</p>
+                  <p className="text-lg font-bold text-rose-700">
+                    {totaisDia.cancelados}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1156,7 +1369,9 @@ export default function AgendaPage() {
               </button>
 
               <div>
-                <p className="text-sm font-semibold text-slate-900">{formatDisplayDate(selectedDate)}</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatDisplayDate(selectedDate)}
+                </p>
                 <p className="text-xs text-slate-500">Visão diária da agenda</p>
               </div>
 
@@ -1170,11 +1385,13 @@ export default function AgendaPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <SecondaryButton onClick={() => {
-                const today = getTodayString();
-                setSelectedDate(today);
-                setData(today);
-              }}>
+              <SecondaryButton
+                onClick={() => {
+                  const today = getTodayString();
+                  setSelectedDate(today);
+                  setData(today);
+                }}
+              >
                 Hoje
               </SecondaryButton>
 
@@ -1218,17 +1435,19 @@ export default function AgendaPage() {
                   />
                 ))}
 
-                {typeof topNowLine === "number" && topNowLine >= 0 && topNowLine <= HORARIOS.length * 88 && (
-                  <div
-                    className="pointer-events-none absolute left-0 right-0 z-10"
-                    style={{ top: `${topNowLine}px` }}
-                  >
-                    <div className="flex items-center">
-                      <span className="ml-2 h-3 w-3 rounded-full bg-rose-500" />
-                      <div className="h-[2px] flex-1 bg-rose-500" />
+                {typeof topNowLine === "number" &&
+                  topNowLine >= 0 &&
+                  topNowLine <= HORARIOS.length * 88 && (
+                    <div
+                      className="pointer-events-none absolute left-0 right-0 z-10"
+                      style={{ top: `${topNowLine}px` }}
+                    >
+                      <div className="flex items-center">
+                        <span className="ml-2 h-3 w-3 rounded-full bg-rose-500" />
+                        <div className="h-[2px] flex-1 bg-rose-500" />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {agendamentosDoDia.map((item) => {
                   const mins = parseTimeToMinutes(item.horario);
@@ -1255,48 +1474,62 @@ export default function AgendaPage() {
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="font-bold">{item.cliente || "Sem cliente"}</p>
+                            <p className="font-bold">
+                              {item.cliente || "Sem cliente"}
+                            </p>
                             <span className="rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
                               {item.status || "agendado"}
                             </span>
                           </div>
-                          <p className="mt-1 text-sm font-medium">{item.servico || "Serviço"}</p>
+                          <p className="mt-1 text-sm font-medium">
+                            {item.servico || "Serviço"}
+                          </p>
                           <p className="text-xs opacity-80">
-                            {item.horario} às {horarioFim} · {item.profissional || "Sem profissional"}
+                            {item.horario} às {horarioFim} ·{" "}
+                            {item.profissional || "Sem profissional"}
                           </p>
                           {item.observacoes && (
-                            <p className="mt-2 text-xs opacity-80">{item.observacoes}</p>
+                            <p className="mt-2 text-xs opacity-80">
+                              {item.observacoes}
+                            </p>
                           )}
                         </div>
 
                         <div className="flex flex-wrap gap-2 lg:justify-end">
-                          {item.status !== "finalizado" && item.status !== "cancelado" && (
-                            <>
-                              {item.status !== "confirmado" && (
+                          {item.status !== "finalizado" &&
+                            item.status !== "cancelado" && (
+                              <>
+                                {item.status !== "confirmado" && (
+                                  <SecondaryButton
+                                    onClick={() =>
+                                      void confirmarAgendamento(item.id)
+                                    }
+                                  >
+                                    Confirmar
+                                  </SecondaryButton>
+                                )}
+
                                 <SecondaryButton
-                                  onClick={() => void confirmarAgendamento(item.id)}
+                                  onClick={() => abrirModalReagendar(item)}
                                 >
-                                  Confirmar
+                                  Reagendar
                                 </SecondaryButton>
-                              )}
 
-                              <SecondaryButton
-                                onClick={() => abrirModalReagendar(item)}
-                              >
-                                Reagendar
-                              </SecondaryButton>
+                                <SecondaryButton
+                                  onClick={() =>
+                                    void cancelarAgendamento(item.id)
+                                  }
+                                >
+                                  Cancelar
+                                </SecondaryButton>
 
-                              <SecondaryButton
-                                onClick={() => void cancelarAgendamento(item.id)}
-                              >
-                                Cancelar
-                              </SecondaryButton>
-
-                              <PrimaryButton onClick={() => void abrirModalFinalizar(item)}>
-                                Finalizar
-                              </PrimaryButton>
-                            </>
-                          )}
+                                <PrimaryButton
+                                  onClick={() => void abrirModalFinalizar(item)}
+                                >
+                                  Finalizar
+                                </PrimaryButton>
+                              </>
+                            )}
                         </div>
                       </div>
                     </div>
@@ -1313,10 +1546,15 @@ export default function AgendaPage() {
           <div className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-orange-600">Novo atendimento</p>
-                <h2 className="text-2xl font-bold text-slate-900">Agendar cliente</h2>
+                <p className="text-sm font-medium text-orange-600">
+                  Novo atendimento
+                </p>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  Agendar cliente
+                </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Preencha os dados abaixo para inserir um novo horário na agenda.
+                  Preencha os dados abaixo para inserir um novo horário na
+                  agenda.
                 </p>
               </div>
 
@@ -1400,7 +1638,10 @@ export default function AgendaPage() {
               />
 
               <div className="md:col-span-2">
-                <AlertaAnamneseAgenda alertas={alertas} loading={loadingAlerta} />
+                <AlertaAnamneseAgenda
+                  alertas={alertas}
+                  loading={loadingAlerta}
+                />
               </div>
 
               {alertas.length > 0 && (
@@ -1421,7 +1662,9 @@ export default function AgendaPage() {
               <PrimaryButton onClick={() => void salvarAgendamento()}>
                 {loadingSalvar ? "Salvando..." : "Salvar agendamento"}
               </PrimaryButton>
-              <SecondaryButton onClick={limparFormulario}>Limpar</SecondaryButton>
+              <SecondaryButton onClick={limparFormulario}>
+                Limpar
+              </SecondaryButton>
             </div>
           </div>
         </div>
@@ -1432,8 +1675,12 @@ export default function AgendaPage() {
           <div className="w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-orange-600">Reagendamento</p>
-                <h2 className="text-2xl font-bold text-slate-900">Reagendar atendimento</h2>
+                <p className="text-sm font-medium text-orange-600">
+                  Reagendamento
+                </p>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  Reagendar atendimento
+                </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Escolha uma nova data e horário para este agendamento.
                 </p>
@@ -1452,15 +1699,27 @@ export default function AgendaPage() {
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
-              <p><strong>Cliente:</strong> {agendamentoReagendar.cliente}</p>
-              <p><strong>Serviço:</strong> {agendamentoReagendar.servico}</p>
-              <p><strong>Profissional:</strong> {agendamentoReagendar.profissional || "Não informado"}</p>
-              <p><strong>Atual:</strong> {agendamentoReagendar.data} às {agendamentoReagendar.horario}</p>
+              <p>
+                <strong>Cliente:</strong> {agendamentoReagendar.cliente}
+              </p>
+              <p>
+                <strong>Serviço:</strong> {agendamentoReagendar.servico}
+              </p>
+              <p>
+                <strong>Profissional:</strong>{" "}
+                {agendamentoReagendar.profissional || "Não informado"}
+              </p>
+              <p>
+                <strong>Atual:</strong> {agendamentoReagendar.data} às{" "}
+                {agendamentoReagendar.horario}
+              </p>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-sm font-bold text-slate-700">Nova data</label>
+                <label className="text-sm font-bold text-slate-700">
+                  Nova data
+                </label>
                 <input
                   type="date"
                   value={dataReagendamento}
@@ -1471,7 +1730,9 @@ export default function AgendaPage() {
               </div>
 
               <div>
-                <label className="text-sm font-bold text-slate-700">Novo horário</label>
+                <label className="text-sm font-bold text-slate-700">
+                  Novo horário
+                </label>
                 <select
                   value={horaReagendamento}
                   onChange={(e) => setHoraReagendamento(e.target.value)}
@@ -1508,17 +1769,29 @@ export default function AgendaPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5">
-              <h2 className="text-2xl font-bold text-slate-900">Finalizar atendimento</h2>
+              <h2 className="text-2xl font-bold text-slate-900">
+                Finalizar atendimento
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
                 Confirme os dados antes de concluir e lançar no financeiro.
               </p>
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
-              <p><strong>Cliente:</strong> {agendamentoSelecionado.cliente}</p>
-              <p><strong>Serviço:</strong> {agendamentoSelecionado.servico}</p>
-              <p><strong>Profissional:</strong> {agendamentoSelecionado.profissional || "Não informado"}</p>
-              <p><strong>Data:</strong> {agendamentoSelecionado.data} às {agendamentoSelecionado.horario}</p>
+              <p>
+                <strong>Cliente:</strong> {agendamentoSelecionado.cliente}
+              </p>
+              <p>
+                <strong>Serviço:</strong> {agendamentoSelecionado.servico}
+              </p>
+              <p>
+                <strong>Profissional:</strong>{" "}
+                {agendamentoSelecionado.profissional || "Não informado"}
+              </p>
+              <p>
+                <strong>Data:</strong> {agendamentoSelecionado.data} às{" "}
+                {agendamentoSelecionado.horario}
+              </p>
             </div>
 
             {pacotesDisponiveis.length > 0 && (
@@ -1530,13 +1803,18 @@ export default function AgendaPage() {
                 <div className="mt-3 grid gap-3">
                   <select
                     value={saldoPacoteSelecionadoId}
-                    onChange={(e) => setSaldoPacoteSelecionadoId(e.target.value)}
+                    onChange={(e) =>
+                      setSaldoPacoteSelecionadoId(e.target.value)
+                    }
                     className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 outline-none"
                   >
                     {pacotesDisponiveis.map((pacote) => (
                       <option key={pacote.saldo_id} value={pacote.saldo_id}>
-                        {pacote.pacote_nome} — saldo {pacote.restante}/{pacote.quantidade_total}
-                        {pacote.data_fim ? ` — válido até ${pacote.data_fim}` : ""}
+                        {pacote.pacote_nome} — saldo {pacote.restante}/
+                        {pacote.quantidade_total}
+                        {pacote.data_fim
+                          ? ` — válido até ${pacote.data_fim}`
+                          : ""}
                       </option>
                     ))}
                   </select>
@@ -1553,7 +1831,9 @@ export default function AgendaPage() {
                           setFormaPagamento("pacote");
                           setStatusPagamento("pago");
                         } else {
-                          setValorPagamento(valorPadraoDoAgendamento(agendamentoSelecionado));
+                          setValorPagamento(
+                            valorPadraoDoAgendamento(agendamentoSelecionado),
+                          );
                           setFormaPagamento("pix");
                           setStatusPagamento("pago");
                         }
@@ -1573,7 +1853,9 @@ export default function AgendaPage() {
 
             <div className="mt-5 grid gap-4">
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Valor</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Valor
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -1592,7 +1874,9 @@ export default function AgendaPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Forma de pagamento</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Forma de pagamento
+                </label>
                 <select
                   value={formaPagamento}
                   onChange={(e) => setFormaPagamento(e.target.value)}
@@ -1608,7 +1892,9 @@ export default function AgendaPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Status do pagamento</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Status do pagamento
+                </label>
                 <select
                   value={statusPagamento}
                   onChange={(e) => setStatusPagamento(e.target.value)}
