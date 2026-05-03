@@ -42,6 +42,24 @@ const formularioVazio = {
   estado: "",
 };
 
+function formularioTemDados(formulario: typeof formularioVazio) {
+  return Object.values(formulario).some((valor) => String(valor || "").trim() !== "");
+}
+
+function carregarRascunhoCliente(chave: string) {
+  if (typeof window === "undefined") return null;
+
+  const salvo = localStorage.getItem(chave);
+  if (!salvo) return null;
+
+  try {
+    return JSON.parse(salvo) as typeof formularioVazio;
+  } catch {
+    localStorage.removeItem(chave);
+    return null;
+  }
+}
+
 export default function ClientesPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
@@ -58,12 +76,27 @@ export default function ClientesPage() {
   const [precosEspeciais, setPrecosEspeciais] = useState<Record<string, string>>({});
   const [salvandoPrecoEspecial, setSalvandoPrecoEspecial] = useState(false);
 
+  const chaveRascunhoNovoCliente = empresaId
+    ? `vendlysys:novo-cliente:${empresaId}`
+    : "vendlysys:novo-cliente";
+
   useEffect(() => {
     if (empresaId) {
       carregarClientes();
       carregarServicos();
     }
   }, [empresaId]);
+
+  useEffect(() => {
+    if (!modalAberto || clienteEditando) return;
+
+    if (!formularioTemDados(form)) {
+      localStorage.removeItem(chaveRascunhoNovoCliente);
+      return;
+    }
+
+    localStorage.setItem(chaveRascunhoNovoCliente, JSON.stringify(form));
+  }, [form, modalAberto, clienteEditando, chaveRascunhoNovoCliente]);
 
   function atualizarCampo(campo: keyof typeof formularioVazio, valor: string) {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -278,8 +311,10 @@ export default function ClientesPage() {
   }
 
   function abrirNovoCliente() {
+    const rascunhoSalvo = carregarRascunhoCliente(chaveRascunhoNovoCliente);
+
     setClienteEditando(null);
-    setForm(formularioVazio);
+    setForm(rascunhoSalvo || formularioVazio);
     setPrecosEspeciais({});
     setModalAberto(true);
   }
@@ -358,6 +393,10 @@ export default function ClientesPage() {
         setSalvando(false);
         return;
       }
+    }
+
+    if (!clienteEditando?.id) {
+      localStorage.removeItem(chaveRascunhoNovoCliente);
     }
 
     setSalvando(false);
