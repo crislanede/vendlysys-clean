@@ -225,6 +225,7 @@ export default function MeuEspaco() {
   const [servicos, setServicos] = useState<ServicoCliente[]>([]);
   const [profissionais, setProfissionais] = useState<ProfissionalCliente[]>([]);
   const [novoAgendamentoAberto, setNovoAgendamentoAberto] = useState(false);
+  const [agendamentoReagendandoId, setAgendamentoReagendandoId] = useState<string | null>(null);
   const [servicoAgendamentoId, setServicoAgendamentoId] = useState("");
   const [profissionalAgendamentoId, setProfissionalAgendamentoId] =
     useState("");
@@ -262,6 +263,7 @@ export default function MeuEspaco() {
     servicoAgendamentoId,
     profissionalAgendamentoId,
     dataAgendamento,
+    agendamentoReagendandoId,
   ]);
 
   useEffect(() => {
@@ -879,11 +881,13 @@ export default function MeuEspaco() {
     horarioInicio: string,
     duracaoMinutos: number,
     agendamentosDia: any[],
+    ignorarAgendamentoId?: string | null,
   ) {
     const horarioFim = somarMinutos(horarioInicio, duracaoMinutos);
 
     return agendamentosDia.some((item) => {
       if (item.status === "cancelado") return false;
+      if (ignorarAgendamentoId && item.id === ignorarAgendamentoId) return false;
 
       const inicioExistente = item.horario;
       const fimExistente = somarMinutos(
@@ -975,11 +979,81 @@ export default function MeuEspaco() {
         horario,
         duracaoTotal,
         agendamentosDia || [],
+        agendamentoReagendandoId,
       );
     });
 
     setHorariosLivres(livres);
     setCarregandoHorarios(false);
+  }
+
+  function limparFormularioAgendamento() {
+    setAgendamentoReagendandoId(null);
+    setNovoAgendamentoAberto(false);
+    setAgendamentoReagendandoId(null);
+    setServicoAgendamentoId("");
+    setProfissionalAgendamentoId("");
+    setDataAgendamento(hojeISO());
+    setHorarioAgendamento("");
+    setValorAgendamentoFinal(null);
+    setPrecoEspecialAplicado(false);
+  }
+
+  async function confirmarAgendamentoCliente(agendamento: any) {
+    if (!agendamento?.id || !cliente?.id) return;
+
+    const confirmar = window.confirm("Confirmar este agendamento?");
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("agendamentos")
+      .update({ status: "confirmado" })
+      .eq("id", agendamento.id)
+      .eq("cliente_id", cliente.id);
+
+    if (error) {
+      alert("Erro ao confirmar agendamento: " + error.message);
+      return;
+    }
+
+    alert("Agendamento confirmado com sucesso!");
+    await carregarAgendamentos(cliente.id);
+  }
+
+  async function cancelarAgendamentoCliente(agendamento: any) {
+    if (!agendamento?.id || !cliente?.id) return;
+
+    const confirmar = window.confirm(
+      "Tem certeza que deseja cancelar este agendamento?",
+    );
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("agendamentos")
+      .update({ status: "cancelado" })
+      .eq("id", agendamento.id)
+      .eq("cliente_id", cliente.id);
+
+    if (error) {
+      alert("Erro ao cancelar agendamento: " + error.message);
+      return;
+    }
+
+    alert("Agendamento cancelado com sucesso!");
+    limparFormularioAgendamento();
+    await carregarAgendamentos(cliente.id);
+  }
+
+  function iniciarReagendamentoCliente(agendamento: any) {
+    if (!agendamento?.id) return;
+
+    setAgendamentoReagendandoId(agendamento.id);
+    setNovoAgendamentoAberto(true);
+    setServicoAgendamentoId(agendamento.servico_id || "");
+    setProfissionalAgendamentoId(agendamento.profissional_id || "");
+    setDataAgendamento(agendamento.data || hojeISO());
+    setHorarioAgendamento(agendamento.horario || "");
+    setMensagem("Escolha a nova data e/ou horário e confirme o reagendamento.");
   }
 
   async function salvarNovoAgendamentoCliente() {
@@ -1062,6 +1136,7 @@ export default function MeuEspaco() {
         horarioAgendamento,
         duracaoTotal,
         agendamentosDia || [],
+        agendamentoReagendandoId,
       )
     ) {
       alert("Já existe um agendamento nesse intervalo. Escolha outro horário.");
@@ -1074,54 +1149,72 @@ export default function MeuEspaco() {
     const valorCalculado =
       await calcularValorServicoCliente(servicoSelecionado);
 
-    const { data: agendamentoCriado, error } = await supabase
-      .from("agendamentos")
-      .insert([
-        {
-          empresa_id: cliente.empresa_id,
-          cliente: cliente.nome,
-          cliente_id: cliente.id,
-          servico: servicoSelecionado.nome,
-          servico_id: servicoSelecionado.id,
-          profissional: profissionalSelecionado.nome,
-          profissional_id: profissionalSelecionado.id,
-          data: dataAgendamento,
-          horario: horarioAgendamento,
-          duracao_minutos: duracaoTotal,
-          status: "agendado",
-          no_show: false,
-          observacoes: valorCalculado.especial
-            ? `Agendamento realizado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
-            : "Agendamento realizado pelo Meu Espaço",
-        },
-      ])
-      .select("id")
-      .single();
+    let agendamentoCriado: any = null;
+    let error: any = null;
 
-    if (error) {
-      setSalvandoAgendamento(false);
-      alert("Erro ao criar agendamento: " + error.message);
-      return;
+    const payloadAgendamento = {
+      empresa_id: cliente.empresa_id,
+      cliente: cliente.nome,
+      cliente_id: cliente.id,
+      servico: servicoSelecionado.nome,
+      servico_id: servicoSelecionado.id,
+      profissional: profissionalSelecionado.nome,
+      profissional_id: profissionalSelecionado.id,
+      data: dataAgendamento,
+      horario: horarioAgendamento,
+      duracao_minutos: duracaoTotal,
+      status: "agendado",
+      no_show: false,
+      observacoes: valorCalculado.especial
+        ? `Agendamento realizado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
+        : "Agendamento realizado pelo Meu Espaço",
+    };
+
+    if (agendamentoReagendandoId) {
+      const resultado = await supabase
+        .from("agendamentos")
+        .update({
+          ...payloadAgendamento,
+          observacoes: valorCalculado.especial
+            ? `Agendamento reagendado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
+            : "Agendamento reagendado pelo Meu Espaço",
+        })
+        .eq("id", agendamentoReagendandoId)
+        .eq("cliente_id", cliente.id)
+        .select("id")
+        .single();
+
+      agendamentoCriado = resultado.data;
+      error = resultado.error;
+    } else {
+      const resultado = await supabase
+        .from("agendamentos")
+        .insert([payloadAgendamento])
+        .select("id")
+        .single();
+
+      agendamentoCriado = resultado.data;
+      error = resultado.error;
     }
 
-    await criarLancamentoFinanceiroAgendamento(
-      agendamentoCriado?.id || null,
-      servicoSelecionado,
-      profissionalSelecionado,
-      valorCalculado.valor,
-      valorCalculado.especial,
-    );
+    if (!agendamentoReagendandoId) {
+      await criarLancamentoFinanceiroAgendamento(
+        agendamentoCriado?.id || null,
+        servicoSelecionado,
+        profissionalSelecionado,
+        valorCalculado.valor,
+        valorCalculado.especial,
+      );
+    }
 
     setSalvandoAgendamento(false);
 
-    alert("Agendamento criado com sucesso!");
-    setNovoAgendamentoAberto(false);
-    setServicoAgendamentoId("");
-    setProfissionalAgendamentoId("");
-    setDataAgendamento(hojeISO());
-    setHorarioAgendamento("");
-    setValorAgendamentoFinal(null);
-    setPrecoEspecialAplicado(false);
+    alert(
+      agendamentoReagendandoId
+        ? "Agendamento reagendado com sucesso!"
+        : "Agendamento criado com sucesso!",
+    );
+    limparFormularioAgendamento();
     await carregarAgendamentos(cliente.id);
   }
 
@@ -1686,6 +1779,7 @@ export default function MeuEspaco() {
     setAnamnesePreenchida(null);
     setPdfAnamneseUrl("");
     setNovoAgendamentoAberto(false);
+    setAgendamentoReagendandoId(null);
     setServicoAgendamentoId("");
     setProfissionalAgendamentoId("");
     setHorarioAgendamento("");
@@ -2596,7 +2690,13 @@ export default function MeuEspaco() {
                         return;
                       }
 
-                      setNovoAgendamentoAberto((valor) => !valor);
+                      if (novoAgendamentoAberto && !agendamentoReagendandoId) {
+                        setNovoAgendamentoAberto(false);
+                        return;
+                      }
+
+                      limparFormularioAgendamento();
+                      setNovoAgendamentoAberto(true);
                     }}
                     disabled={acessoBloqueadoPorAnamnese}
                     style={{
@@ -2609,7 +2709,9 @@ export default function MeuEspaco() {
                       cursor: "pointer",
                     }}
                   >
-                    {novoAgendamentoAberto ? "Fechar" : "+ Novo agendamento"}
+                    {novoAgendamentoAberto && !agendamentoReagendandoId
+                      ? "Fechar"
+                      : "+ Novo agendamento"}
                   </button>
                 </div>
 
@@ -2623,7 +2725,11 @@ export default function MeuEspaco() {
                       marginBottom: 22,
                     }}
                   >
-                    <h3 style={{ marginTop: 0 }}>Novo agendamento</h3>
+                    <h3 style={{ marginTop: 0 }}>
+                      {agendamentoReagendandoId
+                        ? "Reagendar agendamento"
+                        : "Novo agendamento"}
+                    </h3>
 
                     <div
                       style={{
@@ -2864,8 +2970,12 @@ export default function MeuEspaco() {
                       }}
                     >
                       {salvandoAgendamento
-                        ? "Agendando..."
-                        : "Confirmar agendamento"}
+                        ? agendamentoReagendandoId
+                          ? "Reagendando..."
+                          : "Agendando..."
+                        : agendamentoReagendandoId
+                          ? "Confirmar reagendamento"
+                          : "Confirmar agendamento"}
                     </button>
                   </div>
                 )}
@@ -2876,23 +2986,89 @@ export default function MeuEspaco() {
                   </p>
                 )}
 
-                {agendamentos.map((a) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 18,
-                      padding: 18,
-                      marginBottom: 14,
-                    }}
-                  >
-                    <strong>{a.servico || a.servico_nome}</strong>
-                    <div>
-                      {formatarData(a.data)} às {a.horario}
+                {agendamentos.map((a) => {
+                  const status = String(a.status || "").toLowerCase();
+                  const podeAlterar = !["cancelado", "finalizado"].includes(status);
+                  const jaConfirmado = status === "confirmado";
+
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 18,
+                        padding: 18,
+                        marginBottom: 14,
+                      }}
+                    >
+                      <strong>{a.servico || a.servico_nome}</strong>
+                      <div>
+                        {formatarData(a.data)} às {a.horario}
+                      </div>
+                      <div>Status: {a.status}</div>
+
+                      {podeAlterar && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            marginTop: 14,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => confirmarAgendamentoCliente(a)}
+                            disabled={jaConfirmado}
+                            style={{
+                              padding: "11px 14px",
+                              borderRadius: 14,
+                              border: 0,
+                              background: jaConfirmado ? "#dcfce7" : "#16a34a",
+                              color: jaConfirmado ? "#166534" : "#fff",
+                              fontWeight: 900,
+                              cursor: jaConfirmado ? "default" : "pointer",
+                            }}
+                          >
+                            {jaConfirmado ? "Confirmado" : "Confirmar"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => iniciarReagendamentoCliente(a)}
+                            style={{
+                              padding: "11px 14px",
+                              borderRadius: 14,
+                              border: "1px solid #282663",
+                              background: "#fff",
+                              color: "#282663",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Reagendar
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => cancelarAgendamentoCliente(a)}
+                            style={{
+                              padding: "11px 14px",
+                              borderRadius: 14,
+                              border: "1px solid #fecaca",
+                              background: "#fee2e2",
+                              color: "#991b1b",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div>Status: {a.status}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

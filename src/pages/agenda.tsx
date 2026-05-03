@@ -290,9 +290,6 @@ function montarMensagemAniversario(nome: string) {
 export default function AgendaPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
-  // Controle temporário: deixe true apenas para perfil administrador.
-  const isAdmin = false;
-
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [aniversariantes, setAniversariantes] = useState<Cliente[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
@@ -325,6 +322,13 @@ export default function AgendaPage() {
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [statusPagamento, setStatusPagamento] = useState("pago");
   const [loadingFinalizar, setLoadingFinalizar] = useState(false);
+
+  const [modalReagendarAberto, setModalReagendarAberto] = useState(false);
+  const [agendamentoReagendar, setAgendamentoReagendar] =
+    useState<Agendamento | null>(null);
+  const [dataReagendamento, setDataReagendamento] = useState(getTodayString());
+  const [horaReagendamento, setHoraReagendamento] = useState("09:00");
+  const [loadingReagendar, setLoadingReagendar] = useState(false);
 
   const [pacotesDisponiveis, setPacotesDisponiveis] = useState<PacoteDisponivel[]>([]);
   const [usarPacote, setUsarPacote] = useState(false);
@@ -502,7 +506,27 @@ export default function AgendaPage() {
     await carregarTudo();
   }
 
+  async function confirmarAgendamento(id: string) {
+    const { error } = await supabase
+      .from("agendamentos")
+      .update({ status: "confirmado" })
+      .eq("id", id);
+
+    if (error) {
+      alert(`Erro ao confirmar: ${error.message}`);
+      return;
+    }
+
+    await carregarTudo();
+  }
+
   async function cancelarAgendamento(id: string) {
+    const confirmarCancelamento = window.confirm(
+      "Deseja cancelar este agendamento?"
+    );
+
+    if (!confirmarCancelamento) return;
+
     const { error } = await supabase
       .from("agendamentos")
       .update({ status: "cancelado" })
@@ -513,6 +537,74 @@ export default function AgendaPage() {
       return;
     }
 
+    await carregarTudo();
+  }
+
+  function abrirModalReagendar(agendamento: Agendamento) {
+    setAgendamentoReagendar(agendamento);
+    setDataReagendamento(agendamento.data || selectedDate);
+    setHoraReagendamento(agendamento.horario || "09:00");
+    setModalReagendarAberto(true);
+  }
+
+  async function salvarReagendamento() {
+    if (!agendamentoReagendar) return;
+
+    if (!dataReagendamento || !horaReagendamento) {
+      alert("Informe a nova data e o novo horário.");
+      return;
+    }
+
+    const duracaoTotal = Number(agendamentoReagendar.duracao_minutos || 60);
+    const horarioFim = somarMinutos(horaReagendamento, duracaoTotal);
+
+    const conflito = agendamentos.some((item) => {
+      if (item.id === agendamentoReagendar.id) return false;
+      if (item.status === "cancelado") return false;
+      if (item.profissional_id !== agendamentoReagendar.profissional_id) return false;
+      if (item.data !== dataReagendamento) return false;
+
+      const inicioExistente = item.horario;
+      const fimExistente = somarMinutos(
+        item.horario,
+        item.duracao_minutos || 60
+      );
+
+      return horaReagendamento < fimExistente && horarioFim > inicioExistente;
+    });
+
+    if (conflito) {
+      alert(
+        "Já existe um agendamento nesse intervalo para esse profissional. Escolha outro horário."
+      );
+      return;
+    }
+
+    setLoadingReagendar(true);
+
+    const { error } = await supabase
+      .from("agendamentos")
+      .update({
+        data: dataReagendamento,
+        horario: horaReagendamento,
+        status:
+          agendamentoReagendar.status === "confirmado"
+            ? "confirmado"
+            : "agendado",
+      })
+      .eq("id", agendamentoReagendar.id);
+
+    setLoadingReagendar(false);
+
+    if (error) {
+      alert(`Erro ao reagendar: ${error.message}`);
+      return;
+    }
+
+    setModalReagendarAberto(false);
+    setAgendamentoReagendar(null);
+    setSelectedDate(dataReagendamento);
+    setData(dataReagendamento);
     await carregarTudo();
   }
 
@@ -1179,15 +1271,31 @@ export default function AgendaPage() {
 
                         <div className="flex flex-wrap gap-2 lg:justify-end">
                           {item.status !== "finalizado" && item.status !== "cancelado" && (
-                            <PrimaryButton onClick={() => void abrirModalFinalizar(item)}>
-                              Finalizar
-                            </PrimaryButton>
-                          )}
+                            <>
+                              {item.status !== "confirmado" && (
+                                <SecondaryButton
+                                  onClick={() => void confirmarAgendamento(item.id)}
+                                >
+                                  Confirmar
+                                </SecondaryButton>
+                              )}
 
-                          {isAdmin && item.status !== "cancelado" && (
-                            <SecondaryButton onClick={() => void cancelarAgendamento(item.id)}>
-                              Cancelar
-                            </SecondaryButton>
+                              <SecondaryButton
+                                onClick={() => abrirModalReagendar(item)}
+                              >
+                                Reagendar
+                              </SecondaryButton>
+
+                              <SecondaryButton
+                                onClick={() => void cancelarAgendamento(item.id)}
+                              >
+                                Cancelar
+                              </SecondaryButton>
+
+                              <PrimaryButton onClick={() => void abrirModalFinalizar(item)}>
+                                Finalizar
+                              </PrimaryButton>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1314,6 +1422,83 @@ export default function AgendaPage() {
                 {loadingSalvar ? "Salvando..." : "Salvar agendamento"}
               </PrimaryButton>
               <SecondaryButton onClick={limparFormulario}>Limpar</SecondaryButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalReagendarAberto && agendamentoReagendar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-orange-600">Reagendamento</p>
+                <h2 className="text-2xl font-bold text-slate-900">Reagendar atendimento</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Escolha uma nova data e horário para este agendamento.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModalReagendarAberto(false);
+                  setAgendamentoReagendar(null);
+                }}
+                className="rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
+              <p><strong>Cliente:</strong> {agendamentoReagendar.cliente}</p>
+              <p><strong>Serviço:</strong> {agendamentoReagendar.servico}</p>
+              <p><strong>Profissional:</strong> {agendamentoReagendar.profissional || "Não informado"}</p>
+              <p><strong>Atual:</strong> {agendamentoReagendar.data} às {agendamentoReagendar.horario}</p>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-bold text-slate-700">Nova data</label>
+                <input
+                  type="date"
+                  value={dataReagendamento}
+                  min={getTodayString()}
+                  onChange={(e) => setDataReagendamento(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-slate-700">Novo horário</label>
+                <select
+                  value={horaReagendamento}
+                  onChange={(e) => setHoraReagendamento(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+                >
+                  <option value="">Selecione</option>
+                  {HORARIOS.map((horarioOpcao) => (
+                    <option key={horarioOpcao} value={horarioOpcao}>
+                      {horarioOpcao}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <SecondaryButton
+                onClick={() => {
+                  setModalReagendarAberto(false);
+                  setAgendamentoReagendar(null);
+                }}
+              >
+                Cancelar
+              </SecondaryButton>
+              <PrimaryButton onClick={() => void salvarReagendamento()}>
+                {loadingReagendar ? "Salvando..." : "Salvar reagendamento"}
+              </PrimaryButton>
             </div>
           </div>
         </div>
