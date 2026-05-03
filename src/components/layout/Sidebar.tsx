@@ -55,6 +55,7 @@ const menuAdmin: MenuSecao[] = [
     titulo: "Sistema",
     itens: [
       { nome: "Anamnese", rota: "/anamnese-configuracao" },
+      { nome: "Mensagens", rota: "/whatsapp-mensagens" },
       { nome: "Bloqueios", rota: "/bloqueios" },
       { nome: "Configurações", rota: "/configuracoes" },
     ],
