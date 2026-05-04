@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
 type Usuario = {
@@ -7,274 +6,133 @@ type Usuario = {
   nome: string | null;
   email: string | null;
   perfil: string | null;
+  empresa_id: string | null;
   ativo?: boolean | null;
-  created_at?: string | null;
+  created_at: string | null;
 };
 
 type Empresa = {
   id: string;
-  nome_fantasia: string | null;
-  nome?: string | null;
+  nome: string | null;
   slug?: string | null;
-  ativa?: boolean | null;
-  bloqueada?: boolean | null;
 };
 
-type Vinculo = {
-  id?: string;
-  user_id: string;
-  empresa_id: string;
-  perfil: string | null;
-  nome_empresa?: string | null;
-  empresas?: Empresa | null;
+const formInicial = {
+  nome: "",
+  email: "",
+  perfil: "cliente",
+  empresa_id: "",
+  ativo: true,
 };
 
-const PERFIS_SAAS = ["super_admin", "admin_saas"];
-const PERFIS_USUARIO = ["super_admin", "admin_saas", "admin", "recepcao", "profissional", "financeiro", "consulta"];
-const PERFIS_EMPRESA = ["admin", "recepcao", "profissional", "financeiro", "consulta"];
-
-const LABEL_PERFIL: Record<string, string> = {
-  super_admin: "Super admin",
-  admin_saas: "Admin SaaS",
-  admin: "Administrador da empresa",
-  recepcao: "Recepção",
-  profissional: "Profissional",
-  financeiro: "Financeiro",
-  consulta: "Consulta",
-};
-
-function nomeEmpresa(empresa?: Empresa | null) {
-  return empresa?.nome_fantasia || empresa?.nome || empresa?.slug || empresa?.id || "Empresa";
-}
+const ITENS_POR_PAGINA = 8;
 
 export default function AdminUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [autorizado, setAutorizado] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [pagina, setPagina] = useState(1);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
-  const [busca, setBusca] = useState("");
 
-  const [modalUsuarioAberto, setModalUsuarioAberto] = useState(false);
-  const [modalVinculoAberto, setModalVinculoAberto] = useState(false);
-
-  const [id, setId] = useState("");
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
-  const [perfil, setPerfil] = useState("admin_saas");
-
-  const [usuarioVinculo, setUsuarioVinculo] = useState<Usuario | null>(null);
-  const [vinculoEmpresaId, setVinculoEmpresaId] = useState("");
-  const [vinculoPerfil, setVinculoPerfil] = useState("admin");
+  const [modalAberto, setModalAberto] = useState(false);
+  const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
+  const [form, setForm] = useState(formInicial);
 
   useEffect(() => {
-    iniciar();
+    carregarTudo();
   }, []);
-
-  async function iniciar() {
-    setLoading(true);
-    setErro(null);
-
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
-    const userEmail = authData.user?.email || "";
-
-    if (authError || !userId) {
-      setAutorizado(false);
-      setErro("Você precisa estar logada para acessar a administração SaaS.");
-      setLoading(false);
-      return;
-    }
-
-    let perfilAtual: string | null = null;
-
-    const { data: usuarioPorId, error: erroPorId } = await supabase
-      .from("usuarios")
-      .select("perfil")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (erroPorId) {
-      setAutorizado(false);
-      setErro("Não foi possível validar seu perfil: " + erroPorId.message);
-      setLoading(false);
-      return;
-    }
-
-    perfilAtual = usuarioPorId?.perfil || null;
-
-    if (!perfilAtual && userEmail) {
-      const { data: usuarioPorEmail, error: erroPorEmail } = await supabase
-        .from("usuarios")
-        .select("perfil")
-        .eq("email", userEmail)
-        .maybeSingle();
-
-      if (erroPorEmail) {
-        setAutorizado(false);
-        setErro("Não foi possível validar seu perfil por e-mail: " + erroPorEmail.message);
-        setLoading(false);
-        return;
-      }
-
-      perfilAtual = usuarioPorEmail?.perfil || null;
-    }
-
-    if (!PERFIS_SAAS.includes(perfilAtual || "")) {
-      setAutorizado(false);
-      setErro(`Acesso restrito aos perfis super_admin ou admin_saas. Perfil encontrado: ${perfilAtual || "não cadastrado"}.`);
-      setLoading(false);
-      return;
-    }
-
-    setAutorizado(true);
-    await carregarTudo();
-  }
 
   async function carregarTudo() {
     setLoading(true);
     setErro(null);
 
-    const [usuariosResp, empresasResp, vinculosResp] = await Promise.all([
-      supabase.from("usuarios").select("id,nome,email,perfil,ativo,created_at").order("nome", { ascending: true }),
-      supabase.rpc("admin_listar_empresas"),
-      supabase.rpc("admin_listar_vinculos"),
-    ]);
-
-    const usuariosData = (usuariosResp.data || []) as Usuario[];
-    const empresasData = (empresasResp.data || []) as Empresa[];
-    const vinculosData = (vinculosResp.data || []) as Vinculo[];
-
-    if (usuariosResp.error) {
-      setErro("Erro ao carregar usuários: " + usuariosResp.error.message);
-      setUsuarios([]);
-    } else {
-      setUsuarios(usuariosData);
-    }
-
-    if (empresasResp.error) {
-      setErro("Erro ao carregar empresas: " + empresasResp.error.message);
-      setEmpresas([]);
-    } else {
-      setEmpresas(empresasData);
-    }
-
-    if (vinculosResp.error) {
-      setErro("Erro ao carregar vínculos: " + vinculosResp.error.message);
-      setVinculos([]);
-    } else {
-      const vinculosComEmpresa = vinculosData.map((vinculo) => ({
-        ...vinculo,
-        empresas:
-          empresasData.find((empresa) => empresa.id === vinculo.empresa_id) ||
-          (vinculo.nome_empresa
-            ? { id: vinculo.empresa_id, nome_fantasia: vinculo.nome_empresa }
-            : null),
-      }));
-
-      setVinculos(vinculosComEmpresa);
-    }
+    await Promise.all([carregarUsuarios(), carregarEmpresas()]);
 
     setLoading(false);
   }
 
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    if (!termo) return usuarios;
+  async function carregarUsuarios() {
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("id, nome, email, perfil, empresa_id, ativo, created_at")
+      .order("created_at", { ascending: false });
 
-    return usuarios.filter((usuario) => {
-      const empresasDoUsuario = vinculos
-        .filter((v) => v.user_id === usuario.id)
-        .map((v) => nomeEmpresa(v.empresas) || v.nome_empresa || "")
-        .join(" ");
+    if (error) {
+      setErro("Erro ao carregar usuários: " + error.message);
+      setUsuarios([]);
+      return;
+    }
 
-      return `${usuario.nome || ""} ${usuario.email || ""} ${usuario.perfil || ""} ${empresasDoUsuario}`
-        .toLowerCase()
-        .includes(termo);
+    setUsuarios((data || []) as Usuario[]);
+  }
+
+  async function carregarEmpresas() {
+    const { data, error } = await supabase
+      .from("empresas")
+      .select("id, nome, slug")
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar empresas:", error);
+      setEmpresas([]);
+      return;
+    }
+
+    setEmpresas((data || []) as Empresa[]);
+  }
+
+  function atualizarCampo(campo: keyof typeof formInicial, valor: string | boolean) {
+    setForm((atual) => ({ ...atual, [campo]: valor }));
+  }
+
+  function abrirNovo() {
+    setUsuarioEditando(null);
+    setForm(formInicial);
+    setErro(null);
+    setSucesso(null);
+    setModalAberto(true);
+  }
+
+  function editar(usuario: Usuario) {
+    setUsuarioEditando(usuario);
+    setForm({
+      nome: usuario.nome || "",
+      email: usuario.email || "",
+      perfil: usuario.perfil || "cliente",
+      empresa_id: usuario.empresa_id || "",
+      ativo: usuario.ativo !== false,
     });
-  }, [usuarios, vinculos, busca]);
-
-  function vinculosDoUsuario(userId: string) {
-    return vinculos.filter((v) => v.user_id === userId);
-  }
-
-  function limparFormularioUsuario() {
-    setId("");
-    setNome("");
-    setEmail("");
-    setPerfil("admin_saas");
-  }
-
-  function abrirNovoUsuario() {
-    limparFormularioUsuario();
     setErro(null);
     setSucesso(null);
-    setModalUsuarioAberto(true);
+    setModalAberto(true);
   }
 
-  function abrirEditarUsuario(usuario: Usuario) {
-    setId(usuario.id || "");
-    setNome(usuario.nome || "");
-    setEmail(usuario.email || "");
-    setPerfil(usuario.perfil || "admin_saas");
-    setErro(null);
-    setSucesso(null);
-    setModalUsuarioAberto(true);
-  }
-
-  function abrirVinculo(usuario: Usuario) {
-    setUsuarioVinculo(usuario);
-    setVinculoEmpresaId("");
-    setVinculoPerfil("admin");
-    setErro(null);
-    setSucesso(null);
-    setModalVinculoAberto(true);
-  }
-
-  async function salvarUsuario(event: FormEvent) {
-    event.preventDefault();
+  async function salvarUsuario(e?: React.FormEvent) {
+    e?.preventDefault();
     setErro(null);
     setSucesso(null);
 
-    const idLimpo = id.trim();
-    const nomeLimpo = nome.trim();
-    const emailLimpo = email.trim().toLowerCase();
-
-    if (!idLimpo) {
-      setErro("Informe o ID do usuário criado no Supabase Auth.");
-      return;
-    }
-
-    if (!nomeLimpo) {
-      setErro("Informe o nome do usuário.");
-      return;
-    }
-
-    if (!emailLimpo) {
-      setErro("Informe o e-mail do usuário.");
-      return;
-    }
-
-    if (!PERFIS_USUARIO.includes(perfil)) {
-      setErro("Perfil inválido.");
+    if (!form.email.trim()) {
+      setErro("E-mail é obrigatório.");
       return;
     }
 
     setSalvando(true);
 
-    const { error } = await supabase.from("usuarios").upsert(
-      {
-        id: idLimpo,
-        nome: nomeLimpo,
-        email: emailLimpo,
-        perfil,
-        ativo: true,
-      },
-      { onConflict: "id" }
-    );
+    const payload = {
+      nome: form.nome.trim() || null,
+      email: form.email.trim().toLowerCase(),
+      perfil: form.perfil,
+      empresa_id: form.empresa_id || null,
+      ativo: form.ativo,
+    };
+
+    const { error } = usuarioEditando
+      ? await supabase.from("usuarios").update(payload).eq("id", usuarioEditando.id)
+      : await supabase.from("usuarios").insert(payload);
 
     setSalvando(false);
 
@@ -283,353 +141,430 @@ export default function AdminUsuarios() {
       return;
     }
 
-    setSucesso("Usuário salvo com sucesso.");
-    setModalUsuarioAberto(false);
-    limparFormularioUsuario();
-    await carregarTudo();
+    setModalAberto(false);
+    setForm(formInicial);
+    setSucesso(usuarioEditando ? "Usuário atualizado com sucesso." : "Usuário cadastrado com sucesso.");
+    await carregarUsuarios();
   }
 
-  async function salvarVinculo(event: FormEvent) {
-    event.preventDefault();
+  async function alternarAtivo(usuario: Usuario) {
     setErro(null);
     setSucesso(null);
 
-    if (!usuarioVinculo?.id) {
-      setErro("Selecione o usuário.");
-      return;
-    }
+    const novoStatus = usuario.ativo === false;
 
-    if (!vinculoEmpresaId) {
-      setErro("Selecione a empresa.");
-      return;
-    }
-
-    if (!PERFIS_EMPRESA.includes(vinculoPerfil)) {
-      setErro("Perfil de empresa inválido.");
-      return;
-    }
-
-    const { error } = await supabase.rpc("admin_salvar_vinculo", {
-      p_user_id: usuarioVinculo.id,
-      p_empresa_id: vinculoEmpresaId,
-      p_perfil: vinculoPerfil,
-    });
+    const { error } = await supabase
+      .from("usuarios")
+      .update({ ativo: novoStatus })
+      .eq("id", usuario.id);
 
     if (error) {
-      setErro("Erro ao salvar vínculo: " + error.message);
+      setErro("Erro ao atualizar status do usuário: " + error.message);
       return;
     }
 
-    setSucesso("Vínculo salvo com sucesso.");
-    setModalVinculoAberto(false);
-    setUsuarioVinculo(null);
-    setVinculoEmpresaId("");
-    setVinculoPerfil("admin");
-    await carregarTudo();
-  }
-
-  async function removerVinculo(vinculo: Vinculo) {
-    const empresaNome = nomeEmpresa(vinculo.empresas) || vinculo.nome_empresa || vinculo.empresa_id;
-    const confirmar = window.confirm(`Remover vínculo com ${empresaNome}?`);
-    if (!confirmar) return;
-
-    setErro(null);
-    setSucesso(null);
-
-    const { error } = await supabase.rpc("admin_remover_vinculo", {
-      p_user_id: vinculo.user_id,
-      p_empresa_id: vinculo.empresa_id,
-    });
-
-    if (error) {
-      setErro("Erro ao remover vínculo: " + error.message);
-      return;
-    }
-
-    setSucesso("Vínculo removido com sucesso.");
-    await carregarTudo();
-  }
-
-  async function alterarPerfil(usuario: Usuario, novoPerfil: string) {
-    setErro(null);
-    setSucesso(null);
-
-    if (!PERFIS_USUARIO.includes(novoPerfil)) {
-      setErro("Perfil inválido.");
-      return;
-    }
-
-    const { error } = await supabase.from("usuarios").update({ perfil: novoPerfil }).eq("id", usuario.id);
-
-    if (error) {
-      setErro("Erro ao alterar perfil: " + error.message);
-      return;
-    }
-
-    setSucesso("Perfil atualizado com sucesso.");
-    await carregarTudo();
-  }
-
-  async function enviarRedefinicaoSenha(usuario: Usuario) {
-    setErro(null);
-    setSucesso(null);
-
-    const emailUsuario = (usuario.email || "").trim().toLowerCase();
-
-    if (!emailUsuario) {
-      setErro("Este usuário não possui e-mail cadastrado.");
-      return;
-    }
-
-    const confirmar = window.confirm(`Enviar e-mail de redefinição de senha para ${emailUsuario}?`);
-    if (!confirmar) return;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(emailUsuario, {
-      redirectTo: `${window.location.origin}/resetar-senha`,
-    });
-
-    if (error) {
-      setErro("Erro ao enviar redefinição de senha: " + error.message);
-      return;
-    }
-
-    setSucesso(`E-mail de redefinição de senha enviado para ${emailUsuario}.`);
-  }
-
-  if (loading && !autorizado) {
-    return <div className="p-6">Carregando...</div>;
-  }
-
-  if (!autorizado) {
-    return (
-      <div className="p-6">
-        <div className="bg-white rounded-2xl border shadow-sm p-6 max-w-2xl">
-          <p className="text-red-600 font-bold uppercase">Acesso negado</p>
-          <h1 className="text-2xl font-bold mt-2">Usuários SaaS</h1>
-          <p className="text-slate-600 mt-2">{erro}</p>
-        </div>
-      </div>
+    setUsuarios((atuais) =>
+      atuais.map((item) => (item.id === usuario.id ? { ...item, ativo: novoStatus } : item)),
     );
   }
 
-  return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <p className="text-sm font-bold uppercase" style={{ color: "var(--cor-primaria, #4b2f3f)" }}>
-            Administração SaaS
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">Usuários e vínculos</h1>
-          <p className="text-slate-500">
-            Gerencie usuários globais, empresas vinculadas e redefinição de senha.
-          </p>
-        </div>
+  async function excluirUsuario(usuario: Usuario) {
+    const confirmar = window.confirm(`Excluir o usuário ${usuario.email}?`);
+    if (!confirmar) return;
 
-        <div className="flex gap-3">
-          <button type="button" onClick={abrirNovoUsuario} className="px-4 py-2 rounded-xl font-bold text-white" style={{ background: "var(--cor-primaria, #4b2f3f)" }}>
+    const { error } = await supabase.from("usuarios").delete().eq("id", usuario.id);
+
+    if (error) {
+      setErro("Erro ao excluir usuário: " + error.message);
+      return;
+    }
+
+    setSucesso("Usuário excluído com sucesso.");
+    await carregarUsuarios();
+  }
+
+  const empresasPorId = useMemo(() => {
+    const mapa: Record<string, Empresa> = {};
+    empresas.forEach((empresa) => {
+      mapa[empresa.id] = empresa;
+    });
+    return mapa;
+  }, [empresas]);
+
+  const usuariosFiltrados = useMemo(() => {
+    const termo = busca.toLowerCase().trim();
+    if (!termo) return usuarios;
+
+    return usuarios.filter((usuario) => {
+      const empresa = usuario.empresa_id ? empresasPorId[usuario.empresa_id] : null;
+
+      return `${usuario.nome || ""} ${usuario.email || ""} ${usuario.perfil || ""} ${empresa?.nome || ""} ${empresa?.slug || ""}`
+        .toLowerCase()
+        .includes(termo);
+    });
+  }, [busca, usuarios, empresasPorId]);
+
+  const totalPaginas = Math.max(1, Math.ceil(usuariosFiltrados.length / ITENS_POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const usuariosPaginados = usuariosFiltrados.slice(
+    (paginaAtual - 1) * ITENS_POR_PAGINA,
+    paginaAtual * ITENS_POR_PAGINA,
+  );
+
+  const metricas = useMemo(() => {
+    return {
+      total: usuarios.length,
+      ativos: usuarios.filter((u) => u.ativo !== false).length,
+      inativos: usuarios.filter((u) => u.ativo === false).length,
+      superAdmin: usuarios.filter((u) => u.perfil === "super_admin").length,
+      adminSaas: usuarios.filter((u) => u.perfil === "admin_saas").length,
+      adminEmpresa: usuarios.filter((u) => u.perfil === "admin").length,
+    };
+  }, [usuarios]);
+
+  function nomeEmpresa(empresaId: string | null) {
+    if (!empresaId) return "Sem empresa";
+    return empresasPorId[empresaId]?.nome || "Empresa não encontrada";
+  }
+
+  function formatarData(data: string | null) {
+    if (!data) return "-";
+    return new Date(data).toLocaleDateString("pt-BR");
+  }
+
+  function badgePerfil(perfil: string | null) {
+    const base = "inline-flex rounded-full px-3 py-1 text-xs font-black";
+
+    if (perfil === "super_admin") return `${base} bg-pink-100 text-pink-700`;
+    if (perfil === "admin_saas") return `${base} bg-purple-100 text-purple-700`;
+    if (perfil === "admin") return `${base} bg-indigo-100 text-indigo-700`;
+    if (perfil === "agenda") return `${base} bg-blue-100 text-blue-700`;
+    if (perfil === "cliente") return `${base} bg-slate-100 text-slate-700`;
+
+    return `${base} bg-yellow-100 text-yellow-700`;
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6 space-y-6">
+      <div className="rounded-[28px] bg-gradient-to-r from-slate-950 via-purple-950 to-pink-800 p-6 md:p-8 text-white shadow-xl">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-pink-300">Administração SaaS</p>
+            <h1 className="mt-3 text-3xl md:text-4xl font-black">Usuários SaaS</h1>
+            <p className="mt-2 max-w-3xl text-sm md:text-base text-white/80">
+              Gerencie usuários globais, acessos administrativos, permissões e vínculos com empresas.
+            </p>
+          </div>
+
+          <button
+            onClick={abrirNovo}
+            className="rounded-2xl bg-white px-5 py-3 font-black text-slate-950 shadow-lg transition hover:scale-[1.02]"
+          >
             + Novo usuário
           </button>
-          <button type="button" onClick={carregarTudo} className="border px-4 py-2 rounded-xl font-bold bg-white">
-            Atualizar
+        </div>
+      </div>
+
+      {erro && <Alerta tipo="erro" texto={erro} />}
+      {sucesso && <Alerta tipo="sucesso" texto={sucesso} />}
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Card titulo="Total" valor={metricas.total} detalhe="usuários" />
+        <Card titulo="Ativos" valor={metricas.ativos} detalhe="com acesso" />
+        <Card titulo="Inativos" valor={metricas.inativos} detalhe="bloqueados" />
+        <Card titulo="Super Admin" valor={metricas.superAdmin} detalhe="global" />
+        <Card titulo="Admin SaaS" valor={metricas.adminSaas} detalhe="operação" />
+        <Card titulo="Admin Empresa" valor={metricas.adminEmpresa} detalhe="empresas" />
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row">
+          <input
+            value={busca}
+            onChange={(e) => {
+              setBusca(e.target.value);
+              setPagina(1);
+            }}
+            placeholder="Buscar por nome, e-mail, perfil ou empresa..."
+            className="min-h-[48px] flex-1 rounded-2xl border border-slate-200 px-4 text-sm outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100"
+          />
+
+          <button
+            onClick={carregarTudo}
+            disabled={loading}
+            className="min-h-[48px] rounded-2xl border border-slate-200 px-5 text-sm font-black text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? "Atualizando..." : "Atualizar"}
           </button>
         </div>
       </div>
 
-      {erro && <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 font-medium">{erro}</div>}
-      {sucesso && <div className="bg-green-50 border border-green-200 text-green-700 rounded-2xl p-4 font-medium">{sucesso}</div>}
-
-      <div className="bg-white rounded-2xl border shadow-sm p-4">
-        <input
-          value={busca}
-          onChange={(event) => setBusca(event.target.value)}
-          placeholder="Buscar por nome, e-mail, perfil ou empresa vinculada..."
-          className="w-full border rounded-xl px-4 py-3"
-        />
-      </div>
-
-      <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-        <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="font-bold">Usuários cadastrados</h2>
-          <span className="text-sm text-slate-500">{filtrados.length} usuário(s)</span>
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-1 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Lista de usuários</h2>
+            <p className="text-sm text-slate-500">{usuariosFiltrados.length} usuário(s) encontrado(s).</p>
+          </div>
+          <p className="text-xs font-bold text-slate-500">Página {paginaAtual} de {totalPaginas}</p>
         </div>
 
-        {loading ? (
-          <div className="p-6">Carregando...</div>
-        ) : filtrados.length === 0 ? (
-          <div className="p-6 text-slate-500">Nenhum usuário encontrado.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr className="text-left">
-                  <th className="p-4">Usuário</th>
-                  <th className="p-4">Perfil global</th>
-                  <th className="p-4">Empresas vinculadas</th>
-                  <th className="p-4">Ações</th>
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-5 py-4">Usuário</th>
+                <th className="px-5 py-4">Perfil</th>
+                <th className="px-5 py-4">Empresa</th>
+                <th className="px-5 py-4">Criado em</th>
+                <th className="px-5 py-4">Ativo</th>
+                <th className="px-5 py-4 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {usuariosPaginados.length === 0 ? (
+                <tr>
+                  <td className="px-5 py-10 text-center text-slate-500" colSpan={6}>Nenhum usuário encontrado.</td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtrados.map((usuario) => {
-                  const listaVinculos = vinculosDoUsuario(usuario.id);
+              ) : (
+                usuariosPaginados.map((usuario) => (
+                  <tr key={usuario.id} className="hover:bg-slate-50/70">
+                    <td className="px-5 py-4">
+                      <p className="font-black text-slate-900">{usuario.nome || "Sem nome"}</p>
+                      <p className="text-xs text-slate-500">{usuario.email || "Sem e-mail"}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={badgePerfil(usuario.perfil)}>{usuario.perfil || "sem perfil"}</span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">{nomeEmpresa(usuario.empresa_id)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatarData(usuario.created_at)}</td>
+                    <td className="px-5 py-4">
+                      <Switch ativo={usuario.ativo !== false} onClick={() => alternarAtivo(usuario)} />
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => editar(usuario)} className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 hover:bg-blue-100">Editar</button>
+                        <button onClick={() => excluirUsuario(usuario)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100">Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                  return (
-                    <tr key={usuario.id} className="border-t align-top">
-                      <td className="p-4 min-w-[260px]">
-                        <p className="font-bold text-slate-900">{usuario.nome || "Sem nome"}</p>
-                        <p className="text-xs text-slate-500">{usuario.email || "-"}</p>
-                        <p className="text-xs text-slate-400">ID: {usuario.id}</p>
-                      </td>
+        <div className="space-y-3 p-4 md:hidden">
+          {usuariosPaginados.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">Nenhum usuário encontrado.</p>
+          ) : (
+            usuariosPaginados.map((usuario) => (
+              <div key={usuario.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-slate-950">{usuario.nome || "Sem nome"}</p>
+                    <p className="text-xs text-slate-500">{usuario.email || "Sem e-mail"}</p>
+                  </div>
+                  <span className={badgePerfil(usuario.perfil)}>{usuario.perfil || "sem perfil"}</span>
+                </div>
 
-                      <td className="p-4 min-w-[170px]">
-                        <select
-                          value={usuario.perfil || "usuario"}
-                          onChange={(event) => alterarPerfil(usuario, event.target.value)}
-                          className="border rounded-xl px-3 py-2 bg-white"
-                        >
-                          {PERFIS_USUARIO.map((p) => (
-                            <option key={p} value={p}>{LABEL_PERFIL[p] || p}</option>
-                          ))}
-                        </select>
-                      </td>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="font-bold text-slate-400">Empresa</p>
+                    <p className="mt-1 font-bold text-slate-700">{nomeEmpresa(usuario.empresa_id)}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="font-bold text-slate-400">Criado em</p>
+                    <p className="mt-1 font-bold text-slate-700">{formatarData(usuario.created_at)}</p>
+                  </div>
+                </div>
 
-                      <td className="p-4 min-w-[320px]">
-                        {listaVinculos.length === 0 ? (
-                          <span className="text-slate-400">Sem empresa vinculada</span>
-                        ) : (
-                          <div className="space-y-2">
-                            {listaVinculos.map((vinculo) => (
-                              <div key={`${vinculo.user_id}-${vinculo.empresa_id}`} className="flex flex-wrap items-center gap-2 bg-slate-50 border rounded-xl px-3 py-2">
-                                <div>
-                                  <p className="font-bold text-slate-800">{nomeEmpresa(vinculo.empresas) || vinculo.nome_empresa || vinculo.empresa_id}</p>
-                                  <p className="text-xs text-slate-500">Perfil: {vinculo.perfil || "-"}</p>
-                                </div>
-                                <button type="button" onClick={() => removerVinculo(vinculo)} className="ml-auto border border-red-200 text-red-700 px-3 py-1 rounded-lg font-bold bg-red-50">
-                                  Remover
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <Switch ativo={usuario.ativo !== false} onClick={() => alternarAtivo(usuario)} />
+                  <div className="flex gap-2">
+                    <button onClick={() => editar(usuario)} className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">Editar</button>
+                    <button onClick={() => excluirUsuario(usuario)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700">Excluir</button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-                      <td className="p-4 min-w-[300px]">
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => abrirEditarUsuario(usuario)} className="border px-3 py-2 rounded-xl font-bold bg-white">
-                            Editar
-                          </button>
-                          <button type="button" onClick={() => enviarRedefinicaoSenha(usuario)} className="border border-blue-200 text-blue-700 px-3 py-2 rounded-xl font-bold bg-blue-50">
-                            Resetar senha
-                          </button>
-                          <button type="button" onClick={() => abrirVinculo(usuario)} className="border border-emerald-200 text-emerald-700 px-3 py-2 rounded-xl font-bold bg-emerald-50">
-                            Vincular empresa
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="flex items-center justify-between border-t border-slate-100 p-4">
+          <button
+            disabled={paginaAtual <= 1}
+            onClick={() => setPagina((atual) => Math.max(1, atual - 1))}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black disabled:opacity-40"
+          >
+            Anterior
+          </button>
+
+          <p className="text-sm font-black text-slate-700">Página {paginaAtual} de {totalPaginas}</p>
+
+          <button
+            disabled={paginaAtual >= totalPaginas}
+            onClick={() => setPagina((atual) => Math.min(totalPaginas, atual + 1))}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black disabled:opacity-40"
+          >
+            Próxima
+          </button>
+        </div>
       </div>
 
-      {modalUsuarioAberto && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-6">
-            <div className="flex justify-between items-start gap-4 mb-4">
-              <div>
-                <h2 className="text-xl font-bold">{id ? "Editar usuário" : "Novo usuário"}</h2>
-                <p className="text-sm text-slate-500">Primeiro crie o usuário em Authentication &gt; Users no Supabase. Depois cole aqui o ID do Auth.</p>
-              </div>
-              <button type="button" onClick={() => setModalUsuarioAberto(false)} className="border rounded-xl px-3 py-2 font-bold bg-white">Fechar</button>
+      {modalAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <form onSubmit={salvarUsuario} className="w-full max-w-2xl overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="bg-gradient-to-r from-slate-950 via-purple-950 to-pink-800 p-6 text-white">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-pink-200">
+                {usuarioEditando ? "Editar acesso" : "Novo acesso"}
+              </p>
+              <h2 className="mt-2 text-2xl font-black">
+                {usuarioEditando ? "Editar usuário" : "Novo usuário SaaS"}
+              </h2>
+              <p className="mt-1 text-sm text-white/75">Defina perfil, empresa vinculada e status de acesso.</p>
             </div>
 
-            <form onSubmit={salvarUsuario} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold mb-1">ID do usuário no Auth</label>
-                <input value={id} onChange={(event) => setId(event.target.value)} placeholder="Ex.: 68c715e5-9695-458f-ba8d-5c145347e00a" className="w-full border rounded-xl px-4 py-3" />
+            <div className="space-y-4 p-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Campo label="Nome" value={form.nome} onChange={(valor) => atualizarCampo("nome", valor)} placeholder="Nome do usuário" />
+                <Campo
+                  label="E-mail"
+                  type="email"
+                  value={form.email}
+                  onChange={(valor) => atualizarCampo("email", valor)}
+                  placeholder="email@dominio.com"
+                  disabled={Boolean(usuarioEditando)}
+                  required
+                />
+
+                <div>
+                  <label className="mb-2 block text-sm font-black text-slate-900">Perfil</label>
+                  <select
+                    value={form.perfil}
+                    onChange={(e) => atualizarCampo("perfil", e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100"
+                  >
+                    <option value="cliente">Cliente</option>
+                    <option value="agenda">Agenda</option>
+                    <option value="admin">Admin empresa</option>
+                    <option value="admin_saas">Admin SaaS</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-black text-slate-900">Empresa vinculada</label>
+                  <select
+                    value={form.empresa_id}
+                    onChange={(e) => atualizarCampo("empresa_id", e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100"
+                  >
+                    <option value="">Sem empresa / acesso global</option>
+                    {empresas.map((empresa) => (
+                      <option key={empresa.id} value={empresa.id}>
+                        {empresa.nome || empresa.slug || empresa.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold mb-1">Nome</label>
-                <input value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Nome do usuário" className="w-full border rounded-xl px-4 py-3" />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-1">E-mail</label>
-                <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@exemplo.com" className="w-full border rounded-xl px-4 py-3" />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-1">Perfil global</label>
-                <select value={perfil} onChange={(event) => setPerfil(event.target.value)} className="w-full border rounded-xl px-4 py-3 bg-white">
-                  {PERFIS_USUARIO.map((p) => (
-                    <option key={p} value={p}>{LABEL_PERFIL[p] || p}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-2 flex flex-col md:flex-row gap-3 pt-2">
-                <button type="submit" disabled={salvando} className="px-5 py-3 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: "var(--cor-primaria, #4b2f3f)" }}>
-                  {salvando ? "Salvando..." : "Salvar usuário"}
-                </button>
-                <button type="button" onClick={limparFormularioUsuario} className="border px-5 py-3 rounded-xl font-bold bg-white">
-                  Limpar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modalVinculoAberto && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6">
-            <div className="flex justify-between items-start gap-4 mb-4">
-              <div>
-                <h2 className="text-xl font-bold">Vincular empresa</h2>
-                <p className="text-sm text-slate-500">
-                  Usuário: <b>{usuarioVinculo?.nome || usuarioVinculo?.email}</b>
-                </p>
-              </div>
-              <button type="button" onClick={() => setModalVinculoAberto(false)} className="border rounded-xl px-3 py-2 font-bold bg-white">Fechar</button>
+              <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <p className="font-black text-slate-900">Usuário ativo</p>
+                  <p className="text-sm text-slate-500">Quando inativo, o acesso pode ser bloqueado nas regras do sistema.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.ativo}
+                  onChange={(e) => atualizarCampo("ativo", e.target.checked)}
+                  className="h-5 w-5 accent-pink-600"
+                />
+              </label>
             </div>
 
-            <form onSubmit={salvarVinculo} className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="block text-sm font-bold mb-1">Empresa</label>
-                <select value={vinculoEmpresaId} onChange={(event) => setVinculoEmpresaId(event.target.value)} className="w-full border rounded-xl px-4 py-3 bg-white">
-                  <option value="">Selecione...</option>
-                  {empresas.map((empresa) => (
-                    <option key={empresa.id} value={empresa.id}>
-                      {nomeEmpresa(empresa)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-1">Perfil na empresa</label>
-                <select value={vinculoPerfil} onChange={(event) => setVinculoPerfil(event.target.value)} className="w-full border rounded-xl px-4 py-3 bg-white">
-                  {PERFIS_EMPRESA.map((p) => (
-                    <option key={p} value={p}>{LABEL_PERFIL[p] || p}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col md:flex-row gap-3 pt-2">
-                <button type="submit" className="px-5 py-3 rounded-xl font-bold text-white" style={{ background: "#2563eb" }}>
-                  Vincular / atualizar
-                </button>
-                <button type="button" onClick={() => setModalVinculoAberto(false)} className="border px-5 py-3 rounded-xl font-bold bg-white">
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 p-6 md:flex-row md:justify-end">
+              <button
+                type="button"
+                onClick={() => setModalAberto(false)}
+                className="rounded-2xl border border-slate-200 px-5 py-3 font-black text-slate-700 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando}
+                className="rounded-2xl bg-pink-600 px-5 py-3 font-black text-white shadow-lg shadow-pink-600/20 hover:bg-pink-700 disabled:opacity-50"
+              >
+                {salvando ? "Salvando..." : usuarioEditando ? "Salvar alterações" : "Criar usuário"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
+  );
+}
+
+function Card({ titulo, valor, detalhe }: { titulo: string; valor: number; detalhe: string }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+      <p className="text-xs font-black uppercase text-slate-500">{titulo}</p>
+      <p className="mt-2 text-2xl font-black text-slate-950 md:text-3xl">{valor}</p>
+      <p className="mt-1 text-xs text-slate-400">{detalhe}</p>
+    </div>
+  );
+}
+
+function Alerta({ tipo, texto }: { tipo: "erro" | "sucesso"; texto: string }) {
+  const classe = tipo === "erro" ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700";
+  return <div className={`rounded-2xl border p-4 text-sm font-bold ${classe}`}>{texto}</div>;
+}
+
+function Campo({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  disabled = false,
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (valor: string) => void;
+  placeholder?: string;
+  type?: string;
+  disabled?: boolean;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-black text-slate-900">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        required={required}
+        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100 disabled:bg-slate-100 disabled:text-slate-400"
+      />
+    </div>
+  );
+}
+
+function Switch({ ativo, onClick }: { ativo: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative h-7 w-12 rounded-full transition ${ativo ? "bg-green-500" : "bg-slate-300"}`}
+      title={ativo ? "Ativo" : "Inativo"}
+    >
+      <span
+        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${ativo ? "left-6" : "left-1"}`}
+      />
+    </button>
   );
 }

@@ -13,16 +13,35 @@ type Agendamento = {
   status_atendimento?: string | null;
 };
 
+type LancamentoFinanceiro = {
+  id: string;
+  tipo: string | null;
+  descricao: string | null;
+  cliente: string | null;
+  servico: string | null;
+  profissional: string | null;
+  valor: number | null;
+  valor_bruto?: number | null;
+  comissao_valor?: number | null;
+  valor_liquido?: number | null;
+  data_lancamento: string | null;
+  status: string | null;
+  forma_pagamento?: string | null;
+  agendamento_id?: string | null;
+};
+
 export default function RelatoriosRetorno() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
-  const [dados, setDados] = useState<Agendamento[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [financeiro, setFinanceiro] = useState<LancamentoFinanceiro[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
   useEffect(() => {
     if (empresaId) carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
   async function carregar() {
@@ -30,88 +49,126 @@ export default function RelatoriosRetorno() {
 
     setLoading(true);
 
-    let query = supabase
+    let queryAgendamentos = supabase
       .from("agendamentos")
       .select("*")
       .eq("empresa_id", empresaId)
       .order("data", { ascending: false });
 
-    if (dataInicio) query = query.gte("data", dataInicio);
-    if (dataFim) query = query.lte("data", dataFim);
+    if (dataInicio) queryAgendamentos = queryAgendamentos.gte("data", dataInicio);
+    if (dataFim) queryAgendamentos = queryAgendamentos.lte("data", dataFim);
 
-    const { data, error } = await query;
+    let queryFinanceiro = supabase
+      .from("financeiro")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .order("data_lancamento", { ascending: false });
 
-    if (error) {
-      alert("Erro ao carregar retorno: " + error.message);
-      setLoading(false);
-      return;
+    if (dataInicio) queryFinanceiro = queryFinanceiro.gte("data_lancamento", dataInicio);
+    if (dataFim) queryFinanceiro = queryFinanceiro.lte("data_lancamento", dataFim);
+
+    const [resAgendamentos, resFinanceiro] = await Promise.all([
+      queryAgendamentos,
+      queryFinanceiro,
+    ]);
+
+    if (resAgendamentos.error) {
+      alert("Erro ao carregar agendamentos: " + resAgendamentos.error.message);
+      setAgendamentos([]);
+    } else {
+      setAgendamentos((resAgendamentos.data || []) as Agendamento[]);
     }
 
-    setDados(data || []);
+    if (resFinanceiro.error) {
+      alert("Erro ao carregar financeiro: " + resFinanceiro.error.message);
+      setFinanceiro([]);
+    } else {
+      setFinanceiro((resFinanceiro.data || []) as LancamentoFinanceiro[]);
+    }
+
     setLoading(false);
   }
 
-  const metricas = useMemo(() => {
-    const total = dados.length;
+  const entradasValidas = useMemo(() => {
+    return financeiro.filter(
+      (item) => item.tipo === "entrada" && item.status !== "cancelado"
+    );
+  }, [financeiro]);
 
-    const finalizados = dados.filter(
+  function valorBruto(item: LancamentoFinanceiro) {
+    return Number(item.valor_bruto ?? item.valor ?? 0);
+  }
+
+  const metricas = useMemo(() => {
+    const total = agendamentos.length;
+
+    const finalizados = agendamentos.filter(
       (i) => i.status === "finalizado" || i.status_atendimento === "finalizado"
     );
 
-    const cancelados = dados.filter(
+    const cancelados = agendamentos.filter(
       (i) => i.status === "cancelado" || i.status_atendimento === "cancelado"
     );
 
-    const faturamento = finalizados.reduce(
-      (acc, item) => acc + Number(item.valor || 0),
+    const faturamento = entradasValidas.reduce(
+      (acc, item) => acc + valorBruto(item),
       0
     );
 
-    const ticketMedio =
-      finalizados.length > 0 ? faturamento / finalizados.length : 0;
+    const comissoes = entradasValidas.reduce(
+      (acc, item) => acc + Number(item.comissao_valor || 0),
+      0
+    );
 
-    const taxaCancelamento =
-      total > 0 ? Math.round((cancelados.length / total) * 100) : 0;
+    const liquido = entradasValidas.reduce((acc, item) => {
+      const bruto = valorBruto(item);
+      const valorLiquido = item.valor_liquido ?? bruto - Number(item.comissao_valor || 0);
+      return acc + Number(valorLiquido || 0);
+    }, 0);
+
+    const ticketMedio = entradasValidas.length > 0 ? faturamento / entradasValidas.length : 0;
+
+    const taxaCancelamento = total > 0 ? Math.round((cancelados.length / total) * 100) : 0;
 
     return {
       total,
       finalizados: finalizados.length,
       cancelados: cancelados.length,
       faturamento,
+      comissoes,
+      liquido,
       ticketMedio,
       taxaCancelamento,
     };
-  }, [dados]);
+  }, [agendamentos, entradasValidas]);
 
   const rankingServicos = useMemo(() => {
-    const mapa: Record<string, { nome: string; qtd: number; valor: number }> =
-      {};
+    const mapa: Record<string, { nome: string; qtd: number; valor: number }> = {};
 
-    dados.forEach((item) => {
-      const nome = item.servico || "Não informado";
+    entradasValidas.forEach((item) => {
+      const nome = item.servico || item.descricao || "Não informado";
       if (!mapa[nome]) mapa[nome] = { nome, qtd: 0, valor: 0 };
 
       mapa[nome].qtd += 1;
-      mapa[nome].valor += Number(item.valor || 0);
+      mapa[nome].valor += valorBruto(item);
     });
 
-    return Object.values(mapa).sort((a, b) => b.qtd - a.qtd).slice(0, 5);
-  }, [dados]);
+    return Object.values(mapa).sort((a, b) => b.valor - a.valor).slice(0, 5);
+  }, [entradasValidas]);
 
   const rankingProfissionais = useMemo(() => {
-    const mapa: Record<string, { nome: string; qtd: number; valor: number }> =
-      {};
+    const mapa: Record<string, { nome: string; qtd: number; valor: number }> = {};
 
-    dados.forEach((item) => {
+    entradasValidas.forEach((item) => {
       const nome = item.profissional || "Não informado";
       if (!mapa[nome]) mapa[nome] = { nome, qtd: 0, valor: 0 };
 
       mapa[nome].qtd += 1;
-      mapa[nome].valor += Number(item.valor || 0);
+      mapa[nome].valor += valorBruto(item);
     });
 
-    return Object.values(mapa).sort((a, b) => b.qtd - a.qtd).slice(0, 5);
-  }, [dados]);
+    return Object.values(mapa).sort((a, b) => b.valor - a.valor).slice(0, 5);
+  }, [entradasValidas]);
 
   function limpar() {
     setDataInicio("");
@@ -120,7 +177,7 @@ export default function RelatoriosRetorno() {
   }
 
   function formatarValor(valor: number) {
-    return valor.toLocaleString("pt-BR", {
+    return Number(valor || 0).toLocaleString("pt-BR", {
       style: "currency",
       currency: "BRL",
     });
@@ -136,13 +193,15 @@ export default function RelatoriosRetorno() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div>
-        <p style={{ color: "var(--cor-primaria, #4b2f3f)" }}
-          className="text-sm font-bold uppercase">BI</p>
-        <h1 className="text-3xl font-bold text-slate-900">
-          Dashboard de Retorno
-        </h1>
+        <p
+          style={{ color: "var(--cor-primaria, #4b2f3f)" }}
+          className="text-sm font-bold uppercase"
+        >
+          BI
+        </p>
+        <h1 className="text-3xl font-bold text-slate-900">Dashboard de Retorno</h1>
         <p className="text-slate-500">
           Analise faturamento, atendimentos, cancelamentos, serviços e profissionais.
         </p>
@@ -177,10 +236,7 @@ export default function RelatoriosRetorno() {
           Filtrar
         </button>
 
-        <button
-          onClick={limpar}
-          className="border px-5 py-2 rounded-xl font-semibold"
-        >
+        <button onClick={limpar} className="border px-5 py-2 rounded-xl font-semibold">
           Limpar
         </button>
       </div>
@@ -189,11 +245,13 @@ export default function RelatoriosRetorno() {
         <p>Carregando...</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-7 gap-4">
             <Card title="Atendimentos" value={metricas.total} />
             <Card title="Finalizados" value={metricas.finalizados} />
             <Card title="Cancelados" value={metricas.cancelados} />
             <Card title="Faturamento" value={formatarValor(metricas.faturamento)} />
+            <Card title="Comissões" value={formatarValor(metricas.comissoes)} />
+            <Card title="Líquido" value={formatarValor(metricas.liquido)} />
             <Card title="Ticket médio" value={formatarValor(metricas.ticketMedio)} />
           </div>
 
@@ -221,20 +279,23 @@ export default function RelatoriosRetorno() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Ranking
               titulo="Top serviços"
-              subtitulo="Serviços mais realizados no período"
+              subtitulo="Serviços com maior faturamento no período"
               dados={rankingServicos}
             />
 
             <Ranking
               titulo="Top profissionais"
-              subtitulo="Profissionais com mais atendimentos"
+              subtitulo="Profissionais com maior faturamento no período"
               dados={rankingProfissionais}
             />
           </div>
 
           <div className="bg-white rounded-2xl border shadow-sm">
             <div className="p-4 border-b">
-              <h2 className="font-semibold">Histórico de atendimentos</h2>
+              <h2 className="font-semibold">Histórico financeiro</h2>
+              <p className="text-sm text-slate-500">
+                Valores carregados da tabela financeiro, não da agenda.
+              </p>
             </div>
 
             <div className="overflow-x-auto">
@@ -245,31 +306,41 @@ export default function RelatoriosRetorno() {
                     <th>Serviço</th>
                     <th>Profissional</th>
                     <th>Data</th>
-                    <th>Valor</th>
+                    <th>Bruto</th>
+                    <th>Comissão</th>
+                    <th>Líquido</th>
                     <th>Status</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {dados.map((item) => (
-                    <tr key={item.id} className="border-t hover:bg-slate-50">
-                      <td className="p-3 font-medium">{item.cliente || "-"}</td>
-                      <td>{item.servico || "-"}</td>
-                      <td>{item.profissional || "-"}</td>
-                      <td>{formatarData(item.data)}</td>
-                      <td>{formatarValor(Number(item.valor || 0))}</td>
-                      <td>
-                        <span className="text-xs px-2 py-1 rounded-full bg-slate-100">
-                          {item.status || item.status_atendimento || "-"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {entradasValidas.map((item) => {
+                    const bruto = valorBruto(item);
+                    const comissao = Number(item.comissao_valor || 0);
+                    const liquido = Number(item.valor_liquido ?? bruto - comissao);
 
-                  {dados.length === 0 && (
+                    return (
+                      <tr key={item.id} className="border-t hover:bg-slate-50">
+                        <td className="p-3 font-medium">{item.cliente || "-"}</td>
+                        <td>{item.servico || item.descricao || "-"}</td>
+                        <td>{item.profissional || "-"}</td>
+                        <td>{formatarData(item.data_lancamento)}</td>
+                        <td>{formatarValor(bruto)}</td>
+                        <td>{formatarValor(comissao)}</td>
+                        <td>{formatarValor(liquido)}</td>
+                        <td>
+                          <span className="text-xs px-2 py-1 rounded-full bg-slate-100">
+                            {item.status || "-"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {entradasValidas.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center py-10 text-slate-400">
-                        Nenhum atendimento encontrado
+                      <td colSpan={8} className="text-center py-10 text-slate-400">
+                        Nenhum lançamento financeiro encontrado
                       </td>
                     </tr>
                   )}
@@ -310,13 +381,13 @@ function Ranking({
         {dados.map((item, index) => (
           <div key={item.nome} className="flex items-center justify-between border-b pb-2">
             <div>
-              <p className="font-semibold text-slate-800">
+              <p className="font-semibold">
                 {index + 1}. {item.nome}
               </p>
-              <p className="text-xs text-slate-500">{item.qtd} atendimento(s)</p>
+              <p className="text-xs text-slate-500">{item.qtd} lançamento(s)</p>
             </div>
 
-            <p className="text-sm font-bold text-slate-900">
+            <p className="font-bold">
               {item.valor.toLocaleString("pt-BR", {
                 style: "currency",
                 currency: "BRL",

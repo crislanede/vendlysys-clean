@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
+import * as XLSX from "xlsx";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -25,6 +26,12 @@ type Lancamento = {
   data_pagamento?: string | null;
   created_at?: string;
   empresa_id?: string | null;
+  valor_bruto?: number | null;
+  comissao_percentual?: number | null;
+  comissao_valor?: number | null;
+  valor_liquido?: number | null;
+  profissional_id?: string | null;
+  servico_id?: string | null;
 };
 
 type Despesa = {
@@ -49,12 +56,20 @@ type Produto = {
   empresa_id?: string | null;
 };
 
+type Profissional = {
+  id: string;
+  nome: string;
+  ativo?: boolean | null;
+  empresa_id?: string | null;
+};
+
 export default function FinanceiroPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [tipo, setTipo] = useState("entrada");
@@ -82,6 +97,7 @@ export default function FinanceiroPage() {
   const [filtroDataFim, setFiltroDataFim] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroProfissionalId, setFiltroProfissionalId] = useState("");
 
   useEffect(() => {
     if (empresaId) carregarDados();
@@ -94,11 +110,12 @@ export default function FinanceiroPage() {
       setLancamentos([]);
       setDespesas([]);
       setProdutos([]);
+      setProfissionais([]);
       setLoading(false);
       return;
     }
 
-    const [resFinanceiro, resDespesas, resProdutos] = await Promise.all([
+    const [resFinanceiro, resDespesas, resProdutos, resProfissionais] = await Promise.all([
       supabase
         .from("financeiro")
         .select("*")
@@ -113,6 +130,11 @@ export default function FinanceiroPage() {
       supabase
         .from("produtos")
         .select("id,nome,preco,estoque,status,empresa_id")
+        .eq("empresa_id", empresaId)
+        .order("nome", { ascending: true }),
+      supabase
+        .from("profissionais")
+        .select("id,nome,ativo,empresa_id")
         .eq("empresa_id", empresaId)
         .order("nome", { ascending: true }),
     ]);
@@ -137,6 +159,13 @@ export default function FinanceiroPage() {
       setProdutos([]);
     } else {
       setProdutos((resProdutos.data || []) as Produto[]);
+    }
+
+    if (resProfissionais.error) {
+      console.warn("Erro ao carregar profissionais:", resProfissionais.error);
+      setProfissionais([]);
+    } else {
+      setProfissionais((resProfissionais.data || []) as Profissional[]);
     }
 
     setLoading(false);
@@ -401,14 +430,19 @@ export default function FinanceiroPage() {
       const batePeriodo = dentroDoPeriodo(item.data_lancamento);
       const bateTipo = filtroTipo ? item.tipo === filtroTipo : true;
       const bateStatus = filtroStatus ? item.status === filtroStatus : true;
+      const bateProfissional = filtroProfissionalId
+        ? item.profissional_id === filtroProfissionalId || item.profissional === profissionais.find((p) => p.id === filtroProfissionalId)?.nome
+        : true;
 
-      return batePeriodo && bateTipo && bateStatus;
+      return batePeriodo && bateTipo && bateStatus && bateProfissional;
     });
-  }, [lancamentos, filtroDataInicio, filtroDataFim, filtroTipo, filtroStatus]);
+  }, [lancamentos, filtroDataInicio, filtroDataFim, filtroTipo, filtroStatus, filtroProfissionalId, profissionais]);
 
   const despesasFiltradas = useMemo(() => {
     return despesas.filter((item) => dentroDoPeriodo(dataDespesa(item)));
   }, [despesas, filtroDataInicio, filtroDataFim]);
+
+  const profissionalSelecionado = profissionais.find((item) => item.id === filtroProfissionalId);
 
   const produtoVendaSelecionado = produtos.find((item) => item.id === produtoIdVenda);
   const quantidadeVendaNumero = normalizarNumero(quantidadeVenda) || 0;
@@ -426,7 +460,13 @@ export default function FinanceiroPage() {
     .filter((item) => item.status !== "cancelado")
     .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
-  const lucroLiquido = totalReceitas - totalSaidasFinanceiro - totalDespesas;
+  const totalComissoes = lancamentosFiltrados
+    .filter((item) => item.tipo === "entrada" && item.status !== "cancelado")
+    .reduce((acc, item) => acc + Number(item.comissao_valor || 0), 0);
+
+  const totalReceitasLiquidas = totalReceitas - totalComissoes;
+
+  const lucroLiquido = totalReceitasLiquidas - totalSaidasFinanceiro - totalDespesas;
 
   function formatarMoeda(valor: number) {
     return Number(valor || 0).toLocaleString("pt-BR", {
@@ -440,11 +480,66 @@ export default function FinanceiroPage() {
     return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
   }
 
+  function exportarExcelFinanceiro() {
+    const resumo = [
+      { Indicador: "Receita bruta", Valor: totalReceitas },
+      { Indicador: "Comissões", Valor: totalComissoes },
+      { Indicador: "Receita líquida", Valor: totalReceitasLiquidas },
+      { Indicador: "Despesas/saídas", Valor: totalSaidasFinanceiro + totalDespesas },
+      { Indicador: "Lucro líquido", Valor: lucroLiquido },
+      { Indicador: "Profissional filtrado", Valor: profissionalSelecionado?.nome || "Todos" },
+      { Indicador: "Período inicial", Valor: filtroDataInicio || "Todos" },
+      { Indicador: "Período final", Valor: filtroDataFim || "Todos" },
+    ];
+
+    const receitas = lancamentosFiltrados.map((item) => ({
+      Data: formatarData(item.data_lancamento),
+      Tipo: item.tipo || "",
+      Descrição: item.descricao || "",
+      Cliente: item.cliente || "",
+      Serviço: item.servico || "",
+      Profissional: item.profissional || "",
+      "Forma de pagamento": item.forma_pagamento || "",
+      "Valor bruto": Number(item.valor || item.valor_bruto || 0),
+      "Comissão (%)": Number(item.comissao_percentual || 0),
+      "Comissão (R$)": Number(item.comissao_valor || 0),
+      "Valor líquido": Number(item.valor_liquido ?? Number(item.valor || 0) - Number(item.comissao_valor || 0)),
+      Status: item.status || "",
+      Observações: item.observacoes || "",
+    }));
+
+    const despesasPlanilha = despesasFiltradas.map((item) => ({
+      Data: formatarData(dataDespesa(item)),
+      Descrição: item.descricao || "",
+      Categoria: item.categoria || "",
+      Valor: Number(item.valor || 0),
+      Status: item.status || "",
+      Observações: item.observacao || item.observacoes || "",
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const resumoSheet = XLSX.utils.json_to_sheet(resumo);
+    const receitasSheet = XLSX.utils.json_to_sheet(receitas);
+    const despesasSheet = XLSX.utils.json_to_sheet(despesasPlanilha);
+
+    XLSX.utils.book_append_sheet(workbook, resumoSheet, "Resumo");
+    XLSX.utils.book_append_sheet(workbook, receitasSheet, "Receitas");
+    XLSX.utils.book_append_sheet(workbook, despesasSheet, "Despesas");
+
+    const dataArquivo = new Date().toISOString().slice(0, 10);
+    const profissionalArquivo = profissionalSelecionado?.nome
+      ? `-${profissionalSelecionado.nome.toLowerCase().replace(/\s+/g, "-")}`
+      : "";
+
+    XLSX.writeFile(workbook, `relatorio-financeiro${profissionalArquivo}-${dataArquivo}.xlsx`);
+  }
+
   function limparFiltros() {
     setFiltroDataInicio("");
     setFiltroDataFim("");
     setFiltroTipo("");
     setFiltroStatus("");
+    setFiltroProfissionalId("");
   }
 
   if (carregandoEmpresa) {
@@ -463,6 +558,10 @@ export default function FinanceiroPage() {
         description="Controle receitas, saídas, despesas, pagamentos vindos da agenda e lucro líquido."
         action={
           <div className="flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={exportarExcelFinanceiro}>
+              Exportar Excel
+            </SecondaryButton>
+
             <SecondaryButton type="button" onClick={() => setModalVendaProduto(true)}>
               + Venda de produto
             </SecondaryButton>
@@ -483,10 +582,11 @@ export default function FinanceiroPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <ResumoCard title="Receitas" value={formatarMoeda(totalReceitas)} valueClassName="text-emerald-600" />
-        <ResumoCard title="Saídas financeiras" value={formatarMoeda(totalSaidasFinanceiro)} valueClassName="text-orange-600" />
-        <ResumoCard title="Despesas" value={formatarMoeda(totalDespesas)} valueClassName="text-red-600" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+        <ResumoCard title="Receita bruta" value={formatarMoeda(totalReceitas)} valueClassName="text-emerald-600" />
+        <ResumoCard title="Comissões" value={formatarMoeda(totalComissoes)} valueClassName="text-violet-600" />
+        <ResumoCard title="Receita líquida" value={formatarMoeda(totalReceitasLiquidas)} valueClassName="text-blue-700" />
+        <ResumoCard title="Despesas/saídas" value={formatarMoeda(totalSaidasFinanceiro + totalDespesas)} valueClassName="text-red-600" />
         <ResumoCard
           title="Lucro líquido"
           value={formatarMoeda(lucroLiquido)}
@@ -495,7 +595,7 @@ export default function FinanceiroPage() {
       </div>
 
       <SectionCard title="Filtros" description="Refine a visualização por período, tipo e status">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <input
             type="date"
             value={filtroDataInicio}
@@ -531,11 +631,50 @@ export default function FinanceiroPage() {
             <option value="cancelado">Cancelado</option>
           </select>
 
+
+          <select
+            value={filtroProfissionalId}
+            onChange={(e) => setFiltroProfissionalId(e.target.value)}
+            className="rounded-2xl border border-slate-200 p-3"
+          >
+            <option value="">Todos os profissionais</option>
+            {profissionais.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nome}
+              </option>
+            ))}
+          </select>
+
           <SecondaryButton type="button" onClick={limparFiltros}>
             Limpar filtros
           </SecondaryButton>
         </div>
       </SectionCard>
+
+      {filtroProfissionalId && (
+        <SectionCard
+          title={`Resumo do profissional${profissionalSelecionado?.nome ? `: ${profissionalSelecionado.nome}` : ""}`}
+          description="Use este bloco para saber quanto precisa pagar de comissão ao profissional no período filtrado."
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <ResumoCard
+              title="Faturado pelo profissional"
+              value={formatarMoeda(totalReceitas)}
+              valueClassName="text-emerald-600"
+            />
+            <ResumoCard
+              title="Comissão a pagar"
+              value={formatarMoeda(totalComissoes)}
+              valueClassName="text-red-600"
+            />
+            <ResumoCard
+              title="Fica para empresa"
+              value={formatarMoeda(totalReceitasLiquidas)}
+              valueClassName="text-blue-700"
+            />
+          </div>
+        </SectionCard>
+      )}
 
       {mostrarFormulario && (
         <SectionCard
@@ -629,8 +768,11 @@ export default function FinanceiroPage() {
                   <th className="px-4 py-3">Descrição</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Serviço</th>
+                  <th className="px-4 py-3">Profissional</th>
                   <th className="px-4 py-3">Forma</th>
-                  <th className="px-4 py-3 text-right">Valor</th>
+                  <th className="px-4 py-3 text-right">Bruto</th>
+                  <th className="px-4 py-3 text-right">Comissão</th>
+                  <th className="px-4 py-3 text-right">Líquido</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
@@ -651,9 +793,25 @@ export default function FinanceiroPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">{item.cliente || "-"}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{item.servico || "-"}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{item.profissional || "-"}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{item.forma_pagamento || "-"}</td>
                     <td className={`px-4 py-3 text-right text-sm font-extrabold ${item.tipo === "entrada" ? "text-emerald-600" : "text-orange-600"}`}>
-                      {item.tipo === "entrada" ? "+" : "-"} {formatarMoeda(Number(item.valor))}
+                      {item.tipo === "entrada" ? "+" : "-"} {formatarMoeda(Number(item.valor || item.valor_bruto || 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-bold text-violet-600">
+                      {Number(item.comissao_valor || 0) > 0 ? (
+                        <>
+                          {formatarMoeda(Number(item.comissao_valor || 0))}
+                          <div className="text-xs font-semibold text-slate-400">
+                            {Number(item.comissao_percentual || 0)}%
+                          </div>
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-extrabold text-blue-700">
+                      {formatarMoeda(Number(item.valor_liquido ?? Number(item.valor || 0) - Number(item.comissao_valor || 0)))}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <StatusBadge status={item.status} />

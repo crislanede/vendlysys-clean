@@ -1028,25 +1028,54 @@ ${linkMeuEspaco}`;
       const statusFinal = usarPacote ? "pago" : statusPagamento;
       const agora = new Date().toISOString();
 
+      let comissaoPercentual = 0;
+
+      if (!usarPacote && agendamentoSelecionado.profissional_id && agendamentoSelecionado.servico_id) {
+        const { data: vinculoComissao, error: erroComissao } = await supabase
+          .from("profissional_servicos")
+          .select("comissao_percentual")
+          .eq("profissional_id", agendamentoSelecionado.profissional_id)
+          .eq("servico_id", agendamentoSelecionado.servico_id)
+          .maybeSingle();
+
+        if (erroComissao) {
+          console.warn("Não foi possível buscar comissão do profissional:", erroComissao.message);
+        }
+
+        comissaoPercentual = Number(vinculoComissao?.comissao_percentual || 0);
+      }
+
+      const comissaoValor = Number(((valorFinal * comissaoPercentual) / 100).toFixed(2));
+      const valorLiquido = Number((valorFinal - comissaoValor).toFixed(2));
+
       const payloadFinanceiro = {
+        empresa_id: empresaId,
         tipo: "entrada",
         descricao:
           usarPacote && pacoteSelecionado
             ? `Atendimento via pacote: ${pacoteSelecionado.pacote_nome} - ${agendamentoSelecionado.servico || "Serviço"}`
             : `Atendimento: ${agendamentoSelecionado.servico || "Serviço"}`,
         valor: valorFinal,
+        valor_bruto: valorFinal,
+        comissao_percentual: comissaoPercentual,
+        comissao_valor: comissaoValor,
+        valor_liquido: valorLiquido,
         data_lancamento: selectedDate,
         status: statusFinal,
         cliente: agendamentoSelecionado.cliente || "",
         profissional: agendamentoSelecionado.profissional || "",
         servico: agendamentoSelecionado.servico || "",
+        profissional_id: agendamentoSelecionado.profissional_id || null,
+        servico_id: agendamentoSelecionado.servico_id || null,
         agendamento_id: agendamentoSelecionado.id,
         forma_pagamento: formaFinal,
         data_pagamento: statusFinal === "pago" ? agora : null,
         observacoes:
           usarPacote && pacoteSelecionado
             ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
-            : null,
+            : comissaoPercentual > 0
+              ? `Comissão do profissional: ${comissaoPercentual}% (${comissaoValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`
+              : null,
       };
 
       const { data: existente, error: erroBusca } = await supabase
@@ -1076,15 +1105,24 @@ ${linkMeuEspaco}`;
         .from("pagamentos")
         .insert([
           {
+            empresa_id: empresaId,
             agendamento_id: agendamentoSelecionado.id,
+            profissional_id: agendamentoSelecionado.profissional_id || null,
+            servico_id: agendamentoSelecionado.servico_id || null,
             valor: valorFinal,
+            valor_bruto: valorFinal,
+            comissao_percentual: comissaoPercentual,
+            comissao_valor: comissaoValor,
+            valor_liquido: valorLiquido,
             forma_pagamento: formaFinal,
             status: statusFinal,
             data_pagamento: statusFinal === "pago" ? agora : null,
             observacao:
               usarPacote && pacoteSelecionado
                 ? `Pagamento via pacote ${pacoteSelecionado.pacote_nome}`
-                : null,
+                : comissaoPercentual > 0
+                  ? `Comissão do profissional: ${comissaoPercentual}%`
+                  : null,
           },
         ]);
 

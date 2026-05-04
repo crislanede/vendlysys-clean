@@ -7,14 +7,12 @@ import {
 } from "react";
 import { supabase } from "../lib/supabase";
 
-type Perfil = "admin" | "agenda";
-
 type Profile = {
   id: string;
   nome: string | null;
   email: string | null;
-  perfil: Perfil;
-  ativo: boolean;
+  perfil: string | null;
+  ativo: boolean | null;
 };
 
 type AuthContextType = {
@@ -38,19 +36,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from("profiles")
         .select("id, nome, email, perfil, ativo")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
-      console.log("PROFILE QUERY:", { data, error });
-
-      if (error) {
+      if (error || !data) {
         setProfile(null);
         return;
       }
 
       setProfile(data as Profile);
-    } catch (err) {
-      console.error("Erro ao carregar profile:", err);
+    } catch {
       setProfile(null);
+    }
+  }
+
+  async function carregarSessao() {
+    setLoading(true);
+
+    try {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        carregarProfile(currentUser.id); // não trava carregamento
+      } else {
+        setProfile(null);
+      }
+    } catch {
+      setUser(null);
+      setProfile(null);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -58,70 +84,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const {
         data: { session },
-        error,
       } = await supabase.auth.getSession();
 
       const currentUser = session?.user ?? null;
-
-      console.log("REFRESH SESSION:", { currentUser, error });
-
-      if (error || !currentUser) {
-        setUser(null);
-        setProfile(null);
-        return;
-      }
-
       setUser(currentUser);
-      await carregarProfile(currentUser.id);
-    } catch (err) {
-      console.error("Erro ao atualizar profile:", err);
+
+      if (currentUser) {
+        await carregarProfile(currentUser.id);
+      } else {
+        setProfile(null);
+      }
+    } catch {
       setUser(null);
       setProfile(null);
-    }
-  }
-
-  async function iniciar() {
-    try {
-      setLoading(true);
-      console.log("AUTH INICIAR");
-
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
-
-      const currentUser = session?.user ?? null;
-
-      console.log("SESSION:", { session, currentUser, error });
-
-      if (error || !currentUser) {
-        setUser(null);
-        setProfile(null);
-        return;
-      }
-
-      setUser(currentUser);
-      await carregarProfile(currentUser.id);
-    } catch (err) {
-      console.error("Erro ao iniciar autenticação:", err);
-      setUser(null);
-      setProfile(null);
-    } finally {
-      console.log("AUTH LOADING FALSE");
-      setLoading(false);
     }
   }
 
   useEffect(() => {
-    iniciar();
+    carregarSessao();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      iniciar();
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+
+      setUser(currentUser);
+
+      if (currentUser) {
+        carregarProfile(currentUser.id);
+      } else {
+        setProfile(null);
+      }
+
+      setLoading(false);
     });
 
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+
     return () => {
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -130,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    setLoading(false);
   }
 
   const value = useMemo(
