@@ -1,4 +1,4 @@
-    import { supabase } from "./supabase";
+import { supabase } from "./supabase";
 
 export type AlertaAnamneseItem = {
   label: string;
@@ -30,10 +30,7 @@ export async function buscarAlertasAnamneseCliente(cliente: {
     return [];
   }
 
-  let query = supabase
-    .from("vw_anamnese_alertas")
-    .select("*")
-    .order("preenchido_em", { ascending: false });
+  let query = supabase.from("vw_anamnese_alertas").select("*");
 
   query = cliente.id
     ? query.eq("cliente_id", cliente.id)
@@ -48,21 +45,11 @@ export async function buscarAlertasAnamneseCliente(cliente: {
 
   const lista = (data || []) as any[];
 
-  if (lista.length === 0) {
-    return [];
-  }
-
-  const dataMaisRecente = lista[0]?.preenchido_em;
-
-  const ultimaAnamnese = lista.filter(
-    (item) => item.preenchido_em === dataMaisRecente
-  );
-
-  return ultimaAnamnese
+  return lista
     .filter((item) => respostaEhCritica(item.tipo, item.resposta))
     .map((item) => ({
-      label: item.label,
+      label: item.label || item.pergunta || "Alerta",
       resposta: item.resposta,
-      preenchido_em: item.preenchido_em,
+      preenchido_em: item.preenchido_em || null,
     }));
 }

@@ -19,7 +19,6 @@ import { supabase } from "../lib/supabase";
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
 import PrimaryButton from "../components/ui/PrimaryButton";
-import EmptyState from "../components/ui/EmptyState";
 
 type Financeiro = {
   id: string;
@@ -350,13 +349,18 @@ export default function Dashboard() {
     const despesaTotal = saidaFinanceira + totalDespesas;
     const resultado = receita - despesaTotal;
 
-    const ticketMedio =
-      entradas.length > 0 ? receita / entradas.length : 0;
+    const ticketMedio = entradas.length > 0 ? receita / entradas.length : 0;
 
     const online = entradas
       .filter((item) => {
         const forma = (item.forma_pagamento || "").toLowerCase();
-        return forma.includes("pix") || forma.includes("credito") || forma.includes("débito") || forma.includes("debito") || forma.includes("online");
+        return (
+          forma.includes("pix") ||
+          forma.includes("credito") ||
+          forma.includes("débito") ||
+          forma.includes("debito") ||
+          forma.includes("online")
+        );
       })
       .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
@@ -375,6 +379,16 @@ export default function Dashboard() {
     () => agruparPorData(financeiro, despesas, agendamentos, dataInicio, dataFim),
     [financeiro, despesas, agendamentos, dataInicio, dataFim]
   );
+
+  const temDadosFinanceiros = useMemo(() => {
+    return dadosPorData.some(
+      (item) =>
+        item.receita > 0 ||
+        item.despesa > 0 ||
+        item.resultado !== 0 ||
+        item.agendamentos > 0
+    );
+  }, [dadosPorData]);
 
   const dadosPorCategoria = useMemo<GraficoCategoria[]>(() => {
     const mapa = new Map<string, number>();
@@ -429,69 +443,33 @@ export default function Dashboard() {
 
       <SectionCard title="Período" description="Filtre os indicadores e gráficos por data.">
         <div className="flex flex-wrap items-end gap-3">
-          <button
-            type="button"
+          <BotaoPeriodo
+            ativo={periodoRapido === "hoje"}
             onClick={() => aplicarPeriodoRapido("hoje")}
-            className={`rounded-2xl px-4 py-3 text-sm font-extrabold ${
-              periodoRapido === "hoje" ? "text-white" : "bg-white text-slate-700"
-            }`}
-            style={{
-              backgroundColor:
-                periodoRapido === "hoje" ? "var(--color-primary)" : undefined,
-              border:
-                periodoRapido === "hoje" ? "none" : "1px solid rgb(226 232 240)",
-            }}
           >
             Hoje
-          </button>
+          </BotaoPeriodo>
 
-          <button
-            type="button"
+          <BotaoPeriodo
+            ativo={periodoRapido === "7dias"}
             onClick={() => aplicarPeriodoRapido("7dias")}
-            className={`rounded-2xl px-4 py-3 text-sm font-extrabold ${
-              periodoRapido === "7dias" ? "text-white" : "bg-white text-slate-700"
-            }`}
-            style={{
-              backgroundColor:
-                periodoRapido === "7dias" ? "var(--color-primary)" : undefined,
-              border:
-                periodoRapido === "7dias" ? "none" : "1px solid rgb(226 232 240)",
-            }}
           >
             7 dias
-          </button>
+          </BotaoPeriodo>
 
-          <button
-            type="button"
+          <BotaoPeriodo
+            ativo={periodoRapido === "mes"}
             onClick={() => aplicarPeriodoRapido("mes")}
-            className={`rounded-2xl px-4 py-3 text-sm font-extrabold ${
-              periodoRapido === "mes" ? "text-white" : "bg-white text-slate-700"
-            }`}
-            style={{
-              backgroundColor:
-                periodoRapido === "mes" ? "var(--color-primary)" : undefined,
-              border:
-                periodoRapido === "mes" ? "none" : "1px solid rgb(226 232 240)",
-            }}
           >
             Mês atual
-          </button>
+          </BotaoPeriodo>
 
-          <button
-            type="button"
+          <BotaoPeriodo
+            ativo={periodoRapido === "30dias"}
             onClick={() => aplicarPeriodoRapido("30dias")}
-            className={`rounded-2xl px-4 py-3 text-sm font-extrabold ${
-              periodoRapido === "30dias" ? "text-white" : "bg-white text-slate-700"
-            }`}
-            style={{
-              backgroundColor:
-                periodoRapido === "30dias" ? "var(--color-primary)" : undefined,
-              border:
-                periodoRapido === "30dias" ? "none" : "1px solid rgb(226 232 240)",
-            }}
           >
             30 dias
-          </button>
+          </BotaoPeriodo>
 
           <label className="block">
             <span className="mb-1 block text-sm font-bold text-slate-600">
@@ -530,23 +508,29 @@ export default function Dashboard() {
       </SectionCard>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Resultado" value={formatarMoeda(indicadores.faturamento)} />
-        <KpiCard title="Receita" value={formatarMoeda(indicadores.receita)} />
-        <KpiCard title="Despesa" value={formatarMoeda(indicadores.despesa)} />
-        <KpiCard title="Agendamentos" value={String(indicadores.agendamentos)} />
-        <KpiCard title="Online" value={formatarMoeda(indicadores.online)} />
-        <KpiCard title="Ticket médio" value={formatarMoeda(indicadores.ticketMedio)} />
+        <KpiCard title="Resultado" value={formatarMoeda(indicadores.faturamento)} variant="purple" />
+        <KpiCard title="Receita" value={formatarMoeda(indicadores.receita)} variant="green" />
+        <KpiCard title="Despesa" value={formatarMoeda(indicadores.despesa)} variant="red" />
+        <KpiCard title="Agendamentos" value={String(indicadores.agendamentos)} variant="blue" />
+        <KpiCard title="Online" value={formatarMoeda(indicadores.online)} variant="indigo" />
+        <KpiCard title="Ticket médio" value={formatarMoeda(indicadores.ticketMedio)} variant="slate" />
       </div>
 
       <SectionCard
         title="Resultado por dia"
         description="Receita, despesa e resultado líquido no período selecionado."
       >
-        {dadosPorData.length === 0 ? (
-          <EmptyState title="Sem dados no período" />
+        {loading ? (
+          <ChartSkeleton />
+        ) : !temDadosFinanceiros ? (
+          <PremiumEmptyState
+            icon="📊"
+            title="Nenhum dado disponível no período"
+            description="Quando houver agendamentos, receitas ou despesas, o gráfico aparecerá automaticamente aqui."
+          />
         ) : (
-          <div className="h-80 w-full">
-            <ResponsiveContainer>
+          <ChartFrame>
+            <ResponsiveContainer width="100%" height={300}>
               <LineChart data={dadosPorData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="data" tickFormatter={formatarData} />
@@ -561,50 +545,76 @@ export default function Dashboard() {
                 <Line type="monotone" dataKey="resultado" name="Resultado" stroke="var(--color-secondary)" strokeWidth={3} />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ChartFrame>
         )}
       </SectionCard>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <SectionCard title="Receita x Despesa">
-          <div className="h-80 w-full">
-            <ResponsiveContainer>
-              <BarChart data={dadosPorData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="data" tickFormatter={formatarData} />
-                <YAxis />
-                <Tooltip
-                  formatter={(value) => formatarMoeda(Number(value))}
-                  labelFormatter={(label) => formatarData(String(label))}
-                />
-                <Legend />
-                <Bar dataKey="receita" name="Receita" fill="var(--color-primary)" />
-                <Bar dataKey="despesa" name="Despesa" fill="#ef4444" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {loading ? (
+            <ChartSkeleton />
+          ) : !temDadosFinanceiros ? (
+            <PremiumEmptyState
+              icon="💰"
+              title="Sem movimentação financeira"
+              description="As receitas e despesas aparecerão aqui quando houver lançamentos no período."
+            />
+          ) : (
+            <ChartFrame>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={dadosPorData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="data" tickFormatter={formatarData} />
+                  <YAxis />
+                  <Tooltip
+                    formatter={(value) => formatarMoeda(Number(value))}
+                    labelFormatter={(label) => formatarData(String(label))}
+                  />
+                  <Legend />
+                  <Bar dataKey="receita" name="Receita" fill="var(--color-primary)" />
+                  <Bar dataKey="despesa" name="Despesa" fill="#ef4444" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartFrame>
+          )}
         </SectionCard>
 
         <SectionCard title="Quantidade de atendimentos">
-          <div className="h-80 w-full">
-            <ResponsiveContainer>
-              <BarChart data={dadosPorData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="data" tickFormatter={formatarData} />
-                <YAxis allowDecimals={false} />
-                <Tooltip labelFormatter={(label) => formatarData(String(label))} />
-                <Bar dataKey="agendamentos" name="Agendamentos" fill="var(--color-primary)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {loading ? (
+            <ChartSkeleton />
+          ) : !temDadosFinanceiros ? (
+            <PremiumEmptyState
+              icon="📅"
+              title="Nenhum atendimento encontrado"
+              description="Quando houver agendamentos no período, você verá a evolução por dia."
+            />
+          ) : (
+            <ChartFrame>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={dadosPorData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="data" tickFormatter={formatarData} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip labelFormatter={(label) => formatarData(String(label))} />
+                  <Bar dataKey="agendamentos" name="Agendamentos" fill="var(--color-primary)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartFrame>
+          )}
         </SectionCard>
 
         <SectionCard title="Representatividade por serviço em R$">
-          {dadosPorCategoria.length === 0 ? (
-            <EmptyState title="Sem receita por serviço" />
+          {loading ? (
+            <ChartSkeleton />
+          ) : dadosPorCategoria.length === 0 ? (
+            <PremiumEmptyState
+              icon="🧾"
+              title="Sem receita por serviço"
+              description="Ao finalizar atendimentos ou lançar receitas, os serviços mais representativos aparecerão aqui."
+            />
           ) : (
-            <div className="h-80 w-full">
-              <ResponsiveContainer>
+            <ChartFrame>
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={dadosPorCategoria} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" tickFormatter={(value) => formatarMoeda(Number(value))} />
@@ -613,16 +623,22 @@ export default function Dashboard() {
                   <Bar dataKey="value" name="Receita" fill="var(--color-primary)" />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </ChartFrame>
           )}
         </SectionCard>
 
         <SectionCard title="Distribuição de atendimentos">
-          {quantidadePorServico.length === 0 ? (
-            <EmptyState title="Sem atendimentos por serviço" />
+          {loading ? (
+            <ChartSkeleton />
+          ) : quantidadePorServico.length === 0 ? (
+            <PremiumEmptyState
+              icon="✨"
+              title="Sem atendimentos por serviço"
+              description="Assim que os atendimentos forem registrados, a distribuição aparecerá neste gráfico."
+            />
           ) : (
-            <div className="h-80 w-full">
-              <ResponsiveContainer>
+            <ChartFrame>
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
                     data={quantidadePorServico}
@@ -642,14 +658,20 @@ export default function Dashboard() {
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
+            </ChartFrame>
           )}
         </SectionCard>
       </div>
 
       <SectionCard title="Últimos lançamentos financeiros">
-        {ultimosLancamentos.length === 0 ? (
-          <EmptyState title="Nenhum lançamento financeiro no período" />
+        {loading ? (
+          <TableSkeleton />
+        ) : ultimosLancamentos.length === 0 ? (
+          <PremiumEmptyState
+            icon="📂"
+            title="Nenhum lançamento financeiro no período"
+            description="Os lançamentos aparecerão aqui quando houver receitas ou saídas cadastradas."
+          />
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full border-collapse">
@@ -705,11 +727,106 @@ export default function Dashboard() {
   );
 }
 
-function KpiCard({ title, value }: { title: string; value: string }) {
+function BotaoPeriodo({
+  ativo,
+  onClick,
+  children,
+}: {
+  ativo: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-500">{title}</p>
-      <p className="mt-2 text-2xl font-extrabold text-slate-900">{value}</p>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl px-4 py-3 text-sm font-extrabold transition-all duration-200 hover:scale-[1.02] ${
+        ativo ? "text-white shadow-lg" : "bg-white text-slate-700"
+      }`}
+      style={{
+        backgroundColor: ativo ? "var(--color-primary)" : undefined,
+        border: ativo ? "none" : "1px solid rgb(226 232 240)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ChartFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="h-80 min-h-[320px] w-full rounded-2xl bg-white p-2">
+      {children}
+    </div>
+  );
+}
+
+function PremiumEmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white p-8 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-4xl shadow-sm">
+        {icon}
+      </div>
+      <h3 className="text-lg font-extrabold text-slate-800">{title}</h3>
+      <p className="mt-2 max-w-md text-sm text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="h-80 min-h-[320px] w-full animate-pulse rounded-3xl bg-slate-100 p-6">
+      <div className="mb-6 h-5 w-40 rounded bg-slate-200" />
+      <div className="h-56 rounded-2xl bg-slate-200" />
+    </div>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-slate-200 p-4">
+      <div className="mb-3 h-5 w-40 rounded bg-slate-200" />
+      <div className="space-y-2">
+        <div className="h-10 rounded bg-slate-100" />
+        <div className="h-10 rounded bg-slate-100" />
+        <div className="h-10 rounded bg-slate-100" />
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({
+  title,
+  value,
+  variant,
+}: {
+  title: string;
+  value: string;
+  variant: "green" | "red" | "blue" | "purple" | "indigo" | "slate";
+}) {
+  const variantClass = {
+    green: "text-emerald-600 bg-emerald-50",
+    red: "text-red-600 bg-red-50",
+    blue: "text-sky-600 bg-sky-50",
+    purple: "text-purple-700 bg-purple-50",
+    indigo: "text-indigo-600 bg-indigo-50",
+    slate: "text-slate-700 bg-slate-50",
+  }[variant];
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
+      <div className={`mb-3 inline-flex rounded-2xl px-3 py-1 text-xs font-extrabold ${variantClass}`}>
+        {title}
+      </div>
+      <p className="text-2xl font-extrabold text-slate-900">{value}</p>
     </div>
   );
 }

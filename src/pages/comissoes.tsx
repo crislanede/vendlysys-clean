@@ -1,241 +1,300 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
-import PageHeader from "../components/ui/PageHeader";
-import SectionCard from "../components/ui/SectionCard";
-
-type Agendamento = {
+type LancamentoComissao = {
   id: string;
-  profissional: string;
-  data: string;
-  valor: number | null;
-  status: string;
-  status_atendimento: string | null;
+  data_lancamento?: string | null;
+  descricao?: string | null;
+  cliente?: string | null;
+  servico?: string | null;
+  profissional?: string | null;
+  profissional_id?: string | null;
+  valor_bruto?: number | null;
+  comissao_percentual?: number | null;
+  comissao_valor?: number | null;
+  status?: string | null;
 };
 
-type Profissional = {
-  id: string;
-  nome: string;
-  percentual_comissao: number | null;
-};
+export default function Comissoes() {
+  const location = useLocation();
+  const { empresaId, carregandoEmpresa, empresa } = useEmpresa() as any;
 
-type ResumoComissao = {
-  profissional: string;
-  percentual: number;
-  atendimentos: number;
-  faturado: number;
-  comissao: number;
-};
+  const rotaMinhasComissoes = location.pathname.includes("minhas-comissoes");
 
-export default function ComissoesPage() {
-  const hoje = new Date().toISOString().split("T")[0];
-  const primeiroDiaMes = new Date(
-    new Date().getFullYear(),
-    new Date().getMonth(),
-    1
-  )
-    .toISOString()
-    .split("T")[0];
+  const perfil =
+    empresa?.perfil ||
+    (empresa as any)?.perfilEmpresa ||
+    "admin";
 
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
-  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
+  const isAdmin =
+    perfil === "admin" ||
+    perfil === "super_admin" ||
+    perfil === "admin_saas" ||
+    perfil === "financeiro";
+
   const [loading, setLoading] = useState(true);
-
-  const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
-  const [dataFim, setDataFim] = useState(hoje);
+  const [erro, setErro] = useState("");
+  const [profissionalId, setProfissionalId] = useState<string | null>(null);
+  const [filtroProfissional, setFiltroProfissional] = useState("todos");
+  const [lancamentos, setLancamentos] = useState<LancamentoComissao[]>([]);
 
   useEffect(() => {
-    void carregarDados();
-  }, []);
+    if (!empresaId) return;
+    carregarComissoes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId, location.pathname]);
 
-  async function carregarDados() {
+  async function carregarComissoes() {
     setLoading(true);
+    setErro("");
 
-    const { data: agData } = await supabase
-      .from("agendamentos")
-      .select("id, profissional, data, valor, status, status_atendimento")
-      .order("data", { ascending: false });
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData.user;
 
-    const { data: profData } = await supabase
-      .from("profissionais")
-      .select("id, nome, percentual_comissao")
-      .eq("ativo", true)
-      .order("nome", { ascending: true });
+      if (!user?.email) {
+        setErro("Usuário não identificado.");
+        return;
+      }
 
-    setAgendamentos((agData || []) as Agendamento[]);
-    setProfissionais((profData || []) as Profissional[]);
-    setLoading(false);
+      let idProfissional: string | null = null;
+
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("email, profissional_id, perfil")
+        .eq("email", user.email)
+        .maybeSingle();
+
+      idProfissional = usuario?.profissional_id || null;
+      setProfissionalId(idProfissional);
+
+      let query = supabase
+        .from("financeiro")
+        .select(
+          "id, data_lancamento, descricao, cliente, servico, profissional, profissional_id, valor_bruto, comissao_percentual, comissao_valor, status"
+        )
+        .eq("empresa_id", empresaId)
+        .gt("comissao_valor", 0)
+        .order("data_lancamento", { ascending: false });
+
+      if (rotaMinhasComissoes || !isAdmin) {
+        if (!idProfissional) {
+          setErro("Este usuário ainda não está vinculado a um profissional.");
+          setLancamentos([]);
+          return;
+        }
+
+        query = query.eq("profissional_id", idProfissional);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        setErro(error.message);
+        return;
+      }
+
+      setLancamentos((data || []) as LancamentoComissao[]);
+    } catch (error: any) {
+      setErro(error?.message || "Erro ao carregar comissões.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function dentroDoPeriodo(dataStr: string) {
-    if (dataInicio && dataStr < dataInicio) return false;
-    if (dataFim && dataStr > dataFim) return false;
-    return true;
-  }
+  const profissionais = useMemo(() => {
+    const mapa = new Map<string, string>();
 
-  const agendamentosBase = useMemo(() => {
-    return agendamentos.filter((item) => {
-      return (
-        dentroDoPeriodo(item.data) &&
-        item.status !== "cancelado" &&
-        item.status_atendimento === "finalizado"
-      );
+    lancamentos.forEach((item) => {
+      if (item.profissional_id) {
+        mapa.set(item.profissional_id, item.profissional || "Sem nome");
+      }
     });
-  }, [agendamentos, dataInicio, dataFim]);
 
-  const resumoComissoes: ResumoComissao[] = useMemo(() => {
-    return profissionais.map((prof) => {
-      const atendimentosDoProfissional = agendamentosBase.filter(
-        (ag) => ag.profissional === prof.nome
-      );
+    return Array.from(mapa.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [lancamentos]);
 
-      const faturado = atendimentosDoProfissional.reduce(
-        (acc, item) => acc + Number(item.valor || 0),
-        0
-      );
+  const lancamentosFiltrados = useMemo(() => {
+    if (!isAdmin || rotaMinhasComissoes || filtroProfissional === "todos") {
+      return lancamentos;
+    }
 
-      const percentual = Number(prof.percentual_comissao || 0);
-      const comissao = faturado * (percentual / 100);
+    return lancamentos.filter(
+      (item) => item.profissional_id === filtroProfissional,
+    );
+  }, [lancamentos, filtroProfissional, isAdmin, rotaMinhasComissoes]);
 
-      return {
-        profissional: prof.nome,
-        percentual,
-        atendimentos: atendimentosDoProfissional.length,
-        faturado,
-        comissao,
-      };
-    });
-  }, [profissionais, agendamentosBase]);
+  const totais = useMemo(() => {
+    const total = lancamentosFiltrados.reduce(
+      (acc, item) => acc + Number(item.comissao_valor || 0),
+      0,
+    );
 
-  const totalFaturado = resumoComissoes.reduce(
-    (acc, item) => acc + item.faturado,
-    0
-  );
-  const totalComissoes = resumoComissoes.reduce(
-    (acc, item) => acc + item.comissao,
-    0
-  );
+    const pagos = lancamentosFiltrados
+      .filter((item) => item.status === "pago")
+      .reduce((acc, item) => acc + Number(item.comissao_valor || 0), 0);
 
-  function formatarMoeda(valor: number) {
+    const pendentes = total - pagos;
+
+    return { total, pagos, pendentes };
+  }, [lancamentosFiltrados]);
+
+  function moeda(valor: number) {
     return valor.toLocaleString("pt-BR", {
       style: "currency",
       currency: "BRL",
     });
   }
 
-  function limparPeriodo() {
-    setDataInicio(primeiroDiaMes);
-    setDataFim(hoje);
+  function dataBR(data?: string | null) {
+    if (!data) return "-";
+    return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+  }
+
+  if (carregandoEmpresa || loading) {
+    return <div className="p-6">Carregando comissões...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Equipe"
-        title="Comissões"
-        description="Cálculo de comissão por profissional com base nos atendimentos finalizados."
-      />
+      <div>
+        <p className="text-sm font-bold uppercase text-purple-700">
+          {rotaMinhasComissoes ? "Minha área" : "Operação"}
+        </p>
+        <h1 className="text-3xl font-black text-slate-900">
+          {rotaMinhasComissoes ? "Minhas comissões" : "Comissões"}
+        </h1>
+        <p className="text-sm text-slate-500">
+          {rotaMinhasComissoes
+            ? "Acompanhe seus atendimentos, valores de comissão e histórico."
+            : "Acompanhe as comissões de todos os profissionais."}
+        </p>
+      </div>
 
-      <SectionCard title="Período">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <input
-            type="date"
-            value={dataInicio}
-            onChange={(e) => setDataInicio(e.target.value)}
-            className="rounded-2xl border border-slate-200 p-3"
-          />
-          <input
-            type="date"
-            value={dataFim}
-            onChange={(e) => setDataFim(e.target.value)}
-            className="rounded-2xl border border-slate-200 p-3"
-          />
-          <button
-            type="button"
-            onClick={limparPeriodo}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
-          >
-            Restaurar mês atual
-          </button>
+      {erro && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+          {erro}
         </div>
-      </SectionCard>
-
-      {loading ? (
-        <SectionCard>
-          <p>Carregando...</p>
-        </SectionCard>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <ResumoCard
-              title="Atendimentos finalizados"
-              value={String(agendamentosBase.length)}
-              valueClassName="text-slate-800"
-            />
-            <ResumoCard
-              title="Faturado no período"
-              value={formatarMoeda(totalFaturado)}
-              valueClassName="text-green-600"
-            />
-            <ResumoCard
-              title="Total de comissões"
-              value={formatarMoeda(totalComissoes)}
-              valueClassName="text-orange-600"
-            />
-          </div>
-
-          <SectionCard title="Resumo por profissional">
-            <div className="space-y-3">
-              {resumoComissoes.map((item) => (
-                <div
-                  key={item.profissional}
-                  className="flex justify-between gap-4 rounded-2xl border border-slate-200 p-4"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-800">
-                      {item.profissional}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Atendimentos: {item.atendimentos}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Comissão: {item.percentual}%
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="text-sm text-slate-500">
-                      Faturado: {formatarMoeda(item.faturado)}
-                    </p>
-                    <p className="font-semibold text-orange-600">
-                      Receber: {formatarMoeda(item.comissao)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-        </>
       )}
-    </div>
-  );
-}
 
-function ResumoCard({
-  title,
-  value,
-  valueClassName,
-}: {
-  title: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-slate-500">{title}</p>
-      <p className={`mt-2 text-3xl font-bold ${valueClassName || "text-slate-800"}`}>
-        {value}
-      </p>
+      {isAdmin && !rotaMinhasComissoes && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <label className="text-sm font-bold text-slate-700">
+            Filtrar por profissional
+          </label>
+
+          <select
+            value={filtroProfissional}
+            onChange={(e) => setFiltroProfissional(e.target.value)}
+            className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-purple-400"
+          >
+            <option value="todos">Todos os profissionais</option>
+            {profissionais.map((profissional) => (
+              <option key={profissional.id} value={profissional.id}>
+                {profissional.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Total em comissões</p>
+          <p className="mt-2 text-2xl font-black text-purple-700">
+            {moeda(totais.total)}
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pago</p>
+          <p className="mt-2 text-2xl font-black text-emerald-600">
+            {moeda(totais.pagos)}
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Pendente</p>
+          <p className="mt-2 text-2xl font-black text-orange-600">
+            {moeda(totais.pendentes)}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 p-5">
+          <h2 className="text-lg font-black text-slate-900">
+            Histórico de comissões
+          </h2>
+          <p className="text-sm text-slate-500">
+            Registros gerados a partir dos atendimentos finalizados.
+          </p>
+        </div>
+
+        {lancamentosFiltrados.length === 0 ? (
+          <div className="p-8 text-center text-sm font-bold text-slate-500">
+            Nenhuma comissão encontrada.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-purple-700 text-white">
+                <tr>
+                  <th className="px-4 py-3 text-left">Data</th>
+                  {!rotaMinhasComissoes && (
+                    <th className="px-4 py-3 text-left">Profissional</th>
+                  )}
+                  <th className="px-4 py-3 text-left">Cliente</th>
+                  <th className="px-4 py-3 text-left">Serviço</th>
+                  <th className="px-4 py-3 text-left">Bruto</th>
+                  <th className="px-4 py-3 text-left">%</th>
+                  <th className="px-4 py-3 text-left">Comissão</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {lancamentosFiltrados.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3">{dataBR(item.data_lancamento)}</td>
+
+                    {!rotaMinhasComissoes && (
+                      <td className="px-4 py-3">{item.profissional || "-"}</td>
+                    )}
+
+                    <td className="px-4 py-3">{item.cliente || "-"}</td>
+                    <td className="px-4 py-3">{item.servico || "-"}</td>
+                    <td className="px-4 py-3">
+                      {moeda(Number(item.valor_bruto || 0))}
+                    </td>
+                    <td className="px-4 py-3">
+                      {Number(item.comissao_percentual || 0)}%
+                    </td>
+                    <td className="px-4 py-3 font-black text-purple-700">
+                      {moeda(Number(item.comissao_valor || 0))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                        {item.status || "pendente"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {!isAdmin && !profissionalId && (
+        <p className="text-xs text-slate-400">
+          Para aparecerem dados aqui, o usuário precisa estar vinculado a um profissional.
+        </p>
+      )}
     </div>
   );
 }

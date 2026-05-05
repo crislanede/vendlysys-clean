@@ -62,6 +62,22 @@ function formatarDataAnamnese(data?: string | Date | null) {
   return dataObj.toLocaleDateString("pt-BR");
 }
 
+function normalizarChaveAnamnese(valor?: string | null) {
+  return String(valor || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function obterChaveCampoAnamnese(campo: any) {
+  return normalizarChaveAnamnese(
+    campo?.nome_campo || campo?.nome_interno || campo?.label || campo?.pergunta || campo?.id,
+  );
+}
+
 export default function MeuEspaco() {
   const [aba, setAba] = useState("agenda");
   const [telefone, setTelefone] = useState("");
@@ -118,7 +134,7 @@ export default function MeuEspaco() {
   const [aceitaTermo, setAceitaTermo] = useState(false);
   const [assinatura, setAssinatura] = useState("");
   const [anamnesePreenchida, setAnamnesePreenchida] = useState<any>(null);
-  const [pdfAnamneseUrl, setPdfAnamneseUrl] = useState("");
+  const [, setPdfAnamneseUrl] = useState("");
   const [modoAtualizacaoAnamnese, setModoAtualizacaoAnamnese] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
@@ -1178,59 +1194,232 @@ export default function MeuEspaco() {
       setAnamnesePreenchida(null);
       setPdfAnamneseUrl("");
       setAssinaturaComplementarObrigatoria(false);
+      setModoAtualizacaoAnamnese(false);
       return;
     }
 
     setModelo(modeloData);
     setEmpresaAnamneseId(modeloData.empresa_id || empresaId || null);
 
-    const { data: camposData } = await supabase
+    const { data: camposData, error: erroCampos } = await supabase
       .from("anamnese_campos")
       .select("*")
       .eq("modelo_id", modeloData.id)
       .eq("ativo", true)
       .order("ordem", { ascending: true });
 
-    setCampos(camposData || []);
+    if (erroCampos) {
+      console.error("Erro ao carregar campos da anamnese:", erroCampos);
+      setCampos([]);
+      setAnamneseObrigatoria(false);
+      setAssinaturaComplementarObrigatoria(false);
+      return;
+    }
 
-    const { data: preenchida } = await supabase
+    // Remove duplicidades geradas por versões antigas da configuração.
+    // A chave usa nome_campo/nome_interno quando existir, pois é mais estável
+    // do que o id. Isso evita pedir novamente "Possui alergia?" quando o campo
+    // antigo foi recriado com outro id.
+    const mapaCamposAtivos = new Map<string, CampoAnamnese>();
+    ((camposData || []) as CampoAnamnese[]).forEach((campo: any) => {
+      const chave = obterChaveCampoAnamnese(campo);
+      if (!chave) return;
+      if (!mapaCamposAtivos.has(chave)) {
+        mapaCamposAtivos.set(chave, campo as CampoAnamnese);
+      }
+    });
+
+    const camposAtivos = Array.from(mapaCamposAtivos.values());
+
+    const { data: fichasPreenchidas, error: erroFichas } = await supabase
       .from("anamneses_clientes")
       .select("*")
       .eq("cliente_id", clienteId)
       .eq("preenchido", true)
-      .order("preenchido_em", { ascending: false })
-      .limit(1);
+      .order("preenchido_em", { ascending: false });
 
-    const fichaPreenchida =
-      preenchida && preenchida.length > 0 ? preenchida[0] : null;
+    if (erroFichas) {
+      console.error("Erro ao carregar anamnese preenchida:", erroFichas);
+    }
+
+    const listaFichas = (fichasPreenchidas || []) as any[];
+    const fichaPreenchida = listaFichas.length > 0 ? listaFichas[0] : null;
+
     setAnamnesePreenchida(fichaPreenchida);
     setPdfAnamneseUrl(fichaPreenchida?.pdf_url || "");
+
+    const respostasAnteriores: Record<string, string> = {};
+    const justificativasAnteriores: Record<string, string> = {};
+    const respostasPorChave: Record<string, string> = {};
+    const justificativasPorChave: Record<string, string> = {};
+    const camposRespondidosIds = new Set<string>();
+    const camposRespondidosChaves = new Set<string>();
+
+    const idsFichas = listaFichas
+      .map((ficha: any) => ficha?.id)
+      .filter(Boolean);
+
+    if (idsFichas.length > 0) {
+      const { data: respostasSalvas, error: erroRespostasSalvas } =
+        await supabase
+          .from("anamnese_respostas")
+          .select("anamnese_id, campo_id, resposta")
+          .in("anamnese_id", idsFichas);
+
+      if (erroRespostasSalvas) {
+        console.warn(
+          "Não foi possível carregar respostas anteriores da anamnese:",
+          erroRespostasSalvas,
+        );
+      }
+
+      const idsCamposRespondidos = Array.from(
+        new Set(
+          (respostasSalvas || [])
+            .map((item: any) => item?.campo_id)
+            .filter(Boolean),
+        ),
+      );
+
+      let camposDasRespostas: any[] = [];
+
+      if (idsCamposRespondidos.length > 0) {
+        const { data: camposRespondidosData } = await supabase
+          .from("anamnese_campos")
+          .select("*")
+          .in("id", idsCamposRespondidos);
+
+        camposDasRespostas = camposRespondidosData || [];
+      }
+
+      const mapaCamposPorId = new Map<string, any>();
+      [...camposDasRespostas, ...camposAtivos].forEach((campo: any) => {
+        if (campo?.id) mapaCamposPorId.set(campo.id, campo);
+      });
+
+      // Percorremos as fichas da mais recente para a mais antiga.
+      // A resposta mais nova prevalece, mas uma resposta antiga também conta
+      // como preenchida quando o campo atual tem a mesma chave lógica.
+      idsFichas.forEach((anamneseId: string) => {
+        (respostasSalvas || [])
+          .filter((item: any) => item?.anamnese_id === anamneseId)
+          .forEach((item: any) => {
+            const campoId = item?.campo_id;
+            const respostaSalva = String(item?.resposta || "").trim();
+
+            if (!campoId || !respostaSalva) return;
+
+            const campoRelacionado = mapaCamposPorId.get(campoId);
+            const chaveCampo = obterChaveCampoAnamnese(campoRelacionado);
+
+            camposRespondidosIds.add(campoId);
+            if (chaveCampo) camposRespondidosChaves.add(chaveCampo);
+
+            let respostaNormalizada = respostaSalva;
+            let justificativaNormalizada = "";
+
+            if (
+              campoRelacionado?.tipo === "sim_nao_justificativa" &&
+              respostaSalva.startsWith("Sim - ")
+            ) {
+              respostaNormalizada = "Sim";
+              justificativaNormalizada = respostaSalva.replace("Sim - ", "");
+            }
+
+            if (!respostasAnteriores[campoId]) {
+              respostasAnteriores[campoId] = respostaNormalizada;
+              if (justificativaNormalizada) {
+                justificativasAnteriores[campoId] = justificativaNormalizada;
+              }
+            }
+
+            if (chaveCampo && !respostasPorChave[chaveCampo]) {
+              respostasPorChave[chaveCampo] = respostaNormalizada;
+              if (justificativaNormalizada) {
+                justificativasPorChave[chaveCampo] = justificativaNormalizada;
+              }
+            }
+          });
+      });
+    }
+
+    // Reaplica respostas antigas nos ids atuais quando o campo foi recriado.
+    camposAtivos.forEach((campo: any) => {
+      const chave = obterChaveCampoAnamnese(campo);
+      if (!chave) return;
+
+      if (!respostasAnteriores[campo.id] && respostasPorChave[chave]) {
+        respostasAnteriores[campo.id] = respostasPorChave[chave];
+      }
+
+      if (!justificativasAnteriores[campo.id] && justificativasPorChave[chave]) {
+        justificativasAnteriores[campo.id] = justificativasPorChave[chave];
+      }
+    });
+
+    const camposNovosObrigatorios = camposAtivos.filter((campo: any) => {
+      if (!campo.obrigatorio) return false;
+
+      const resposta = respostasAnteriores[campo.id];
+
+      return !resposta || String(resposta).trim() === "";
+    });
+
+    const temCamposNovosObrigatorios =
+      Boolean(fichaPreenchida) && camposNovosObrigatorios.length > 0;
 
     const fichaVencida = fichaPreenchida
       ? anamneseEstaVencida(fichaPreenchida)
       : false;
 
     // Regra de produção:
-    // - Sem ficha preenchida: bloqueia e força preenchimento.
-    // - Ficha vencida após 12 meses: bloqueia e força atualização.
-    // - Ficha preenchida sem assinatura: bloqueia e pede apenas assinatura complementar.
-    // A anamnese ativa deve ser obrigatória no Meu Espaço para liberar agendamento, dados e histórico.
-    const precisaPreencher = !fichaPreenchida || fichaVencida;
+    // - Sem ficha preenchida: mostra a ficha completa.
+    // - Ficha vencida após 12 meses: mostra a ficha completa com respostas antigas carregadas.
+    // - Nova pergunta obrigatória: mostra SOMENTE os campos novos pendentes.
+    // - Ficha preenchida sem assinatura: pede apenas assinatura complementar.
+    const precisaPreencher =
+      !fichaPreenchida || fichaVencida || temCamposNovosObrigatorios;
+
     const precisaAssinarFichaAntiga =
-      Boolean(fichaPreenchida) && !fichaVencida && !fichaPreenchida?.assinatura;
+      Boolean(fichaPreenchida) &&
+      !fichaVencida &&
+      !temCamposNovosObrigatorios &&
+      !fichaPreenchida?.assinatura;
+
+    if (temCamposNovosObrigatorios && !fichaVencida) {
+      setCampos(camposNovosObrigatorios);
+    } else {
+      setCampos(camposAtivos);
+    }
 
     setAnamneseObrigatoria(precisaPreencher);
     setAssinaturaComplementarObrigatoria(precisaAssinarFichaAntiga);
-    setModoAtualizacaoAnamnese(false);
+    setModoAtualizacaoAnamnese(
+      Boolean(fichaPreenchida) && (fichaVencida || temCamposNovosObrigatorios),
+    );
 
     if (precisaPreencher || precisaAssinarFichaAntiga) {
-      setRespostas({});
-      setJustificativas({});
+      setRespostas(fichaPreenchida ? respostasAnteriores : {});
+      setJustificativas(fichaPreenchida ? justificativasAnteriores : {});
       setAceitaTermo(false);
       setAssinatura("");
       setAba("anamnese");
       setModalAnamneseAberto(true);
+
+      if (temCamposNovosObrigatorios && !fichaVencida) {
+        setMensagem(
+          "Há nova pergunta obrigatória na sua ficha. Responda somente os campos abaixo e assine novamente para continuar.",
+        );
+      } else if (fichaVencida) {
+        setMensagem(
+          "Sua ficha de anamnese venceu. Atualize e assine novamente para continuar.",
+        );
+      } else if (!fichaPreenchida) {
+        setMensagem("Para continuar, preencha a ficha de anamnese obrigatória.");
+      }
     } else {
+      setRespostas({});
+      setJustificativas({});
       setModalAnamneseAberto(false);
       setAba("agenda");
     }
@@ -1328,48 +1517,144 @@ export default function MeuEspaco() {
   }
 
   async function baixarPdfAnamnese() {
-    if (pdfAnamneseUrl) {
-      window.open(pdfAnamneseUrl, "_blank");
+    if (!cliente) {
+      alert("Cliente não encontrado.");
       return;
     }
 
-    if (!anamnesePreenchida) {
-      alert("PDF ainda não disponível para esta ficha.");
-      return;
+    try {
+      const empresaIdParaPdf =
+        cliente?.empresa_id || empresaAnamneseId || modelo?.empresa_id || null;
+
+      const { data: empresa } = empresaIdParaPdf
+        ? await supabase
+            .from("empresas")
+            .select("nome")
+            .eq("id", empresaIdParaPdf)
+            .maybeSingle()
+        : { data: null };
+
+      const { data: respostasBanco, error: erroRespostas } = await supabase
+        .from("anamnese_respostas")
+        .select(`
+          id,
+          campo_id,
+          resposta,
+          justificativa,
+          created_at,
+          anamnese_campos (
+            id,
+            pergunta,
+            label,
+            nome_campo,
+            tipo,
+            ordem,
+            ativo,
+            modelo_id
+          )
+        `)
+        .eq("cliente_id", cliente.id);
+
+      if (erroRespostas) {
+        console.error("Erro ao buscar respostas da anamnese:", erroRespostas);
+        alert("Erro ao buscar respostas da anamnese.");
+        return;
+      }
+
+      const respostasPorCampo = new Map<string, any>();
+
+      (respostasBanco || []).forEach((item: any) => {
+        const campoId = item?.campo_id;
+        if (!campoId) return;
+
+        const respostaExistente = respostasPorCampo.get(campoId);
+        const dataAtual = new Date(item?.created_at || 0).getTime();
+        const dataExistente = new Date(
+          respostaExistente?.created_at || 0,
+        ).getTime();
+
+        if (!respostaExistente || dataAtual >= dataExistente) {
+          respostasPorCampo.set(campoId, item);
+        }
+      });
+
+      const respostasOrdenadas = Array.from(respostasPorCampo.values()).sort(
+        (a: any, b: any) => {
+          const campoA = Array.isArray(a?.anamnese_campos)
+            ? a.anamnese_campos[0]
+            : a?.anamnese_campos;
+          const campoB = Array.isArray(b?.anamnese_campos)
+            ? b.anamnese_campos[0]
+            : b?.anamnese_campos;
+
+          const ordemA = Number(campoA?.ordem ?? 9999);
+          const ordemB = Number(campoB?.ordem ?? 9999);
+
+          if (ordemA !== ordemB) return ordemA - ordemB;
+
+          return String(campoA?.pergunta || campoA?.label || "").localeCompare(
+            String(campoB?.pergunta || campoB?.label || ""),
+            "pt-BR",
+          );
+        },
+      );
+
+      const respostasPdf: Record<string, string> = {};
+
+      respostasOrdenadas.forEach((item: any) => {
+        const campo = Array.isArray(item?.anamnese_campos)
+          ? item.anamnese_campos[0]
+          : item?.anamnese_campos;
+
+        if (!campo || campo.ativo === false) return;
+
+        const label =
+          campo?.label || campo?.pergunta || campo?.nome_campo || "Campo";
+
+        let textoResposta = item?.resposta || "-";
+
+        if (
+          campo?.tipo === "sim_nao_justificativa" &&
+          String(item?.resposta || "").toLowerCase() === "sim"
+        ) {
+          textoResposta = item?.justificativa
+            ? `Sim - ${item.justificativa}`
+            : "Sim";
+        }
+
+        respostasPdf[label] = textoResposta;
+      });
+
+      if (Object.keys(respostasPdf).length === 0) {
+        alert("Nenhuma resposta de anamnese encontrada para este cliente.");
+        return;
+      }
+
+      const pdfBlob = gerarPdfBlob({
+        empresaNome:
+          empresa?.nome || cliente?.empresa_nome || "Seu estabelecimento",
+        clienteNome: cliente?.nome || "Cliente",
+        respostas: respostasPdf,
+        assinatura: anamnesePreenchida?.assinatura || assinatura || "",
+        hash: anamnesePreenchida?.hash || "",
+        ip: anamnesePreenchida?.ip || "",
+        data:
+          anamnesePreenchida?.data_assinatura ||
+          anamnesePreenchida?.preenchido_em ||
+          anamnesePreenchida?.created_at ||
+          new Date().toISOString(),
+      });
+
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `anamnese-${cliente?.nome || "cliente"}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (erro) {
+      console.error("Erro ao gerar PDF da anamnese:", erro);
+      alert("Erro ao gerar PDF da anamnese.");
     }
-
-    const { data: respostasSalvas } = await supabase
-      .from("anamnese_respostas")
-      .select("campo_id, resposta")
-      .eq("anamnese_id", anamnesePreenchida.id);
-
-    const respostasPdf: Record<string, string> = {};
-
-    (respostasSalvas || []).forEach((item: any) => {
-      const campo = campos.find((c) => c.id === item?.campo_id);
-      const label = campo?.label || "Campo";
-      respostasPdf[label] = item?.resposta || "";
-    });
-
-    const blob = gerarPdfBlob({
-      empresaNome: cliente?.empresa_nome || "Seu estabelecimento",
-      clienteNome: cliente?.nome || "Cliente",
-      respostas: respostasPdf,
-      assinatura: anamnesePreenchida?.assinatura || "",
-      hash: anamnesePreenchida?.hash || "",
-      ip: anamnesePreenchida?.ip || "",
-      data:
-        anamnesePreenchida?.data_assinatura ||
-        anamnesePreenchida?.preenchido_em ||
-        new Date().toISOString(),
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `anamnese-${cliente?.nome || "cliente"}.pdf`;
-    link.click();
-    URL.revokeObjectURL(url);
   }
 
   async function salvarAssinaturaComplementar() {
@@ -1626,6 +1911,7 @@ export default function MeuEspaco() {
 
           return {
             anamnese_id: anamnese.id,
+            cliente_id: cliente.id,
             campo_id: campo.id,
             resposta:
               campo.tipo === "sim_nao_justificativa" && resposta === "Sim"

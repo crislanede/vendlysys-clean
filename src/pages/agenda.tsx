@@ -14,6 +14,10 @@ import {
   buscarAlertasAnamneseCliente,
   type AlertaAnamneseItem,
 } from "../lib/anamneseAlerta";
+import {
+  criarUrlFotoAtendimento,
+  uploadFotoAtendimento,
+} from "../lib/storage/uploadFotoAtendimento";
 
 type Cliente = {
   id: string;
@@ -59,6 +63,7 @@ type Agendamento = {
   telefone?: string | null;
   token?: string | null;
   token_cliente?: string | null;
+  alertasAnamnese?: AlertaAnamneseItem[];
   duracao_minutos?: number | null;
   created_at?: string | null;
 };
@@ -73,6 +78,19 @@ type PacoteDisponivel = {
   quantidade_usada: number;
   restante: number;
   data_fim: string | null;
+};
+
+type FotoAtendimento = {
+  id: string;
+  agendamento_id: string;
+  empresa_id: string;
+  cliente_id?: string | null;
+  url_foto?: string | null;
+  caminho?: string | null;
+  tipo?: "geral" | "antes" | "depois" | string | null;
+  descricao?: string | null;
+  created_at?: string | null;
+  signedUrl?: string;
 };
 
 const HORARIOS = [
@@ -291,6 +309,60 @@ function montarMensagemAniversario(nome: string) {
   return `Olá, ${nome}! 🎉 Passando para te desejar um feliz aniversário! Temos uma condição especial para você este mês. 💝`;
 }
 
+function caminhoDaFoto(foto: FotoAtendimento) {
+  return foto.caminho || foto.url_foto || "";
+}
+
+const PALAVRAS_ALERTA_CUIDADO = [
+  "diabetes",
+  "diabete",
+  "diabético",
+  "diabetico",
+  "micose",
+  "fungo",
+  "fungos",
+  "unha encravada",
+  "encravada",
+  "ferida",
+  "inflamação",
+  "inflamacao",
+  "infecção",
+  "infeccao",
+];
+
+function textoDoAlerta(alerta: AlertaAnamneseItem) {
+  return Object.values(alerta as any)
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function filtrarAlertasDeCuidado(alertas: AlertaAnamneseItem[]) {
+  return alertas.filter((alerta) => {
+    const texto = textoDoAlerta(alerta);
+    return PALAVRAS_ALERTA_CUIDADO.some((palavra) => texto.includes(palavra));
+  });
+}
+
+function rotuloAlertaAgenda(alerta: AlertaAnamneseItem) {
+  const item = alerta as any;
+  const textoBase =
+    item.pergunta ||
+    item.campo ||
+    item.titulo ||
+    item.label ||
+    item.nome ||
+    textoDoAlerta(alerta);
+
+  return String(textoBase || "Alerta de anamnese")
+    .replace(/possui/gi, "")
+    .replace(/alguma/gi, "")
+    .replace(/algum/gi, "")
+    .replace(/\?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function AgendaPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
@@ -326,6 +398,24 @@ export default function AgendaPage() {
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [statusPagamento, setStatusPagamento] = useState("pago");
   const [loadingFinalizar, setLoadingFinalizar] = useState(false);
+  const [fotoAtendimento, setFotoAtendimento] = useState<File | null>(null);
+  const [previewFotoAtendimento, setPreviewFotoAtendimento] = useState("");
+  const [alertasFinalizacao, setAlertasFinalizacao] = useState<AlertaAnamneseItem[]>([]);
+  const [loadingAlertasFinalizacao, setLoadingAlertasFinalizacao] = useState(false);
+  const [cuidadoEspecial, setCuidadoEspecial] = useState("nenhum");
+  const [acrescimoCuidado, setAcrescimoCuidado] = useState("");
+  const [observacaoCuidado, setObservacaoCuidado] = useState("");
+
+  const [modalFotosAberto, setModalFotosAberto] = useState(false);
+  const [agendamentoFotos, setAgendamentoFotos] =
+    useState<Agendamento | null>(null);
+  const [fotosAtendimento, setFotosAtendimento] = useState<FotoAtendimento[]>([]);
+  const [loadingFotos, setLoadingFotos] = useState(false);
+  const [loadingAdicionarFoto, setLoadingAdicionarFoto] = useState(false);
+  const [fotoAmpliada, setFotoAmpliada] = useState<FotoAtendimento | null>(null);
+  const [loadingExcluirFoto, setLoadingExcluirFoto] = useState(false);
+  const [tipoFotoAtendimento, setTipoFotoAtendimento] =
+    useState<"geral" | "antes" | "depois">("geral");
 
   const [modalReagendarAberto, setModalReagendarAberto] = useState(false);
   const [agendamentoReagendar, setAgendamentoReagendar] =
@@ -349,38 +439,68 @@ export default function AgendaPage() {
   async function carregarTudo() {
     if (!empresaId) return;
 
-    const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
-      await Promise.all([
-        supabase
-          .from("clientes")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("nome"),
-        supabase
-          .from("servicos")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("nome"),
-        supabase
-          .from("profissionais")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("nome"),
-        supabase
-          .from("agendamentos")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("data", { ascending: true })
-          .order("horario", { ascending: true }),
-      ]);
+    console.time("carregarTudo agenda");
 
-    const clientesData = (clientesRes.data || []) as Cliente[];
+    try {
+      const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
+        await Promise.all([
+          supabase
+            .from("clientes")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("nome"),
+          supabase
+            .from("servicos")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("nome"),
+          supabase
+            .from("profissionais")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("nome"),
+          supabase
+            .from("agendamentos")
+            .select("*")
+            .eq("empresa_id", empresaId)
+            .order("data", { ascending: true })
+            .order("horario", { ascending: true }),
+        ]);
 
-    setClientes(clientesData);
-    setAniversariantes(filtrarAniversariantesDoMes(clientesData));
-    setServicos((servicosRes.data || []) as Servico[]);
-    setProfissionais((profissionaisRes.data || []) as Profissional[]);
-    setAgendamentos((agendamentosRes.data || []) as Agendamento[]);
+      if (clientesRes.error) {
+        console.error("Erro ao carregar clientes:", clientesRes.error);
+      }
+
+      if (servicosRes.error) {
+        console.error("Erro ao carregar serviços:", servicosRes.error);
+      }
+
+      if (profissionaisRes.error) {
+        console.error("Erro ao carregar profissionais:", profissionaisRes.error);
+      }
+
+      if (agendamentosRes.error) {
+        console.error("Erro ao carregar agendamentos:", agendamentosRes.error);
+      }
+
+      const clientesData = (clientesRes.data || []) as Cliente[];
+      const agendamentosBase = (agendamentosRes.data || []) as Agendamento[];
+
+      const agendamentosOtimizados = agendamentosBase.map((agendamento) => ({
+        ...agendamento,
+        alertasAnamnese: agendamento.alertasAnamnese || [],
+      }));
+
+      setClientes(clientesData);
+      setAniversariantes(filtrarAniversariantesDoMes(clientesData));
+      setServicos((servicosRes.data || []) as Servico[]);
+      setProfissionais((profissionaisRes.data || []) as Profissional[]);
+      setAgendamentos(agendamentosOtimizados);
+    } catch (error) {
+      console.error("Erro inesperado ao carregar agenda:", error);
+    } finally {
+      console.timeEnd("carregarTudo agenda");
+    }
   }
 
   function abrirWhatsAppAniversario(cliente: Cliente) {
@@ -709,7 +829,30 @@ export default function AgendaPage() {
     setUsarPacote(false);
     setSaldoPacoteSelecionadoId("");
     setPacotesDisponiveis([]);
+    setFotoAtendimento(null);
+    setPreviewFotoAtendimento("");
+    setAlertasFinalizacao([]);
+    setCuidadoEspecial("nenhum");
+    setAcrescimoCuidado("");
+    setObservacaoCuidado("");
     setValorPagamento(valorPadraoDoAgendamento(agendamento));
+
+    const clienteFinalizacao =
+      clientes.find((item) => item.id === agendamento.cliente_id) ||
+      clientes.find((item) => item.nome === agendamento.cliente);
+
+    if (clienteFinalizacao) {
+      setLoadingAlertasFinalizacao(true);
+      try {
+        const alertasCliente = await buscarAlertasAnamneseCliente({
+          id: clienteFinalizacao.id,
+          nome: clienteFinalizacao.nome,
+        });
+        setAlertasFinalizacao(alertasCliente);
+      } finally {
+        setLoadingAlertasFinalizacao(false);
+      }
+    }
 
     const pacotes = await buscarPacotesDisponiveis(agendamento);
     setPacotesDisponiveis(pacotes);
@@ -718,6 +861,188 @@ export default function AgendaPage() {
     }
 
     setModalFinalizarAberto(true);
+  }
+
+  async function abrirModalFotosAtendimento(agendamento: Agendamento) {
+    setAgendamentoFotos(agendamento);
+    setFotosAtendimento([]);
+    setTipoFotoAtendimento("geral");
+    setModalFotosAberto(true);
+    setLoadingFotos(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("agendamento_fotos")
+        .select("*")
+        .eq("agendamento_id", agendamento.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        alert(`Erro ao buscar fotos: ${error.message}`);
+        return;
+      }
+
+      const fotosComUrl = await Promise.all(
+        ((data || []) as FotoAtendimento[]).map(async (foto) => {
+          const caminho = caminhoDaFoto(foto);
+
+          if (!caminho) {
+            return foto;
+          }
+
+          try {
+            const signedUrl = await criarUrlFotoAtendimento(caminho);
+            return { ...foto, signedUrl };
+          } catch {
+            // Mantém o registro visível mesmo quando o arquivo físico não existe mais no Storage.
+            return foto;
+          }
+        }),
+      );
+
+      setFotosAtendimento(fotosComUrl);
+    } finally {
+      setLoadingFotos(false);
+    }
+  }
+
+  async function adicionarFotoAoAgendamento(
+    agendamento: Agendamento,
+    file: File | null | undefined,
+    tipo: "geral" | "antes" | "depois" = "geral",
+  ) {
+    if (!file) return;
+
+    if (!empresaId) {
+      alert("Empresa não encontrada para salvar a foto.");
+      return;
+    }
+
+    setLoadingAdicionarFoto(true);
+
+    try {
+      const caminhoFoto = await uploadFotoAtendimento(file, empresaId);
+
+      const clienteId =
+        agendamento.cliente_id ||
+        clientes.find((item) => item.nome === agendamento.cliente)?.id ||
+        null;
+
+      const { error } = await supabase.from("agendamento_fotos").insert([
+        {
+          agendamento_id: agendamento.id,
+          empresa_id: empresaId,
+          cliente_id: clienteId,
+          url_foto: caminhoFoto,
+          caminho: caminhoFoto,
+          tipo,
+          descricao:
+            tipo === "antes"
+              ? `Antes do atendimento de ${agendamento.cliente || "cliente"}`
+              : tipo === "depois"
+                ? `Depois do atendimento de ${agendamento.cliente || "cliente"}`
+                : `Foto do atendimento de ${agendamento.cliente || "cliente"}`,
+        },
+      ]);
+
+      if (error) {
+        alert(`Erro ao salvar foto no banco: ${error.message}`);
+        return;
+      }
+
+      await abrirModalFotosAtendimento(agendamento);
+      alert("Foto salva com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao enviar foto:", err);
+      alert(err?.message || "Erro ao enviar foto do atendimento.");
+    } finally {
+      setLoadingAdicionarFoto(false);
+    }
+  }
+
+
+  async function excluirFotoAtendimento(foto: FotoAtendimento) {
+    if (!agendamentoFotos) return;
+
+    const confirmar = window.confirm(
+      "Deseja excluir esta foto do atendimento? Esta ação não poderá ser desfeita.",
+    );
+
+    if (!confirmar) return;
+
+    setLoadingExcluirFoto(true);
+
+    try {
+      const caminho = caminhoDaFoto(foto);
+
+      if (caminho) {
+        const { error: erroStorage } = await supabase.storage
+          .from("fotos-atendimentos")
+          .remove([caminho]);
+
+        if (erroStorage) {
+          // Mesmo se o arquivo já não existir no Storage, removemos o registro do banco para limpar a galeria.
+          console.warn("Não foi possível remover a foto do Storage:", erroStorage.message);
+        }
+      }
+
+      const { error: erroBanco } = await supabase
+        .from("agendamento_fotos")
+        .delete()
+        .eq("id", foto.id);
+
+      if (erroBanco) {
+        alert(`Erro ao excluir foto: ${erroBanco.message}`);
+        return;
+      }
+
+      setFotoAmpliada(null);
+      await abrirModalFotosAtendimento(agendamentoFotos);
+    } catch (err: any) {
+      console.error("Erro ao excluir foto:", err);
+      alert(err?.message || "Erro ao excluir foto do atendimento.");
+    } finally {
+      setLoadingExcluirFoto(false);
+    }
+  }
+
+  async function enviarFotoWhatsAppCliente(foto?: FotoAtendimento | null) {
+    if (!agendamentoFotos) return;
+
+    const telefone = telefoneDoAgendamento(agendamentoFotos);
+
+    if (!telefone) {
+      alert("Cliente sem telefone cadastrado para envio pelo WhatsApp.");
+      return;
+    }
+
+    let linkFoto = foto?.signedUrl || "";
+
+    if (foto && !linkFoto) {
+      const caminho = caminhoDaFoto(foto);
+      if (caminho) {
+        try {
+          linkFoto = await criarUrlFotoAtendimento(caminho);
+        } catch {
+          linkFoto = "";
+        }
+      }
+    }
+
+    const mensagem = `Olá, ${agendamentoFotos.cliente || "cliente"}! 😊
+
+Seu atendimento foi registrado com sucesso.
+
+Serviço: ${agendamentoFotos.servico || "não informado"}
+Data: ${formatarData(agendamentoFotos.data)} às ${agendamentoFotos.horario || ""}
+
+${linkFoto ? `Veja a foto do atendimento aqui:
+${linkFoto}` : "As fotos do atendimento já estão registradas no sistema."}
+
+Obrigada pela preferência! 💜`;
+
+    const numero = normalizarTelefoneWhatsapp(telefone);
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`, "_blank");
   }
 
   async function buscarPacotesDisponiveis(
@@ -1023,7 +1348,9 @@ ${linkMeuEspaco}`;
         }
       }
 
-      const valorFinal = usarPacote ? 0 : Number(valorPagamento || 0);
+      const acrescimoFinal = usarPacote ? 0 : Number(acrescimoCuidado || 0);
+      const valorBaseFinal = usarPacote ? 0 : Number(valorPagamento || 0);
+      const valorFinal = Number((valorBaseFinal + acrescimoFinal).toFixed(2));
       const formaFinal = usarPacote ? "pacote" : formaPagamento;
       const statusFinal = usarPacote ? "pago" : statusPagamento;
       const agora = new Date().toISOString();
@@ -1073,9 +1400,16 @@ ${linkMeuEspaco}`;
         observacoes:
           usarPacote && pacoteSelecionado
             ? `Baixado 1 uso do pacote ${pacoteSelecionado.pacote_nome}. Saldo anterior: ${pacoteSelecionado.restante}/${pacoteSelecionado.quantidade_total}.`
-            : comissaoPercentual > 0
-              ? `Comissão do profissional: ${comissaoPercentual}% (${comissaoValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`
-              : null,
+            : [
+                comissaoPercentual > 0
+                  ? `Comissão do profissional: ${comissaoPercentual}% (${comissaoValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`
+                  : "",
+                cuidadoEspecial !== "nenhum"
+                  ? `Cuidado especial informado: ${cuidadoEspecial}. Acréscimo: ${acrescimoFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. ${observacaoCuidado || ""}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ") || null,
       };
 
       const { data: existente, error: erroBusca } = await supabase
@@ -1120,9 +1454,16 @@ ${linkMeuEspaco}`;
             observacao:
               usarPacote && pacoteSelecionado
                 ? `Pagamento via pacote ${pacoteSelecionado.pacote_nome}`
-                : comissaoPercentual > 0
-                  ? `Comissão do profissional: ${comissaoPercentual}%`
-                  : null,
+                : [
+                    comissaoPercentual > 0
+                      ? `Comissão do profissional: ${comissaoPercentual}%`
+                      : "",
+                    cuidadoEspecial !== "nenhum"
+                      ? `Cuidado especial: ${cuidadoEspecial}. Acréscimo: ${acrescimoFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || null,
           },
         ]);
 
@@ -1212,6 +1553,46 @@ ${linkMeuEspaco}`;
         }
       }
 
+      if (fotoAtendimento && empresaId) {
+        try {
+          const caminhoFoto = await uploadFotoAtendimento(
+            fotoAtendimento,
+            empresaId,
+          );
+
+          const { error: erroFoto } = await supabase
+            .from("agendamento_fotos")
+            .insert([
+              {
+                agendamento_id: agendamentoSelecionado.id,
+                empresa_id: empresaId,
+                cliente_id: agendamentoSelecionado.cliente_id || null,
+                url_foto: caminhoFoto,
+                caminho: caminhoFoto,
+                tipo: tipoFotoAtendimento,
+                descricao:
+                  tipoFotoAtendimento === "antes"
+                    ? `Antes do atendimento de ${agendamentoSelecionado.cliente || "cliente"}`
+                    : tipoFotoAtendimento === "depois"
+                      ? `Depois do atendimento de ${agendamentoSelecionado.cliente || "cliente"}`
+                      : `Foto do atendimento de ${agendamentoSelecionado.cliente || "cliente"}`,
+              },
+            ]);
+
+          if (erroFoto) {
+            console.warn(
+              "Atendimento finalizado, mas não foi possível salvar a foto:",
+              erroFoto.message,
+            );
+          }
+        } catch (erroFoto) {
+          console.warn(
+            "Atendimento finalizado, mas não foi possível enviar a foto:",
+            erroFoto,
+          );
+        }
+      }
+
       alert(
         "Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.",
       );
@@ -1226,6 +1607,13 @@ ${linkMeuEspaco}`;
       setValorPagamento("");
       setFormaPagamento("pix");
       setStatusPagamento("pago");
+      setFotoAtendimento(null);
+      setPreviewFotoAtendimento("");
+      setTipoFotoAtendimento("geral");
+      setAlertasFinalizacao([]);
+      setCuidadoEspecial("nenhum");
+      setAcrescimoCuidado("");
+      setObservacaoCuidado("");
       await carregarTudo();
     } catch (error: any) {
       console.error(error);
@@ -1275,6 +1663,25 @@ ${linkMeuEspaco}`;
       ).length,
     };
   }, [agendamentosDoDia]);
+
+
+  const fotosAntes = useMemo(
+    () => fotosAtendimento.filter((foto) => foto.tipo === "antes"),
+    [fotosAtendimento],
+  );
+
+  const fotosDepois = useMemo(
+    () => fotosAtendimento.filter((foto) => foto.tipo === "depois"),
+    [fotosAtendimento],
+  );
+
+  const fotosGerais = useMemo(
+    () =>
+      fotosAtendimento.filter(
+        (foto) => !foto.tipo || foto.tipo === "geral",
+      ),
+    [fotosAtendimento],
+  );
 
   function moveDate(days: number) {
     const current = new Date(`${selectedDate}T00:00:00`);
@@ -1606,9 +2013,29 @@ ${linkMeuEspaco}`;
                               {item.observacoes}
                             </p>
                           )}
+
+                          {item.alertasAnamnese &&
+                            item.alertasAnamnese.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {item.alertasAnamnese.slice(0, 4).map((alerta, index) => (
+                                  <span
+                                    key={`${item.id}-alerta-${index}`}
+                                    className="rounded-full border border-red-200 bg-white/90 px-3 py-1 text-[11px] font-black text-red-700 shadow-sm"
+                                  >
+                                    ⚠️ {rotuloAlertaAgenda(alerta)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                         </div>
 
                         <div className="flex flex-wrap gap-2 lg:justify-end">
+                          <SecondaryButton
+                            onClick={() => void abrirModalFotosAtendimento(item)}
+                          >
+                            Ver fotos
+                          </SecondaryButton>
+
                           {item.status !== "finalizado" &&
                             item.status !== "cancelado" && (
                               <>
@@ -1878,6 +2305,348 @@ ${linkMeuEspaco}`;
         </div>
       )}
 
+      {modalFotosAberto && agendamentoFotos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-6">
+          <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl">
+            <div className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-950 via-slate-900 to-purple-950 p-5 text-white md:flex-row md:items-center md:justify-between md:p-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-orange-300">
+                  Galeria do atendimento
+                </p>
+                <h2 className="mt-1 text-2xl font-black md:text-3xl">
+                  {agendamentoFotos.cliente || "Cliente"}
+                </h2>
+                <p className="mt-1 text-sm text-white/70">
+                  {agendamentoFotos.servico || "Serviço"} · {formatarData(agendamentoFotos.data)} às {agendamentoFotos.horario}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white">
+                  {fotosAtendimento.length} foto(s)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void enviarFotoWhatsAppCliente(fotosAtendimento.find((foto) => !!foto.signedUrl) || null)}
+                  className="rounded-2xl bg-green-500 px-4 py-2 text-sm font-black text-white hover:bg-green-600"
+                >
+                  WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalFotosAberto(false);
+                    setAgendamentoFotos(null);
+                    setFotosAtendimento([]);
+                    setFotoAmpliada(null);
+                  }}
+                  className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-900 hover:bg-slate-100"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-auto p-4 md:p-6">
+              <div className="mb-6 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+                <div className="rounded-3xl border border-dashed border-orange-200 bg-orange-50 p-4 shadow-sm">
+                  <label className="block text-sm font-black text-slate-900">
+                    Adicionar foto neste atendimento
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Use a câmera do celular ou escolha uma imagem. A foto é opcional.
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {[
+                      { label: "Geral", value: "geral" },
+                      { label: "Antes", value: "antes" },
+                      { label: "Depois", value: "depois" },
+                    ].map((opcao) => {
+                      const ativo = tipoFotoAtendimento === opcao.value;
+                      return (
+                        <button
+                          key={opcao.value}
+                          type="button"
+                          onClick={() =>
+                            setTipoFotoAtendimento(
+                              opcao.value as "geral" | "antes" | "depois",
+                            )
+                          }
+                          className={`rounded-2xl px-3 py-2 text-xs font-black transition ${
+                            ativo
+                              ? "bg-orange-600 text-white shadow-sm"
+                              : "bg-white text-slate-700 ring-1 ring-orange-200"
+                          }`}
+                        >
+                          {opcao.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={loadingAdicionarFoto}
+                    onChange={async (e) => {
+                      const input = e.target as HTMLInputElement;
+                      const file = input.files?.[0];
+                      if (!file || !agendamentoFotos) return;
+
+                      await adicionarFotoAoAgendamento(
+                        agendamentoFotos,
+                        file,
+                        tipoFotoAtendimento,
+                      );
+                    }}
+                    className="mt-4 w-full rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm outline-none"
+                  />
+                  {loadingAdicionarFoto && (
+                    <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-orange-700">
+                      Enviando foto...
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black text-slate-900">Dica de uso</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Registre antes/depois, evolução do serviço ou observações visuais do atendimento. As imagens ficam privadas no Storage e são abertas por link seguro.
+                  </p>
+                </div>
+              </div>
+
+              {!loadingFotos && fotosAtendimento.length > 0 && (
+                <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-sm font-black uppercase tracking-[0.18em] text-purple-700">
+                        Antes e depois
+                      </p>
+                      <h3 className="text-xl font-black text-slate-900">
+                        Comparativo visual do atendimento
+                      </h3>
+                    </div>
+                    <p className="text-xs font-bold text-slate-500">
+                      {fotosAntes.length} antes · {fotosDepois.length} depois
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-3xl bg-slate-50 p-3">
+                      <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                        Antes
+                      </p>
+                      {fotosAntes[0]?.signedUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setFotoAmpliada(fotosAntes[0])}
+                          className="block w-full overflow-hidden rounded-3xl bg-white text-left shadow-sm"
+                        >
+                          <img
+                            src={fotosAntes[0].signedUrl}
+                            alt="Foto antes do atendimento"
+                            className="h-72 w-full object-cover"
+                          />
+                        </button>
+                      ) : (
+                        <div className="flex h-72 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white text-center text-sm font-bold text-slate-400">
+                          Nenhuma foto marcada como antes.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-3xl bg-slate-50 p-3">
+                      <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                        Depois
+                      </p>
+                      {fotosDepois[0]?.signedUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setFotoAmpliada(fotosDepois[0])}
+                          className="block w-full overflow-hidden rounded-3xl bg-white text-left shadow-sm"
+                        >
+                          <img
+                            src={fotosDepois[0].signedUrl}
+                            alt="Foto depois do atendimento"
+                            className="h-72 w-full object-cover"
+                          />
+                        </button>
+                      ) : (
+                        <div className="flex h-72 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white text-center text-sm font-bold text-slate-400">
+                          Nenhuma foto marcada como depois.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {loadingFotos ? (
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+                  Carregando fotos...
+                </div>
+              ) : fotosAtendimento.length === 0 ? (
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-8 text-center">
+                  <p className="text-base font-black text-slate-900">
+                    Nenhuma foto cadastrada ainda
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Adicione a primeira imagem deste atendimento acima.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {[...fotosAntes, ...fotosDepois, ...fotosGerais].map((foto, index) => (
+                    <div
+                      key={foto.id}
+                      className="group overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+                    >
+                      {foto.signedUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setFotoAmpliada(foto)}
+                          className="relative block w-full overflow-hidden bg-slate-100 text-left"
+                        >
+                          <img
+                            src={foto.signedUrl}
+                            alt={foto.descricao || "Foto do atendimento"}
+                            className="h-64 w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-white opacity-0 transition group-hover:opacity-100">
+                            <p className="text-sm font-bold">Clique para ampliar</p>
+                          </div>
+                          <div className="absolute left-3 top-3 flex gap-2">
+                            <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-black text-slate-900">
+                              #{index + 1}
+                            </span>
+                            <span className="rounded-full bg-purple-700/90 px-3 py-1 text-xs font-black uppercase text-white">
+                              {foto.tipo || "geral"}
+                            </span>
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="flex h-64 items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
+                          Não foi possível carregar esta foto.
+                        </div>
+                      )}
+
+                      <div className="space-y-3 p-4">
+                        <div>
+                          <p className="text-sm font-black text-slate-900">
+                            {foto.descricao || "Foto do atendimento"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {foto.created_at
+                              ? new Date(foto.created_at).toLocaleString("pt-BR")
+                              : ""}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          {foto.signedUrl && (
+                            <a
+                              href={foto.signedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-center text-xs font-black text-slate-700 hover:bg-slate-50"
+                            >
+                              Abrir
+                            </a>
+                          )}
+                          {foto.signedUrl && (
+                            <button
+                              type="button"
+                              onClick={() => void enviarFotoWhatsAppCliente(foto)}
+                              className="flex-1 rounded-2xl bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100"
+                            >
+                              WhatsApp
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={loadingExcluirFoto}
+                            onClick={() => void excluirFotoAtendimento(foto)}
+                            className="flex-1 rounded-2xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100 disabled:opacity-60"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fotoAmpliada && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4">
+          <div className="relative w-full max-w-5xl">
+            <button
+              type="button"
+              onClick={() => setFotoAmpliada(null)}
+              className="absolute right-0 top-0 z-10 -translate-y-12 rounded-full bg-white px-4 py-2 text-sm font-black text-slate-900"
+            >
+              Fechar
+            </button>
+
+            {fotoAmpliada.signedUrl && (
+              <img
+                src={fotoAmpliada.signedUrl}
+                alt={fotoAmpliada.descricao || "Foto ampliada"}
+                className="max-h-[82vh] w-full rounded-3xl object-contain shadow-2xl"
+              />
+            )}
+
+            <div className="mt-4 flex flex-col gap-3 rounded-3xl bg-white p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-black text-slate-900">
+                  {fotoAmpliada.descricao || "Foto do atendimento"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {fotoAmpliada.created_at
+                    ? new Date(fotoAmpliada.created_at).toLocaleString("pt-BR")
+                    : ""}
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                {fotoAmpliada.signedUrl && (
+                  <a
+                    href={fotoAmpliada.signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700"
+                  >
+                    Abrir original
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void enviarFotoWhatsAppCliente(fotoAmpliada)}
+                  className="rounded-2xl bg-green-600 px-4 py-2 text-sm font-black text-white"
+                >
+                  Enviar WhatsApp
+                </button>
+                <button
+                  type="button"
+                  disabled={loadingExcluirFoto}
+                  onClick={() => void excluirFotoAtendimento(fotoAmpliada)}
+                  className="rounded-2xl bg-red-600 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
+                >
+                  Excluir foto
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalFinalizarAberto && agendamentoSelecionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
@@ -1905,6 +2674,72 @@ ${linkMeuEspaco}`;
                 <strong>Data:</strong> {agendamentoSelecionado.data} às{" "}
                 {agendamentoSelecionado.horario}
               </p>
+            </div>
+
+            {loadingAlertasFinalizacao && (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                Verificando alertas da anamnese...
+              </div>
+            )}
+
+            {!loadingAlertasFinalizacao && filtrarAlertasDeCuidado(alertasFinalizacao).length > 0 && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-black">Atenção: cuidado especial informado na anamnese</p>
+                <p className="mt-1 text-xs">
+                  Foram encontrados alertas que podem exigir atendimento diferenciado, como diabetes, micose/fungo ou unha encravada. O sistema não faz diagnóstico; use esta informação apenas como alerta operacional.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {filtrarAlertasDeCuidado(alertasFinalizacao).slice(0, 4).map((alerta, index) => (
+                    <div key={index} className="rounded-xl bg-white/70 px-3 py-2 text-xs">
+                      {textoDoAlerta(alerta)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-black text-amber-900">Cuidado especial / ajuste de preço</p>
+              <p className="mt-1 text-xs text-amber-700">
+                Use quando o atendimento exigir mais tempo, materiais ou técnica diferenciada.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <select
+                  value={cuidadoEspecial}
+                  onChange={(e) => setCuidadoEspecial(e.target.value)}
+                  disabled={usarPacote}
+                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                >
+                  <option value="nenhum">Sem cuidado especial</option>
+                  <option value="diabetes">Diabetes</option>
+                  <option value="micose/fungo">Micose / fungo</option>
+                  <option value="unha encravada">Unha encravada</option>
+                  <option value="outro">Outro cuidado especial</option>
+                </select>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={acrescimoCuidado}
+                  onChange={(e) => setAcrescimoCuidado(e.target.value)}
+                  disabled={usarPacote || cuidadoEspecial === "nenhum"}
+                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                  placeholder="Acréscimo R$ 0,00"
+                />
+              </div>
+              <textarea
+                value={observacaoCuidado}
+                onChange={(e) => setObservacaoCuidado(e.target.value)}
+                disabled={usarPacote || cuidadoEspecial === "nenhum"}
+                className="mt-3 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                placeholder="Observação interna sobre o cuidado especial"
+              />
+              {!usarPacote && cuidadoEspecial !== "nenhum" && (
+                <p className="mt-2 text-xs font-bold text-amber-800">
+                  Total previsto: {(Number(valorPagamento || 0) + Number(acrescimoCuidado || 0)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+              )}
             </div>
 
             {pacotesDisponiveis.length > 0 && (
@@ -2018,6 +2853,90 @@ ${linkMeuEspaco}`;
                   <option value="pendente">Pendente</option>
                 </select>
               </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Foto do atendimento (opcional)
+              </label>
+              <p className="mb-3 text-xs text-slate-500">
+                Tire ou envie uma foto do serviço prestado. Se não quiser anexar
+                agora, é só finalizar normalmente.
+              </p>
+
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {[
+                  { label: "Geral", value: "geral" },
+                  { label: "Antes", value: "antes" },
+                  { label: "Depois", value: "depois" },
+                ].map((opcao) => {
+                  const ativo = tipoFotoAtendimento === opcao.value;
+                  return (
+                    <button
+                      key={opcao.value}
+                      type="button"
+                      onClick={() =>
+                        setTipoFotoAtendimento(
+                          opcao.value as "geral" | "antes" | "depois",
+                        )
+                      }
+                      className={`rounded-2xl px-3 py-2 text-xs font-black transition ${
+                        ativo
+                          ? "bg-orange-600 text-white shadow-sm"
+                          : "bg-slate-50 text-slate-700 ring-1 ring-slate-200"
+                      }`}
+                    >
+                      {opcao.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setFotoAtendimento(file);
+
+                  if (previewFotoAtendimento) {
+                    URL.revokeObjectURL(previewFotoAtendimento);
+                  }
+
+                  setPreviewFotoAtendimento(
+                    file ? URL.createObjectURL(file) : "",
+                  );
+                }}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700"
+              />
+
+              {previewFotoAtendimento && (
+                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+                  <img
+                    src={previewFotoAtendimento}
+                    alt="Prévia da foto do atendimento"
+                    className="h-20 w-20 rounded-2xl object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">
+                      {fotoAtendimento?.name}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (previewFotoAtendimento) {
+                          URL.revokeObjectURL(previewFotoAtendimento);
+                        }
+                        setFotoAtendimento(null);
+                        setPreviewFotoAtendimento("");
+                      }}
+                      className="mt-2 rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                    >
+                      Remover foto
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">

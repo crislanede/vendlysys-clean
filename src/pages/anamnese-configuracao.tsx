@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
 import {
@@ -33,6 +33,21 @@ type Modelo = {
   ativo: boolean;
 };
 
+const campoVazio = (ordem = 0, modeloId?: string | null): Campo => ({
+  id: crypto.randomUUID(),
+  modelo_id: modeloId || undefined,
+  nome_campo: "",
+  label: "",
+  tipo: "text",
+  obrigatorio: false,
+  placeholder: "",
+  ajuda: "",
+  opcoes: [],
+  ordem,
+  ativo: true,
+  gera_alerta: false,
+});
+
 export default function AnamneseConfiguracao() {
   const { empresaId: empresaIdAtiva, carregandoEmpresa } = useEmpresa();
 
@@ -49,6 +64,9 @@ export default function AnamneseConfiguracao() {
   const [ativo, setAtivo] = useState(true);
 
   const [campos, setCampos] = useState<Campo[]>([]);
+  const [modalCampoAberto, setModalCampoAberto] = useState(false);
+  const [campoModal, setCampoModal] = useState<Campo>(() => campoVazio(0));
+  const [campoEditandoId, setCampoEditandoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (carregandoEmpresa) return;
@@ -99,7 +117,6 @@ export default function AnamneseConfiguracao() {
         console.warn("Empresa não encontrada para carregar a anamnese.");
         setModeloId(null);
         setCampos([]);
-        setLoading(false);
         return;
       }
 
@@ -112,7 +129,6 @@ export default function AnamneseConfiguracao() {
 
       if (modeloError) {
         console.error("Erro ao carregar modelo:", modeloError);
-        setLoading(false);
         return;
       }
 
@@ -126,7 +142,6 @@ export default function AnamneseConfiguracao() {
         setObrigatoria(true);
         setAtivo(true);
         setCampos([]);
-        setLoading(false);
         return;
       }
 
@@ -148,7 +163,6 @@ export default function AnamneseConfiguracao() {
       if (camposError) {
         console.error("Erro ao carregar campos:", camposError);
         setCampos([]);
-        setLoading(false);
         return;
       }
 
@@ -181,26 +195,70 @@ export default function AnamneseConfiguracao() {
     }
   }
 
-  function adicionarCampo() {
-    setCampos((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        modelo_id: modeloId || undefined,
-        nome_campo: "",
-        label: "",
-        tipo: "text",
-        obrigatorio: false,
-        placeholder: "",
-        ajuda: "",
-        opcoes: [],
-        ordem: prev.length,
-        ativo: true,
-        gera_alerta: false,
-      },
-    ]);
+  function abrirModalNovoCampo() {
+    setCampoEditandoId(null);
+    setCampoModal(campoVazio(campos.length, modeloId));
+    setModalCampoAberto(true);
   }
 
+  function abrirModalEditarCampo(campo: Campo) {
+    setCampoEditandoId(campo.id);
+    setCampoModal({ ...campo, opcoes: [...(campo.opcoes || [])] });
+    setModalCampoAberto(true);
+  }
+
+  function salvarCampoModal() {
+    const pergunta = campoModal.label.trim();
+    const nomeInterno = normalizarNomeCampo(campoModal.nome_campo, pergunta);
+
+    if (!pergunta) {
+      alert("Preencha a pergunta do campo.");
+      return;
+    }
+
+    if (!nomeInterno) {
+      alert("Preencha o nome interno do campo.");
+      return;
+    }
+
+    const duplicado = campos.some(
+      (campo) =>
+        campo.id !== campoEditandoId &&
+        campo.nome_campo.trim().toLowerCase() === nomeInterno.toLowerCase()
+    );
+
+    if (duplicado) {
+      alert(`Já existe um campo com o nome interno "${nomeInterno}".`);
+      return;
+    }
+
+    const campoFinal: Campo = {
+      ...campoModal,
+      nome_campo: nomeInterno,
+      label: pergunta,
+      tipo: tipoSeguro(campoModal.tipo),
+      placeholder: campoModal.placeholder || "",
+      ajuda: campoModal.ajuda || "",
+      opcoes:
+        tipoSeguro(campoModal.tipo) === "sim_nao_justificativa"
+          ? []
+          : campoModal.opcoes || [],
+      ativo: campoModal.ativo !== false,
+      gera_alerta: campoModal.gera_alerta ?? false,
+      ordem:
+        typeof campoModal.ordem === "number" ? campoModal.ordem : campos.length,
+    };
+
+    if (campoEditandoId) {
+      setCampos((prev) =>
+        prev.map((campo) => (campo.id === campoEditandoId ? campoFinal : campo))
+      );
+    } else {
+      setCampos((prev) => [...prev, { ...campoFinal, ordem: prev.length }]);
+    }
+
+    setModalCampoAberto(false);
+  }
 
   function adicionarAvaliacaoProfissional() {
     setCampos((prev) => [
@@ -236,27 +294,27 @@ export default function AnamneseConfiguracao() {
     ]);
   }
 
-  function atualizarCampo(id: string, campo: Partial<Campo>) {
+ 
+
+  function removerCampo(id: string) {
+    // Não apagamos do banco para não quebrar respostas antigas.
+    // Ao salvar, campos removidos serão apenas marcados como inativos.
     setCampos((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...campo } : c))
+      prev
+        .map((c) => (c.id === id ? { ...c, ativo: false } : c))
+        .map((c, index) => ({ ...c, ordem: index }))
     );
   }
 
-  function removerCampo(id: string) {
-    setCampos((prev) =>
-      prev
-        .filter((c) => c.id !== id)
-        .map((c, index) => ({ ...c, ordem: index }))
-    );
+  function reativarCampo(id: string) {
+    setCampos((prev) => prev.map((c) => (c.id === id ? { ...c, ativo: true } : c)));
   }
 
   function exportarExcel() {
     baixarModeloExcelAnamnese();
   }
 
-  async function importarExcel(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
+  async function importarExcel(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -268,22 +326,34 @@ export default function AnamneseConfiguracao() {
       setTermoResponsabilidade(config.termo_responsabilidade);
       setObrigatoria(config.obrigatoria);
 
-      setCampos(
-        config.campos.map((campo, index) => ({
-          id: crypto.randomUUID(),
-          modelo_id: modeloId || undefined,
-          nome_campo: campo.nome_campo,
-          label: campo.label,
-          tipo: campo.tipo,
-          obrigatorio: campo.obrigatorio,
-          placeholder: campo.placeholder,
-          ajuda: campo.ajuda,
-          opcoes: campo.opcoes,
-          ordem: typeof campo.ordem === "number" ? campo.ordem : index,
-          ativo: campo.ativo ?? true,
-          gera_alerta: campo.gera_alerta ?? false,
-        }))
-      );
+      setCampos((prev) => {
+        const atuaisPorNome = new Map(
+          prev.map((campo) => [campo.nome_campo.trim().toLowerCase(), campo])
+        );
+
+        return config.campos.map((campo, index) => {
+          const nomeNormalizado = normalizarNomeCampo(
+            campo.nome_campo,
+            campo.label || `campo_${index + 1}`
+          );
+          const existente = atuaisPorNome.get(nomeNormalizado.toLowerCase());
+
+          return {
+            id: existente?.id || crypto.randomUUID(),
+            modelo_id: existente?.modelo_id || modeloId || undefined,
+            nome_campo: nomeNormalizado,
+            label: campo.label,
+            tipo: campo.tipo,
+            obrigatorio: campo.obrigatorio,
+            placeholder: campo.placeholder,
+            ajuda: campo.ajuda,
+            opcoes: campo.opcoes,
+            ordem: typeof campo.ordem === "number" ? campo.ordem : index,
+            ativo: campo.ativo ?? true,
+            gera_alerta: campo.gera_alerta ?? false,
+          };
+        });
+      });
 
       alert("Modelo importado com sucesso.");
     } catch (error) {
@@ -323,15 +393,18 @@ export default function AnamneseConfiguracao() {
       return false;
     }
 
-    if (campos.length === 0) {
-      alert("Adicione pelo menos um campo na ficha.");
+    const camposAtivos = campos.filter((campo) => campo.ativo !== false);
+
+    if (camposAtivos.length === 0) {
+      alert("Adicione pelo menos um campo ativo na ficha.");
       return false;
     }
 
     const vistos = new Set<string>();
 
-    for (const campo of campos) {
-      const nomeInterno = campo.nome_campo.trim().toLowerCase();
+    for (const campo of camposAtivos) {
+      const pergunta = perguntaSegura(campo, campo.ordem || 0);
+      const nomeInterno = normalizarNomeCampo(campo.nome_campo, pergunta);
 
       if (!nomeInterno) {
         alert("Todos os campos precisam ter Nome interno.");
@@ -364,7 +437,6 @@ export default function AnamneseConfiguracao() {
 
       if (!empresaIdParaSalvar) {
         alert("Não foi possível identificar a empresa para salvar a anamnese.");
-        setSalvando(false);
         return;
       }
 
@@ -392,7 +464,6 @@ export default function AnamneseConfiguracao() {
         if (error || !data) {
           console.error("Erro ao criar modelo:", error);
           alert("Erro ao salvar configuração da anamnese.");
-          setSalvando(false);
           return;
         }
 
@@ -416,63 +487,100 @@ export default function AnamneseConfiguracao() {
         if (error) {
           console.error("Erro ao atualizar modelo:", error);
           alert("Erro ao atualizar configuração da anamnese.");
-          setSalvando(false);
-          return;
-        }
-
-        const { error: deleteError } = await supabase
-          .from("anamnese_campos")
-          .delete()
-          .eq("modelo_id", idModelo);
-
-        if (deleteError) {
-          console.error("Erro ao limpar campos antigos:", deleteError);
-          alert("Erro ao atualizar os campos da anamnese.");
-          setSalvando(false);
           return;
         }
       }
 
-      const vistos = new Set<string>();
-
-      const payloadCampos = campos
-        .map((campo, index) => {
-          const pergunta = perguntaSegura(campo, index);
-          const nomeCampo = normalizarNomeCampo(campo.nome_campo, pergunta);
-          const tipo = tipoSeguro(campo.tipo);
-
-          return {
-            modelo_id: idModelo,
-            nome_campo: nomeCampo,
-            label: pergunta,
-            pergunta,
-            tipo,
-            obrigatorio: campo.obrigatorio,
-            placeholder: campo.placeholder || "",
-            ajuda: campo.ajuda || "",
-            opcoes:
-              tipo === "sim_nao_justificativa" ? [] : campo.opcoes || [],
-            ordem: index,
-            ativo: campo.ativo,
-            gera_alerta: campo.gera_alerta ?? false,
-          };
-        })
-        .filter((campo) => {
-          const chave = campo.nome_campo;
-          if (!chave || vistos.has(chave)) return false;
-          vistos.add(chave);
-          return true;
-        });
-
-      const { error: camposError } = await supabase
+      const camposBanco = await supabase
         .from("anamnese_campos")
-        .insert(payloadCampos);
+        .select("id, nome_campo")
+        .eq("modelo_id", idModelo);
 
-      if (camposError) {
-        console.error("Erro ao salvar campos:", camposError);
-        alert("Erro ao salvar os campos da anamnese.");
-        setSalvando(false);
+      if (camposBanco.error) {
+        console.error("Erro ao consultar campos existentes:", camposBanco.error);
+        alert("Erro ao consultar campos existentes da anamnese.");
         return;
+      }
+
+      const existentesPorId = new Set((camposBanco.data || []).map((c: any) => c.id));
+      const existentesPorNome = new Map(
+        (camposBanco.data || []).map((c: any) => [
+          String(c.nome_campo || "").trim().toLowerCase(),
+          c.id,
+        ])
+      );
+
+      const nomesQueContinuam = new Set<string>();
+
+      for (const [index, campo] of campos.entries()) {
+        const pergunta = perguntaSegura(campo, index);
+        const nomeCampo = normalizarNomeCampo(campo.nome_campo, pergunta);
+        const tipo = tipoSeguro(campo.tipo);
+        nomesQueContinuam.add(nomeCampo.toLowerCase());
+
+        const payloadCampo = {
+          modelo_id: idModelo,
+          nome_campo: nomeCampo,
+          label: pergunta,
+          pergunta,
+          tipo,
+          obrigatorio: campo.obrigatorio,
+          placeholder: campo.placeholder || "",
+          ajuda: campo.ajuda || "",
+          opcoes: tipo === "sim_nao_justificativa" ? [] : campo.opcoes || [],
+          ordem: index,
+          ativo: campo.ativo !== false,
+          gera_alerta: campo.gera_alerta ?? false,
+        };
+
+        const idExistente =
+          existentesPorId.has(campo.id)
+            ? campo.id
+            : existentesPorNome.get(nomeCampo.toLowerCase());
+
+        if (idExistente) {
+          const { error } = await supabase
+            .from("anamnese_campos")
+            .update(payloadCampo)
+            .eq("id", idExistente);
+
+          if (error) {
+            console.error("Erro ao atualizar campo:", error);
+            alert(`Erro ao atualizar o campo: ${pergunta}`);
+            return;
+          }
+        } else {
+          const { error } = await supabase
+            .from("anamnese_campos")
+            .insert([payloadCampo]);
+
+          if (error) {
+            console.error("Erro ao inserir campo:", error);
+            alert(`Erro ao inserir o campo: ${pergunta}`);
+            return;
+          }
+        }
+      }
+
+      // Campos existentes que saíram da tela são apenas desativados.
+      // Isso preserva respostas antigas e impede que perguntas antigas virem "novas" por troca de ID.
+      for (const campoExistente of camposBanco.data || []) {
+        const nome = String((campoExistente as any).nome_campo || "")
+          .trim()
+          .toLowerCase();
+
+        if (nome && !nomesQueContinuam.has(nome)) {
+          const { error } = await supabase
+            .from("anamnese_campos")
+            .update({ ativo: false })
+            .eq("id", (campoExistente as any).id);
+
+          if (error) {
+            console.error("Erro ao desativar campo removido:", error);
+            alert("Erro ao desativar um campo removido da anamnese.");
+            return;
+          }
+        }
       }
 
       alert("Configuração da anamnese salva com sucesso.");
@@ -484,6 +592,16 @@ export default function AnamneseConfiguracao() {
       setSalvando(false);
     }
   }
+
+  const camposVisiveis = useMemo(
+    () => campos.filter((campo) => campo.ativo !== false),
+    [campos]
+  );
+
+  const camposInativos = useMemo(
+    () => campos.filter((campo) => campo.ativo === false),
+    [campos]
+  );
 
   if (loading || carregandoEmpresa) {
     return (
@@ -604,7 +722,8 @@ export default function AnamneseConfiguracao() {
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Campos</h2>
             <p className="text-sm text-slate-500">
-              Adicione manualmente ou importe pelo Excel.
+              Adicione manualmente ou importe pelo Excel. Campos removidos são
+              desativados para preservar respostas antigas.
             </p>
           </div>
 
@@ -619,7 +738,7 @@ export default function AnamneseConfiguracao() {
 
             <button
               type="button"
-              onClick={adicionarCampo}
+              onClick={abrirModalNovoCampo}
               className="rounded-xl px-4 py-2 text-sm font-semibold text-white"
               style={{ backgroundColor: "var(--color-primary)" }}
             >
@@ -628,177 +747,290 @@ export default function AnamneseConfiguracao() {
           </div>
         </div>
 
-        {campos.length === 0 ? (
+        {camposVisiveis.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
-            Nenhum campo adicionado ainda.
+            Nenhum campo ativo adicionado ainda.
           </div>
         ) : (
           <div className="space-y-4">
-            {campos.map((campo, index) => (
+            {camposVisiveis.map((campo, index) => (
               <div
                 key={campo.id}
                 className="rounded-2xl border border-slate-200 p-4"
               >
                 <div className="mb-4 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900">
-                    Campo {index + 1}
-                  </p>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Campo {index + 1}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {campo.nome_campo} • {campo.tipo}
+                    </p>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => removerCampo(campo.id)}
-                    className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    Remover
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => abrirModalEditarCampo(campo)}
+                      className="rounded-lg px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => removerCampo(campo.id)}
+                      className="rounded-lg px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Remover
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Nome interno
-                    </label>
-                    <input
-                      value={campo.nome_campo}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          nome_campo: e.target.value,
-                        })
-                      }
-                      placeholder="Ex.: alergias"
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Pergunta
-                    </label>
-                    <input
-                      value={campo.label}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          label: e.target.value,
-                        })
-                      }
-                      placeholder="Ex.: Possui alergia?"
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Tipo
-                    </label>
-                    <select
-                      value={campo.tipo}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          tipo: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                    >
-                      <option value="text">Texto</option>
-                      <option value="textarea">Texto longo</option>
-                      <option value="select">Seleção</option>
-                      <option value="checkbox">Checkbox</option>
-                      <option value="date">Data</option>
-                      <option value="number">Número</option>
-                      <option value="sim_nao_justificativa">
-                        Sim / Não + justificativa
-                      </option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Placeholder
-                    </label>
-                    <input
-                      value={campo.placeholder}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          placeholder: e.target.value,
-                        })
-                      }
-                      placeholder={
-                        campo.tipo === "sim_nao_justificativa"
-                          ? "Ex.: Se sim, descreva aqui"
-                          : "Ex.: Descreva aqui"
-                      }
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Ajuda
-                    </label>
-                    <input
-                      value={campo.ajuda}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          ajuda: e.target.value,
-                        })
-                      }
-                      placeholder="Ex.: Se marcar Sim, informe detalhes"
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-
-                  {campo.tipo !== "sim_nao_justificativa" && (
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Opções
-                      </label>
-                      <input
-                        value={campo.opcoes.join(" | ")}
-                        onChange={(e) =>
-                          atualizarCampo(campo.id, {
-                            opcoes: e.target.value
-                              .split("|")
-                              .map((item) => item.trim())
-                              .filter(Boolean),
-                          })
-                        }
-                        placeholder="Ex.: Sim | Não | Talvez"
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
-                      />
-                    </div>
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="font-semibold text-slate-900">{campo.label}</p>
+                  {campo.ajuda && (
+                    <p className="mt-1 text-sm text-slate-500">{campo.ajuda}</p>
                   )}
-
-                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={campo.obrigatorio}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          obrigatorio: e.target.checked,
-                        })
-                      }
-                    />
-                    Campo obrigatório
-                  </label>
-
-                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={campo.gera_alerta ?? false}
-                      onChange={(e) =>
-                        atualizarCampo(campo.id, {
-                          gera_alerta: e.target.checked,
-                        })
-                      }
-                    />
-                    Gerar alerta na agenda
-                  </label>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                    {campo.obrigatorio && (
+                      <span className="rounded-full bg-purple-100 px-3 py-1 text-purple-700">
+                        Obrigatório
+                      </span>
+                    )}
+                    {campo.gera_alerta && (
+                      <span className="rounded-full bg-orange-100 px-3 py-1 text-orange-700">
+                        Gera alerta
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
+
+        {camposInativos.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="font-semibold text-slate-900">Campos inativos</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Eles não aparecem para novas fichas, mas continuam no banco para
+              preservar o histórico.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              {camposInativos.map((campo) => (
+                <div
+                  key={campo.id}
+                  className="flex items-center justify-between rounded-xl bg-white p-3 ring-1 ring-slate-200"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {campo.label || campo.nome_campo}
+                    </p>
+                    <p className="text-xs text-slate-500">{campo.nome_campo}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => reativarCampo(campo.id)}
+                    className="rounded-lg px-3 py-1 text-sm font-semibold text-green-700 hover:bg-green-50"
+                  >
+                    Reativar
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {modalCampoAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-widest text-[var(--color-primary)]">
+                  Campo da anamnese
+                </p>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  {campoEditandoId ? "Editar campo" : "Novo campo"}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Configure a pergunta que aparecerá para o cliente.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalCampoAberto(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Nome interno
+                </label>
+                <input
+                  value={campoModal.nome_campo}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({
+                      ...prev,
+                      nome_campo: e.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: diabetes"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Pergunta
+                </label>
+                <input
+                  value={campoModal.label}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({ ...prev, label: e.target.value }))
+                  }
+                  placeholder="Ex.: Possui Diabetes?"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Tipo
+                </label>
+                <select
+                  value={campoModal.tipo}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({ ...prev, tipo: e.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                >
+                  <option value="text">Texto</option>
+                  <option value="textarea">Texto longo</option>
+                  <option value="select">Seleção</option>
+                  <option value="checkbox">Checkbox</option>
+                  <option value="date">Data</option>
+                  <option value="number">Número</option>
+                  <option value="sim_nao_justificativa">
+                    Sim / Não + justificativa
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Placeholder
+                </label>
+                <input
+                  value={campoModal.placeholder}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({
+                      ...prev,
+                      placeholder: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    campoModal.tipo === "sim_nao_justificativa"
+                      ? "Ex.: Se sim, descreva aqui"
+                      : "Ex.: Descreva aqui"
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Ajuda
+                </label>
+                <input
+                  value={campoModal.ajuda}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({ ...prev, ajuda: e.target.value }))
+                  }
+                  placeholder="Ex.: Se marcar Sim, informe detalhes"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                />
+              </div>
+
+              {campoModal.tipo !== "sim_nao_justificativa" && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Opções
+                  </label>
+                  <input
+                    value={campoModal.opcoes.join(" | ")}
+                    onChange={(e) =>
+                      setCampoModal((prev) => ({
+                        ...prev,
+                        opcoes: e.target.value
+                          .split("|")
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      }))
+                    }
+                    placeholder="Ex.: Sim | Não | Talvez"
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[var(--color-primary)]"
+                  />
+                </div>
+              )}
+
+              <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={campoModal.obrigatorio}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({
+                      ...prev,
+                      obrigatorio: e.target.checked,
+                    }))
+                  }
+                />
+                Campo obrigatório
+              </label>
+
+              <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={campoModal.gera_alerta ?? false}
+                  onChange={(e) =>
+                    setCampoModal((prev) => ({
+                      ...prev,
+                      gera_alerta: e.target.checked,
+                    }))
+                  }
+                />
+                Gerar alerta na agenda
+              </label>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setModalCampoAberto(false)}
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={salvarCampoModal}
+                className="rounded-xl px-5 py-3 text-sm font-semibold text-white"
+                style={{ backgroundColor: "var(--color-primary)" }}
+              >
+                {campoEditandoId ? "Salvar alteração" : "Adicionar campo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

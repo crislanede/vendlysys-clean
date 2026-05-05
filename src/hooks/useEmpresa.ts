@@ -14,11 +14,11 @@ export type EmpresaUsuario = {
   logo_url?: string | null;
   favicon_url?: string | null;
 
-  ativa?: boolean | string | null;
-  bloqueada?: boolean | string | null;
+  ativa?: boolean | null;
+  bloqueada?: boolean | null;
   plano?: string | null;
   status_assinatura?: string | null;
-  licenca_vitalicia?: boolean | string | null;
+  licenca_vitalicia?: boolean | null;
   trial_inicio?: string | null;
   trial_fim?: string | null;
 
@@ -52,18 +52,6 @@ const TEMA_PADRAO = {
   secundaria: "#4d6f53",
   fundo: "#f1f9f5",
 };
-
-function normalizarTexto(valor?: string | null) {
-  return String(valor || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function valorBooleano(valor: boolean | string | null | undefined) {
-  return valor === true || valor === "true";
-}
 
 export function useEmpresa(): Retorno {
   const [empresa, setEmpresa] = useState<EmpresaUsuario | null>(null);
@@ -145,22 +133,12 @@ export function useEmpresa(): Retorno {
   }
 
   function calcularLicenca(empresaAtual: EmpresaUsuario) {
-    const ativa = empresaAtual.ativa !== false && empresaAtual.ativa !== "false";
-    const bloqueada = valorBooleano(empresaAtual.bloqueada);
+    const ativa = empresaAtual.ativa !== false;
+    const bloqueada = empresaAtual.bloqueada === true;
+    const vitalicia = empresaAtual.licenca_vitalicia === true;
+    const status = empresaAtual.status_assinatura || "trial";
 
-    const plano = normalizarTexto(empresaAtual.plano);
-    const status = normalizarTexto(empresaAtual.status_assinatura || "trial");
-
-    const vitalicia =
-      valorBooleano(empresaAtual.licenca_vitalicia) ||
-      plano === "vitalicio" ||
-      status === "vitalicio";
-
-    const assinaturaAtiva =
-      status === "ativo" ||
-      status === "ativa" ||
-      status === "pago" ||
-      status === "paga";
+    const assinaturaAtiva = status === "ativa" || status === "ativo";
 
     const trialValido =
       status === "trial" &&
@@ -171,7 +149,7 @@ export function useEmpresa(): Retorno {
 
     setLicencaAtiva(temAcesso);
     setEmpresaBloqueada(!temAcesso);
-    setStatusAssinatura(empresaAtual.status_assinatura || status || null);
+    setStatusAssinatura(status);
     setTrialFim(empresaAtual.trial_fim || null);
 
     return temAcesso;
@@ -180,118 +158,123 @@ export function useEmpresa(): Retorno {
   async function carregarEmpresa() {
     setCarregandoEmpresa(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
 
-    if (userError || !userId) {
-      finalizarSemEmpresa();
-      return;
-    }
-
-    let lista: EmpresaUsuario[] = [];
-
-    const { data: vinculos, error: vinculosError } = await supabase
-      .from("usuarios_empresas")
-      .select("empresa_id, perfil")
-      .eq("user_id", userId)
-      .eq("ativo", true);
-
-    if (vinculosError) {
-      console.warn("Erro ao buscar vínculos de empresas:", vinculosError);
-    }
-
-    const empresaIds = (vinculos || [])
-      .map((v: any) => v.empresa_id)
-      .filter(Boolean);
-
-    if (empresaIds.length > 0) {
-      const { data: empresasBanco, error: empresasError } = await supabase
-        .from("empresas")
-        .select(`
-          id,
-          nome,
-          nome_fantasia,
-          slug,
-          cor_primaria,
-          cor_secundaria,
-          cor_fundo,
-          logo_url,
-          favicon_url,
-          ativa,
-          bloqueada,
-          plano,
-          status_assinatura,
-          licenca_vitalicia,
-          trial_inicio,
-          trial_fim
-        `)
-        .in("id", empresaIds);
-
-      if (empresasError) {
-        console.warn("Erro ao buscar empresas vinculadas:", empresasError);
+      if (userError || !userId) {
+        finalizarSemEmpresa();
+        return;
       }
 
-      lista = (empresasBanco || [])
-        .map((empresaBanco: any) => {
-          const vinculo = (vinculos || []).find(
-            (v: any) => v.empresa_id === empresaBanco.id
-          );
-          return normalizarEmpresa(empresaBanco, vinculo?.perfil);
-        })
-        .filter(Boolean) as EmpresaUsuario[];
-    }
+      let lista: EmpresaUsuario[] = [];
 
-    if (lista.length === 0) {
-      const { data: empresaDireta, error: empresaDiretaError } = await supabase
-        .from("empresas")
-        .select(`
-          id,
-          nome,
-          nome_fantasia,
-          slug,
-          cor_primaria,
-          cor_secundaria,
-          cor_fundo,
-          logo_url,
-          favicon_url,
-          ativa,
-          bloqueada,
-          plano,
-          status_assinatura,
-          licenca_vitalicia,
-          trial_inicio,
-          trial_fim
-        `)
-        .eq("user_id", userId);
+      const { data: vinculos, error: vinculosError } = await supabase
+        .from("usuarios_empresas")
+        .select("empresa_id, perfil")
+        .eq("user_id", userId)
+        .eq("ativo", true);
 
-      if (empresaDiretaError) {
-        console.warn("Erro ao buscar empresa direta:", empresaDiretaError);
+      if (vinculosError) {
+        console.warn("Erro ao buscar vínculos de empresas:", vinculosError);
       }
 
-      lista = (empresaDireta || [])
-        .map((empresaBanco: any) => normalizarEmpresa(empresaBanco, "admin"))
-        .filter(Boolean) as EmpresaUsuario[];
-    }
+      const empresaIds = (vinculos || [])
+        .map((v: any) => v.empresa_id)
+        .filter(Boolean);
 
-    if (lista.length === 0) {
+      if (empresaIds.length > 0) {
+        const { data: empresasBanco, error: empresasError } = await supabase
+          .from("empresas")
+          .select(`
+            id,
+            nome,
+            nome_fantasia,
+            slug,
+            cor_primaria,
+            cor_secundaria,
+            cor_fundo,
+            logo_url,
+            favicon_url,
+            ativa,
+            bloqueada,
+            plano,
+            status_assinatura,
+            licenca_vitalicia,
+            trial_inicio,
+            trial_fim
+          `)
+          .in("id", empresaIds);
+
+        if (empresasError) {
+          console.warn("Erro ao buscar empresas vinculadas:", empresasError);
+        }
+
+        lista = (empresasBanco || [])
+          .map((empresaBanco: any) => {
+            const vinculo = (vinculos || []).find(
+              (v: any) => v.empresa_id === empresaBanco.id
+            );
+            return normalizarEmpresa(empresaBanco, vinculo?.perfil);
+          })
+          .filter(Boolean) as EmpresaUsuario[];
+      }
+
+      if (lista.length === 0) {
+        const { data: empresaDireta, error: empresaDiretaError } = await supabase
+          .from("empresas")
+          .select(`
+            id,
+            nome,
+            nome_fantasia,
+            slug,
+            cor_primaria,
+            cor_secundaria,
+            cor_fundo,
+            logo_url,
+            favicon_url,
+            ativa,
+            bloqueada,
+            plano,
+            status_assinatura,
+            licenca_vitalicia,
+            trial_inicio,
+            trial_fim
+          `)
+          .eq("user_id", userId);
+
+        if (empresaDiretaError) {
+          console.warn("Erro ao buscar empresa direta:", empresaDiretaError);
+        }
+
+        lista = (empresaDireta || [])
+          .map((empresaBanco: any) => normalizarEmpresa(empresaBanco, "admin"))
+          .filter(Boolean) as EmpresaUsuario[];
+      }
+
+      if (lista.length === 0) {
+        finalizarSemEmpresa();
+        return;
+      }
+
+      const empresaSalvaId = localStorage.getItem(STORAGE_KEY);
+      const empresaAtiva = lista.find((e) => e.id === empresaSalvaId) || lista[0];
+
+      localStorage.setItem(STORAGE_KEY, empresaAtiva.id);
+
+      setEmpresas(lista);
+      setEmpresa(empresaAtiva);
+      setEmpresaId(empresaAtiva.id);
+      setEmpresaNome(empresaAtiva.nome);
+
+      aplicarTema(empresaAtiva);
+      calcularLicenca(empresaAtiva);
+    } catch (error) {
+      console.error("Erro inesperado ao carregar empresa:", error);
       finalizarSemEmpresa();
-      return;
+    } finally {
+      setCarregandoEmpresa(false);
     }
-
-    const empresaSalvaId = localStorage.getItem(STORAGE_KEY);
-    const empresaAtiva = lista.find((e) => e.id === empresaSalvaId) || lista[0];
-
-    localStorage.setItem(STORAGE_KEY, empresaAtiva.id);
-
-    setEmpresas(lista);
-    setEmpresa(empresaAtiva);
-    setEmpresaId(empresaAtiva.id);
-    setEmpresaNome(empresaAtiva.nome);
-
-    aplicarTema(empresaAtiva);
-    calcularLicenca(empresaAtiva);
-
-    setCarregandoEmpresa(false);
   }
 
   function trocarEmpresa(novaEmpresaId: string) {
@@ -326,8 +309,6 @@ export function useEmpresa(): Retorno {
     setEmpresaBloqueada(true);
     setStatusAssinatura(null);
     setTrialFim(null);
-
-    setCarregandoEmpresa(false);
   }
 
   return {
