@@ -1,19 +1,21 @@
 import { supabase } from "../supabase";
 
 export async function uploadFotoAtendimento(file: File, empresaId: string) {
-  const nomeSeguro = file.name.replace(/\s+/g, "-").toLowerCase();
-  const caminho = `${empresaId}/${Date.now()}-${nomeSeguro}`;
+  const extensao = file.name.split(".").pop() || "jpg";
+  const nomeArquivo = `${empresaId}/${Date.now()}-${crypto.randomUUID()}.${extensao}`;
 
   const { error } = await supabase.storage
     .from("fotos-atendimentos")
-    .upload(caminho, file, {
+    .upload(nomeArquivo, file, {
       cacheControl: "3600",
       upsert: false,
     });
 
-  if (error) throw error;
+  if (error) {
+    throw new Error(error.message);
+  }
 
-  return caminho;
+  return nomeArquivo;
 }
 
 export async function criarUrlFotoAtendimento(caminho: string) {
@@ -21,7 +23,9 @@ export async function criarUrlFotoAtendimento(caminho: string) {
     .from("fotos-atendimentos")
     .createSignedUrl(caminho, 60 * 60);
 
-  if (error) throw error;
+  if (error) {
+    throw new Error(error.message);
+  }
 
   return data.signedUrl;
 }

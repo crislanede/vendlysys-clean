@@ -34,12 +34,14 @@ import Caixa from "./pages/caixa";
 import Comissoes from "./pages/comissoes";
 import Pagamentos from "./pages/pagamentos";
 import Despesas from "./pages/despesas";
+import MeuEspaco from "./pages/meu-espaco";
+
 
 import MarketingPacotes from "./pages/marketing-pacotes";
 import Relatorios from "./pages/relatorios";
 import RelatoriosRetorno from "./pages/relatorios-retorno";
 
-import Campanhas from "./pages/campanhas";
+import Campanhas from "./pages/whatsapp-campanha";
 import Bloqueios from "./pages/bloqueios";
 
 import AnamneseConfiguracao from "./pages/anamnese-configuracao";
@@ -55,6 +57,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
+        <Route path="/meu-espaco" element={<MeuEspaco />} />
 
         <Route
           path="/admin"
@@ -69,6 +72,7 @@ function App() {
           <Route path="nova-empresa" element={<NovaEmpresa />} />
           <Route path="usuarios-empresa" element={<UsuariosEmpresa />} />
           <Route path="licencas" element={<Licencas />} />
+          
         </Route>
 
         <Route path="/" element={<AppLayout />}>

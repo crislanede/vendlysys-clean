@@ -9,7 +9,7 @@ import type {
   CampoAnamnese,
   ServicoCliente,
   ProfissionalCliente,
-} from "./meu-espaco/types";
+}from "./meu-espaco/types";
 
 import {
   limparTelefone,
@@ -19,7 +19,6 @@ import {
   hojeISO,
   somarMinutos,
   normalizarHorario,
-  obterIntervaloAgenda,
   horarioSobrepoeIntervalo,
   gerarHorariosBase,
 } from "./meu-espaco/utils";
@@ -874,8 +873,7 @@ export default function MeuEspaco() {
       profissionalSelecionado.inicio_almoco,
     );
     const fimAlmoco = normalizarHorario(profissionalSelecionado.fim_almoco);
-    const intervaloAgenda = obterIntervaloAgenda(profissionalSelecionado);
-
+ 
     const { data: agendamentosDia, error } = await supabase
       .from("agendamentos")
       .select("id, data, horario, status, duracao_minutos, profissional_id")
@@ -895,17 +893,19 @@ export default function MeuEspaco() {
     const livres = gerarHorariosBase(
       inicioExpediente,
       fimExpediente,
-      intervaloAgenda,
-    ).filter((horario) => {
+      30,
+   ).filter((horario: string) => {
       const fimServico = somarMinutos(horario, duracaoTotal);
 
       if (horario < inicioExpediente) return false;
       if (fimServico > fimExpediente) return false;
 
       if (
+        inicioAlmoco &&
+        fimAlmoco &&
         horarioSobrepoeIntervalo(
           horario,
-          duracaoTotal,
+          fimServico,
           inicioAlmoco,
           fimAlmoco,
         )
@@ -1043,12 +1043,22 @@ export default function MeuEspaco() {
       return;
     }
 
+    const inicioAlmocoAgendamento = normalizarHorario(
+      profissionalSelecionado.inicio_almoco,
+    );
+    const fimAlmocoAgendamento = normalizarHorario(
+      profissionalSelecionado.fim_almoco,
+    );
+    const fimAgendamento = somarMinutos(horarioAgendamento, duracaoTotal);
+
     if (
+      inicioAlmocoAgendamento &&
+      fimAlmocoAgendamento &&
       horarioSobrepoeIntervalo(
         horarioAgendamento,
-        duracaoTotal,
-        profissionalSelecionado.inicio_almoco,
-        profissionalSelecionado.fim_almoco,
+        fimAgendamento,
+        inicioAlmocoAgendamento,
+        fimAlmocoAgendamento,
       )
     ) {
       alert("Este horário está no intervalo de almoço do profissional. Escolha outro horário.");
@@ -1569,9 +1579,7 @@ export default function MeuEspaco() {
 
         const respostaExistente = respostasPorCampo.get(campoId);
         const dataAtual = new Date(item?.created_at || 0).getTime();
-        const dataExistente = new Date(
-          respostaExistente?.created_at || 0,
-        ).getTime();
+        const dataExistente = new Date(respostaExistente?.created_at || 0).getTime();
 
         if (!respostaExistente || dataAtual >= dataExistente) {
           respostasPorCampo.set(campoId, item);
@@ -1911,7 +1919,6 @@ export default function MeuEspaco() {
 
           return {
             anamnese_id: anamnese.id,
-            cliente_id: cliente.id,
             campo_id: campo.id,
             resposta:
               campo.tipo === "sim_nao_justificativa" && resposta === "Sim"
@@ -2074,7 +2081,7 @@ export default function MeuEspaco() {
           style={estiloCampo}
         >
           <option value="">Selecione</option>
-          {opcoes.map((opcao) => (
+       {opcoes.map((opcao: string) => (
             <option key={opcao} value={opcao}>
               {opcao}
             </option>
