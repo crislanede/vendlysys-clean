@@ -849,24 +849,26 @@ export default function AgendaPage() {
   }
 
   function obterValorServico(servicoItem: Servico | null | undefined) {
-    if (!servicoItem) return 0;
+  if (!servicoItem) return 0;
 
-    const promocaoAtiva =
-      servicoItem.promocao_ativa === true ||
-      String(servicoItem.promocao_ativa).toLowerCase() === "true";
+  const promocaoAtiva =
+    servicoItem.promocao_ativa === true ||
+    String(servicoItem.promocao_ativa).toLowerCase() === "true";
 
-    const valor = promocaoAtiva
-      ? Number(
-          servicoItem.preco_promocional ??
-            servicoItem.preco ??
-            servicoItem.valor ??
-            0,
-        )
-      : Number(servicoItem.preco ?? servicoItem.valor ?? 0);
+  const valorNormal = Number(
+    servicoItem.preco ?? servicoItem.valor ?? 0,
+  );
 
-    return Number.isNaN(valor) ? 0 : valor;
+  const valorPromocional = Number(
+    servicoItem.preco_promocional ?? 0,
+  );
+
+  if (promocaoAtiva && valorPromocional > 0) {
+    return valorPromocional;
   }
 
+  return Number.isNaN(valorNormal) ? 0 : valorNormal;
+}
   function valorPadraoDoAgendamento(agendamento: Agendamento) {
     if (agendamento.valor !== null && agendamento.valor !== undefined) {
       return String(agendamento.valor);
