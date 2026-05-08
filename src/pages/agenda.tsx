@@ -933,8 +933,13 @@ export default function AgendaPage() {
 
     const pacotes = await buscarPacotesDisponiveis(agendamento);
     setPacotesDisponiveis(pacotes);
+
     if (pacotes.length > 0) {
       setSaldoPacoteSelecionadoId(pacotes[0].saldo_id);
+      setUsarPacote(true);
+      setValorPagamento("0");
+      setFormaPagamento("pacote");
+      setStatusPagamento("pago");
     }
 
     setModalFinalizarAberto(true);
@@ -1387,7 +1392,9 @@ ${linkMeuEspaco}`;
     }
 
     const confirmar = window.confirm(
-      "Deseja finalizar este atendimento? Esta ação vai registrar o pagamento e, se selecionado, baixar o saldo do combo.",
+      usarPacote && pacoteSelecionado
+        ? `Deseja finalizar este atendimento e baixar 1 unidade do pacote ${pacoteSelecionado.pacote_nome}?`
+        : "Deseja finalizar este atendimento? Esta ação vai registrar o pagamento.",
     );
 
     if (!confirmar) return;
@@ -1396,10 +1403,52 @@ ${linkMeuEspaco}`;
 
     try {
       if (usarPacote && pacoteSelecionado) {
+        const { data: usoExistente, error: erroUsoExistente } = await supabase
+          .from("cliente_pacote_usos")
+          .select("id")
+          .eq("agendamento_id", agendamentoSelecionado.id)
+          .maybeSingle();
+
+        if (erroUsoExistente) {
+          throw new Error(
+            `Erro ao verificar uso anterior do pacote: ${erroUsoExistente.message}`,
+          );
+        }
+
+        if (usoExistente?.id) {
+          throw new Error(
+            "Este atendimento já possui baixa de pacote registrada. Atualize a tela antes de tentar finalizar novamente.",
+          );
+        }
+
+        const { data: saldoAtual, error: erroSaldoAtual } = await supabase
+          .from("cliente_pacote_saldos")
+          .select("quantidade_total, quantidade_usada")
+          .eq("id", pacoteSelecionado.saldo_id)
+          .maybeSingle();
+
+        if (erroSaldoAtual) {
+          throw new Error(
+            `Erro ao conferir saldo atual do pacote: ${erroSaldoAtual.message}`,
+          );
+        }
+
+        const totalAtual = Number(saldoAtual?.quantidade_total || 0);
+        const usadaAtual = Number(saldoAtual?.quantidade_usada || 0);
+
+        if (!saldoAtual || totalAtual - usadaAtual <= 0) {
+          throw new Error(
+            "Este pacote não possui mais saldo disponível para este serviço.",
+          );
+        }
+
+        const novaQuantidadeUsada = usadaAtual + 1;
+
         const { error: erroSaldo } = await supabase
           .from("cliente_pacote_saldos")
-          .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
-          .eq("id", pacoteSelecionado.saldo_id);
+          .update({ quantidade_usada: novaQuantidadeUsada })
+          .eq("id", pacoteSelecionado.saldo_id)
+          .eq("quantidade_usada", usadaAtual);
 
         if (erroSaldo) {
           throw new Error(
@@ -1419,10 +1468,18 @@ ${linkMeuEspaco}`;
           ]);
 
         if (erroUso) {
+          await supabase
+            .from("cliente_pacote_saldos")
+            .update({ quantidade_usada: usadaAtual })
+            .eq("id", pacoteSelecionado.saldo_id);
+
           throw new Error(
-            `Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`,
+            `Não foi possível registrar o uso do pacote: ${erroUso.message}`,
           );
         }
+
+        pacoteSelecionado.quantidade_usada = novaQuantidadeUsada;
+        pacoteSelecionado.restante = totalAtual - novaQuantidadeUsada;
       }
 
       const acrescimoFinal = usarPacote ? 0 : Number(acrescimoCuidado || 0);
@@ -2923,28 +2980,24 @@ ${linkMeuEspaco}`;
                     ))}
                   </select>
 
-                  <label className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                    <input
-                      type="checkbox"
-                      checked={usarPacote}
-                      onChange={(e) => {
-                        const marcado = e.target.checked;
-                        setUsarPacote(marcado);
-                        if (marcado) {
-                          setValorPagamento("0");
-                          setFormaPagamento("pacote");
-                          setStatusPagamento("pago");
-                        } else {
-                          setValorPagamento(
-                            valorPadraoDoAgendamento(agendamentoSelecionado),
-                          );
-                          setFormaPagamento("pix");
-                          setStatusPagamento("pago");
-                        }
-                      }}
-                    />
-                    Usar pacote do cliente e baixar 1 unidade do saldo
-                  </label>
+                  <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-900">
+                    ✅ Este atendimento será abatido automaticamente do pacote selecionado ao finalizar.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsarPacote(false);
+                      setValorPagamento(
+                        valorPadraoDoAgendamento(agendamentoSelecionado),
+                      );
+                      setFormaPagamento("pix");
+                      setStatusPagamento("pago");
+                    }}
+                    className="text-left text-xs font-bold text-emerald-700 underline"
+                  >
+                    Não usar pacote neste atendimento
+                  </button>
                 </div>
               </div>
             )}
