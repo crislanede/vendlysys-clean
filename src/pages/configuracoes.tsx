@@ -6,55 +6,38 @@ import { useEmpresa } from "../hooks/useEmpresa";
 export default function Configuracoes() {
   const { empresaId, recarregarEmpresa } = useEmpresa() as any;
 
-  const [nome, setNome] = useState("");
+  const [nomeEmpresa, setNomeEmpresa] = useState("");
   const [nomeFantasia, setNomeFantasia] = useState("");
   const [telefone, setTelefone] = useState("");
   const [endereco, setEndereco] = useState("");
+
   const [logoUrl, setLogoUrl] = useState("");
 
-  const [corPrimaria, setCorPrimaria] = useState("#4b2f3f");
-  const [corSecundaria, setCorSecundaria] = useState("#4d6f53");
-  const [corFundo, setCorFundo] = useState("#f1f9f5");
+  const [corPrimaria, setCorPrimaria] = useState("#4f46e5");
+  const [corSecundaria, setCorSecundaria] = useState("#111827");
+  const [corFundo, setCorFundo] = useState("#f8fafc");
+
+  const [bannerAtivo, setBannerAtivo] = useState(true);
+  const [bannerCategoria, setBannerCategoria] = useState("");
+  const [bannerTitulo, setBannerTitulo] = useState("");
+  const [bannerTexto, setBannerTexto] = useState("");
+  const [bannerBotaoTexto, setBannerBotaoTexto] = useState("");
+  const [bannerBotaoLink, setBannerBotaoLink] = useState("");
+  const [bannerImagem, setBannerImagem] = useState("");
 
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
+  const [enviandoBanner, setEnviandoBanner] = useState(false);
 
   useEffect(() => {
-    carregar();
+    if (empresaId) {
+      carregarConfiguracoes();
+    }
   }, [empresaId]);
 
   useEffect(() => {
     aplicarTema();
   }, [corPrimaria, corSecundaria, corFundo]);
-
-  async function carregar() {
-    if (!empresaId) return;
-
-    const { data, error } = await supabase
-      .from("empresas")
-      .select(
-        "nome, nome_fantasia, telefone, endereco, cor_primaria, cor_secundaria, cor_fundo, logo_url"
-      )
-      .eq("id", empresaId)
-      .maybeSingle();
-
-    if (error) {
-      alert("Erro ao carregar configurações: " + error.message);
-      return;
-    }
-
-    if (!data) return;
-
-    setNome(data.nome || "");
-    setNomeFantasia(data.nome_fantasia || "");
-    setTelefone(data.telefone || "");
-    setEndereco(data.endereco || "");
-    setLogoUrl(data.logo_url || "");
-
-    setCorPrimaria(data.cor_primaria || "#4b2f3f");
-    setCorSecundaria(data.cor_secundaria || "#4d6f53");
-    setCorFundo(data.cor_fundo || "#f1f9f5");
-  }
 
   function aplicarTema() {
     document.documentElement.style.setProperty("--cor-primaria", corPrimaria);
@@ -66,41 +49,63 @@ export default function Configuracoes() {
     document.documentElement.style.setProperty("--color-background", corFundo);
   }
 
-  async function enviarLogo(event: ChangeEvent<HTMLInputElement>) {
-    const arquivo = event.target.files?.[0];
-    if (!arquivo || !empresaId) return;
+  async function carregarConfiguracoes() {
+    if (!empresaId) return;
 
-    const tiposPermitidos = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
-    if (!tiposPermitidos.includes(arquivo.type)) {
-      alert("Envie uma imagem PNG, JPG, WEBP ou SVG.");
+    const { data, error } = await supabase
+      .from("empresas")
+      .select(
+        `
+        nome,
+        nome_fantasia,
+        telefone,
+        endereco,
+        logo_url,
+        cor_primaria,
+        cor_secundaria,
+        cor_fundo,
+        banner_cliente_ativo,
+        banner_cliente_categoria,
+        banner_cliente_titulo,
+        banner_cliente_texto,
+        banner_cliente_botao_texto,
+        banner_cliente_botao_link,
+        banner_cliente_imagem_url
+        `,
+      )
+      .eq("id", empresaId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao carregar configurações: " + error.message);
       return;
     }
 
-    try {
-      setEnviandoLogo(true);
+    if (!data) return;
 
-      const extensao = arquivo.name.split(".").pop() || "png";
-      const caminho = `${empresaId}/logo-${Date.now()}.${extensao}`;
+    setNomeEmpresa(data.nome || "");
+    setNomeFantasia(data.nome_fantasia || "");
+    setTelefone(data.telefone || "");
+    setEndereco(data.endereco || "");
+    setLogoUrl(data.logo_url || "");
 
-      const { error: uploadError } = await supabase.storage
-        .from("logos")
-        .upload(caminho, arquivo, { upsert: true });
+    setCorPrimaria(data.cor_primaria || "#4f46e5");
+    setCorSecundaria(data.cor_secundaria || "#111827");
+    setCorFundo(data.cor_fundo || "#f8fafc");
 
-      if (uploadError) {
-        alert("Erro ao enviar logo: " + uploadError.message);
-        return;
-      }
-
-      const { data } = supabase.storage.from("logos").getPublicUrl(caminho);
-      setLogoUrl(data.publicUrl);
-    } finally {
-      setEnviandoLogo(false);
-    }
+    setBannerAtivo(data.banner_cliente_ativo ?? true);
+    setBannerCategoria(data.banner_cliente_categoria || "");
+    setBannerTitulo(data.banner_cliente_titulo || "");
+    setBannerTexto(data.banner_cliente_texto || "");
+    setBannerBotaoTexto(data.banner_cliente_botao_texto || "");
+    setBannerBotaoLink(data.banner_cliente_botao_link || "");
+    setBannerImagem(data.banner_cliente_imagem_url || "");
   }
 
-  async function salvar() {
+  async function salvarConfiguracoes() {
     if (!empresaId) {
-      alert("Empresa não encontrada.");
+      alert("Empresa não encontrada. Saia e entre novamente no sistema.");
       return;
     }
 
@@ -109,94 +114,228 @@ export default function Configuracoes() {
     const { error } = await supabase
       .from("empresas")
       .update({
-        nome,
-        nome_fantasia: nomeFantasia,
-        telefone,
-        endereco,
+        nome: nomeEmpresa || null,
+        nome_fantasia: nomeFantasia || null,
+        telefone: telefone || null,
+        endereco: endereco || null,
+
         logo_url: logoUrl || null,
-        cor_primaria: corPrimaria,
-        cor_secundaria: corSecundaria,
-        cor_fundo: corFundo,
+
+        cor_primaria: corPrimaria || null,
+        cor_secundaria: corSecundaria || null,
+        cor_fundo: corFundo || null,
+
+        banner_cliente_ativo: bannerAtivo,
+        banner_cliente_categoria: bannerCategoria || null,
+        banner_cliente_titulo: bannerTitulo || null,
+        banner_cliente_texto: bannerTexto || null,
+        banner_cliente_botao_texto: bannerBotaoTexto || null,
+        banner_cliente_botao_link: bannerBotaoLink || null,
+        banner_cliente_imagem_url: bannerImagem || null,
       })
       .eq("id", empresaId);
 
     setSalvando(false);
 
     if (error) {
-      alert("Erro ao salvar: " + error.message);
+      console.error(error);
+      alert("Erro ao salvar configurações: " + error.message);
       return;
     }
 
     aplicarTema();
+
     if (typeof recarregarEmpresa === "function") {
       await recarregarEmpresa();
     }
+
     alert("Configurações salvas com sucesso!");
   }
 
+  async function enviarLogo(event: ChangeEvent<HTMLInputElement>) {
+    const arquivo = event.target.files?.[0];
+
+    if (!arquivo) return;
+
+    if (!empresaId) {
+      alert("Empresa não encontrada para enviar o logo.");
+      return;
+    }
+
+    const tiposPermitidos = [
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+      "image/webp",
+      "image/svg+xml",
+    ];
+
+    if (!tiposPermitidos.includes(arquivo.type)) {
+      alert("Envie uma imagem PNG, JPG, WEBP ou SVG.");
+      return;
+    }
+
+    try {
+      setEnviandoLogo(true);
+
+      const nomeSeguro = arquivo.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9.-]/g, "_");
+
+      const extensao = nomeSeguro.split(".").pop() || "png";
+      const caminho = `${empresaId}/logo-${Date.now()}.${extensao}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("logos")
+        .upload(caminho, arquivo, {
+          contentType: arquivo.type || "image/png",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        alert("Erro ao enviar logo: " + uploadError.message);
+        return;
+      }
+
+      const { data } = supabase.storage.from("logos").getPublicUrl(caminho);
+
+      if (data?.publicUrl) {
+        setLogoUrl(data.publicUrl);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao enviar logo.");
+    } finally {
+      setEnviandoLogo(false);
+    }
+  }
+
+  async function handleUploadBanner(event: ChangeEvent<HTMLInputElement>) {
+    const arquivo = event.target.files?.[0];
+
+    if (!arquivo) return;
+
+    if (!empresaId) {
+      alert("Empresa não encontrada para enviar a imagem.");
+      return;
+    }
+
+    try {
+      setEnviandoBanner(true);
+
+      const nomeSeguro = arquivo.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9.-]/g, "_");
+
+      const nomeArquivo = `${empresaId}/banner_${Date.now()}_${nomeSeguro}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("campanhas")
+        .upload(nomeArquivo, arquivo, {
+          contentType: arquivo.type || "image/jpeg",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Erro upload banner:", uploadError);
+        alert("Erro ao enviar imagem: " + uploadError.message);
+        return;
+      }
+
+      const { data } = supabase.storage
+        .from("campanhas")
+        .getPublicUrl(nomeArquivo);
+
+      if (data?.publicUrl) {
+        setBannerImagem(data.publicUrl);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Erro inesperado ao enviar imagem.");
+    } finally {
+      setEnviandoBanner(false);
+    }
+  }
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-8 p-6">
       <div>
         <p
-          style={{ color: "var(--cor-primaria, #4b2f3f)" }}
-          className="text-sm font-bold uppercase"
+          style={{ color: "var(--cor-primaria, #4f46e5)" }}
+          className="text-xs font-bold uppercase"
         >
           Sistema
         </p>
 
-        <h1 className="text-3xl font-bold text-slate-900">Configurações</h1>
-        <p className="text-slate-500">
-          Configure os dados e a identidade visual da empresa.
+        <h1 className="text-4xl font-black text-slate-900">
+          Configurações
+        </h1>
+
+        <p className="mt-2 text-slate-500">
+          Configure os dados, a identidade visual da empresa e o banner exibido
+          no Meu Espaço.
         </p>
       </div>
 
-      <div className="bg-white rounded-2xl shadow p-6 space-y-4">
-        <h2 className="font-bold text-lg text-slate-900">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">
           Identidade do estabelecimento
         </h2>
 
-        <input
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          placeholder="Nome da empresa"
-          className="w-full border rounded-xl px-4 py-3"
-        />
+        <div className="mt-6 grid gap-4">
+          <input
+            type="text"
+            placeholder="Nome da empresa"
+            value={nomeEmpresa}
+            onChange={(e) => setNomeEmpresa(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
 
-        <input
-          value={nomeFantasia}
-          onChange={(e) => setNomeFantasia(e.target.value)}
-          placeholder="Nome fantasia / nome que aparece para o cliente"
-          className="w-full border rounded-xl px-4 py-3"
-        />
+          <input
+            type="text"
+            placeholder="Nome fantasia / nome que aparece para o cliente"
+            value={nomeFantasia}
+            onChange={(e) => setNomeFantasia(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
 
-        <input
-          value={telefone}
-          onChange={(e) => setTelefone(e.target.value)}
-          placeholder="Telefone / WhatsApp"
-          className="w-full border rounded-xl px-4 py-3"
-        />
+          <input
+            type="text"
+            placeholder="Telefone / WhatsApp"
+            value={telefone}
+            onChange={(e) => setTelefone(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
 
-        <input
-          value={endereco}
-          onChange={(e) => setEndereco(e.target.value)}
-          placeholder="Endereço"
-          className="w-full border rounded-xl px-4 py-3"
-        />
+          <input
+            type="text"
+            placeholder="Endereço"
+            value={endereco}
+            onChange={(e) => setEndereco(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow p-6 space-y-4">
-        <h2 className="font-bold text-lg text-slate-900">Logo da empresa</h2>
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">Logo da empresa</h2>
 
-        <div className="flex flex-col md:flex-row md:items-center gap-4">
+        <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-center">
           <div
-            className="w-20 h-20 rounded-full border bg-slate-50 flex items-center justify-center overflow-hidden"
-            style={{ borderColor: "var(--cor-primaria, #4b2f3f)" }}
+            className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border bg-slate-50"
+            style={{ borderColor: "var(--cor-primaria, #4f46e5)" }}
           >
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo da empresa" className="w-full h-full object-cover" />
+              <img
+                src={logoUrl}
+                alt="Logo da empresa"
+                className="h-full w-full object-cover"
+              />
             ) : (
-              <span className="text-2xl font-black text-slate-500">
-                {(nomeFantasia || nome || "E").charAt(0).toUpperCase()}
+              <span className="text-xl font-black text-slate-500">
+                {(nomeFantasia || nomeEmpresa || "E").charAt(0)}
               </span>
             )}
           </div>
@@ -206,33 +345,29 @@ export default function Configuracoes() {
               value={logoUrl}
               onChange={(e) => setLogoUrl(e.target.value)}
               placeholder="URL do logo, se preferir colar um link"
-              className="w-full border rounded-xl px-4 py-3"
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
             />
 
-            <label className="inline-flex items-center justify-center rounded-xl px-4 py-3 font-bold text-white cursor-pointer hover:opacity-90"
-              style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
-            >
-              {enviandoLogo ? "Enviando logo..." : "Enviar imagem do logo"}
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                className="hidden"
-                onChange={enviarLogo}
-                disabled={enviandoLogo}
-              />
-            </label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+              onChange={enviarLogo}
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3"
+            />
 
             <p className="text-xs text-slate-500">
-              Depois de enviar ou colar a URL, clique em Salvar configurações.
+              {enviandoLogo
+                ? "Enviando logo..."
+                : "Depois de enviar ou colar a URL, clique em Salvar configurações."}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow p-6 space-y-4">
-        <h2 className="font-bold text-lg text-slate-900">Paleta de cores</h2>
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">Paleta de cores</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <label className="space-y-2">
             <span className="text-sm font-bold text-slate-700">
               Cor primária
@@ -241,7 +376,7 @@ export default function Configuracoes() {
               type="color"
               value={corPrimaria}
               onChange={(e) => setCorPrimaria(e.target.value)}
-              className="w-full h-12 rounded-xl"
+              className="h-12 w-full rounded-xl"
             />
           </label>
 
@@ -253,7 +388,7 @@ export default function Configuracoes() {
               type="color"
               value={corSecundaria}
               onChange={(e) => setCorSecundaria(e.target.value)}
-              className="w-full h-12 rounded-xl"
+              className="h-12 w-full rounded-xl"
             />
           </label>
 
@@ -265,17 +400,138 @@ export default function Configuracoes() {
               type="color"
               value={corFundo}
               onChange={(e) => setCorFundo(e.target.value)}
-              className="w-full h-12 rounded-xl"
+              className="h-12 w-full rounded-xl"
             />
           </label>
         </div>
       </div>
 
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">
+              Banner do Meu Espaço
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Edite a campanha, dica ou aviso que aparece para a cliente no Meu
+              Espaço.
+            </p>
+          </div>
+
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={bannerAtivo}
+              onChange={(e) => setBannerAtivo(e.target.checked)}
+            />
+            Exibir banner
+          </label>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <input
+            type="text"
+            placeholder="Categoria (ex: Promoção especial)"
+            value={bannerCategoria}
+            onChange={(e) => setBannerCategoria(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
+
+          <input
+            type="text"
+            placeholder="Título do banner"
+            value={bannerTitulo}
+            onChange={(e) => setBannerTitulo(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
+
+          <input
+            type="text"
+            placeholder="Texto do botão"
+            value={bannerBotaoTexto}
+            onChange={(e) => setBannerBotaoTexto(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
+
+          <input
+            type="text"
+            placeholder="Link do botão"
+            value={bannerBotaoLink}
+            onChange={(e) => setBannerBotaoLink(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          />
+        </div>
+
+        <textarea
+          placeholder="Texto do banner"
+          value={bannerTexto}
+          onChange={(e) => setBannerTexto(e.target.value)}
+          className="mt-4 min-h-[140px] w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+        />
+
+        <div className="mt-4">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleUploadBanner}
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3"
+          />
+
+          {enviandoBanner && (
+            <p className="mt-2 text-sm font-semibold text-violet-700">
+              Enviando imagem...
+            </p>
+          )}
+        </div>
+
+        <input
+          type="text"
+          placeholder="URL da imagem"
+          value={bannerImagem}
+          onChange={(e) => setBannerImagem(e.target.value)}
+          className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+        />
+
+        <div
+          className="mt-6 overflow-hidden rounded-3xl bg-cover bg-center p-8 text-white md:p-10"
+          style={{
+            backgroundImage: bannerImagem
+              ? `linear-gradient(rgba(15,23,42,.75), rgba(15,23,42,.35)), url(${bannerImagem})`
+              : "linear-gradient(90deg,#020617,#334155,#94a3b8)",
+          }}
+        >
+          <p className="text-xs font-black uppercase tracking-widest">
+            {bannerCategoria || "Novidade"}
+          </p>
+
+          <h3 className="mt-3 text-3xl font-black md:text-5xl">
+            {bannerTitulo || "Bem-vinda ao Meu Espaço"}
+          </h3>
+
+          <p className="mt-4 max-w-2xl text-sm text-slate-200 md:text-lg">
+            {bannerTexto ||
+              "Acompanhe novidades, promoções e dicas exclusivas."}
+          </p>
+
+          {bannerBotaoTexto && (
+            <a
+              href={bannerBotaoLink || "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-6 inline-flex rounded-2xl bg-white px-6 py-3 font-bold text-slate-900"
+            >
+              {bannerBotaoTexto}
+            </a>
+          )}
+        </div>
+      </div>
+
       <button
-        onClick={salvar}
+        onClick={() => void salvarConfiguracoes()}
         disabled={salvando}
-        style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
-        className="text-white px-6 py-3 rounded-xl font-bold hover:opacity-90 disabled:opacity-60"
+        style={{ backgroundColor: "var(--cor-primaria, #4f46e5)" }}
+        className="rounded-2xl px-8 py-4 font-bold text-white hover:opacity-90 disabled:opacity-60"
       >
         {salvando ? "Salvando..." : "Salvar configurações"}
       </button>

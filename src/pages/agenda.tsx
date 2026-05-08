@@ -144,6 +144,30 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "long",
   year: "numeric",
 });
+function hojeISO() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function usuarioEhAdmin() {
+  const tipoUsuario =
+    localStorage.getItem("tipo_usuario") ||
+    localStorage.getItem("perfil") ||
+    localStorage.getItem("role") ||
+    "";
+
+  return ["admin", "administrador", "owner"].includes(
+    tipoUsuario.toLowerCase()
+  );
+}
+
+function dataPassada(data?: string | null) {
+  if (!data) return false;
+  return data < hojeISO();
+}
+
+function podeEditarData(data?: string | null) {
+  return !dataPassada(data) || usuarioEhAdmin();
+}
 
 function getTodayString() {
   const now = new Date();
@@ -556,6 +580,18 @@ export default function AgendaPage() {
   }
 
   async function salvarAgendamento() {
+    if (!podeEditarData(data)) {
+      if (!podeEditarData(dataReagendamento)) {
+  alert(
+    "Somente administradores podem reagendar para datas anteriores."
+  );
+  return;
+}
+  alert(
+    "Datas anteriores só podem ser alteradas por administradores."
+  );
+  return;
+}
     if (!cliente || !servico || !profissional || !data || !hora) {
       alert("Preencha cliente, serviço, profissional, data e horário.");
       return;
@@ -2267,12 +2303,13 @@ ${linkMeuEspaco}`;
                 ))}
               </select>
 
-              <input
-                type="date"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
-                className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
-              />
+           <input
+  type="date"
+  value={data}
+  min={usuarioEhAdmin() ? undefined : hojeISO()}
+  onChange={(e) => setData(e.target.value)}
+  className="h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
+/>
 
               <select
                 value={hora}
@@ -2378,12 +2415,12 @@ ${linkMeuEspaco}`;
                   Nova data
                 </label>
                 <input
-                  type="date"
-                  value={dataReagendamento}
-                  min={getTodayString()}
-                  onChange={(e) => setDataReagendamento(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
-                />
+  type="date"
+  value={dataReagendamento}
+  min={usuarioEhAdmin() ? undefined : getTodayString()}
+  onChange={(e) => setDataReagendamento(e.target.value)}
+  className="mt-2 h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
+/>
               </div>
 
               <div>

@@ -63,6 +63,25 @@ type Profissional = {
   empresa_id?: string | null;
 };
 
+type Agendamento = {
+  id: string;
+  empresa_id?: string | null;
+  cliente?: string | null;
+  profissional?: string | null;
+  servico?: string | null;
+  cliente_id?: string | null;
+  profissional_id?: string | null;
+  servico_id?: string | null;
+  data?: string | null;
+  horario?: string | null;
+  status?: string | null;
+  status_pagamento?: string | null;
+  valor?: number | string | null;
+  valor_pago?: number | string | null;
+  valor_total?: number | string | null;
+  created_at?: string | null;
+};
+
 export default function FinanceiroPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
@@ -70,6 +89,7 @@ export default function FinanceiroPage() {
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [tipo, setTipo] = useState("entrada");
@@ -111,33 +131,46 @@ export default function FinanceiroPage() {
       setDespesas([]);
       setProdutos([]);
       setProfissionais([]);
+      setAgendamentos([]);
       setLoading(false);
       return;
     }
 
-    const [resFinanceiro, resDespesas, resProdutos, resProfissionais] = await Promise.all([
-      supabase
-        .from("financeiro")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("data_lancamento", { ascending: false })
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("despesas")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("data_lancamento", { ascending: false }),
-      supabase
-        .from("produtos")
-        .select("id,nome,preco,estoque,status,empresa_id")
-        .eq("empresa_id", empresaId)
-        .order("nome", { ascending: true }),
-      supabase
-        .from("profissionais")
-        .select("id,nome,ativo,empresa_id")
-        .eq("empresa_id", empresaId)
-        .order("nome", { ascending: true }),
-    ]);
+    const [
+      resFinanceiro,
+      resDespesas,
+      resProdutos,
+      resProfissionais,
+      resAgendamentos,
+    ] = await Promise.all([
+        supabase
+          .from("financeiro")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("data_lancamento", { ascending: false })
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("despesas")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("data_lancamento", { ascending: false }),
+        supabase
+          .from("produtos")
+          .select("id,nome,preco,estoque,status,empresa_id")
+          .eq("empresa_id", empresaId)
+          .order("nome", { ascending: true }),
+        supabase
+          .from("profissionais")
+          .select("id,nome,ativo,empresa_id")
+          .eq("empresa_id", empresaId)
+          .order("nome", { ascending: true }),
+        supabase
+          .from("agendamentos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("data", { ascending: false })
+          .order("horario", { ascending: false }),
+      ]);
 
     if (resFinanceiro.error) {
       console.error("Erro ao carregar financeiro:", resFinanceiro.error);
@@ -166,6 +199,13 @@ export default function FinanceiroPage() {
       setProfissionais([]);
     } else {
       setProfissionais((resProfissionais.data || []) as Profissional[]);
+    }
+
+    if (resAgendamentos.error) {
+      console.warn("Erro ao carregar agendamentos:", resAgendamentos.error);
+      setAgendamentos([]);
+    } else {
+      setAgendamentos((resAgendamentos.data || []) as Agendamento[]);
     }
 
     setLoading(false);
@@ -334,7 +374,10 @@ export default function FinanceiroPage() {
 
     if (erroFinanceiro) {
       setSalvandoVenda(false);
-      alert("Venda e estoque atualizados, mas erro ao lançar financeiro: " + erroFinanceiro.message);
+      alert(
+        "Venda e estoque atualizados, mas erro ao lançar financeiro: " +
+          erroFinanceiro.message,
+      );
       return;
     }
 
@@ -377,54 +420,14 @@ export default function FinanceiroPage() {
     await carregarDados();
   }
 
-  async function calcularComissaoLancamento(item: Lancamento) {
-    const valorBruto = Number(item.valor_bruto ?? item.valor ?? 0);
-
-    if (!item.profissional_id || !item.servico_id || valorBruto <= 0) {
-      return {
-        comissao_percentual: Number(item.comissao_percentual || 0),
-        comissao_valor: Number(item.comissao_valor || 0),
-        valor_liquido:
-          item.valor_liquido ?? valorBruto - Number(item.comissao_valor || 0),
-      };
-    }
-
-    const { data, error } = await supabase
-      .from("profissional_servicos")
-      .select("comissao_percentual")
-      .eq("profissional_id", item.profissional_id)
-      .eq("servico_id", item.servico_id)
-      .maybeSingle();
-
-    if (error) {
-      console.warn("Não foi possível calcular comissão:", error.message);
-    }
-
-    const percentual = Number(
-      data?.comissao_percentual ?? item.comissao_percentual ?? 0,
-    );
-    const comissaoValor = Number(((valorBruto * percentual) / 100).toFixed(2));
-    const valorLiquido = Number((valorBruto - comissaoValor).toFixed(2));
-
-    return {
-      comissao_percentual: percentual,
-      comissao_valor: comissaoValor,
-      valor_liquido: valorLiquido,
-    };
-  }
-
-  async function marcarComoPago(item: Lancamento) {
-    const comissao = await calcularComissaoLancamento(item);
-
+  async function marcarComoPago(id: string) {
     const { error } = await supabase
       .from("financeiro")
       .update({
         status: "pago",
         data_pagamento: new Date().toISOString(),
-        valor_bruto: Number(item.valor_bruto ?? item.valor ?? 0),
-        ...comissao,
       })
-      .eq("id", item.id)
+      .eq("id", id)
       .eq("empresa_id", empresaId);
 
     if (error) {
@@ -465,53 +468,162 @@ export default function FinanceiroPage() {
     return true;
   }
 
+  function valorDoLancamento(item: Lancamento) {
+    const bruto = Number(item.valor_bruto ?? 0);
+    const valorBase = Number(item.valor ?? 0);
+
+    return bruto > 0 ? bruto : valorBase;
+  }
+
+  function dataAgendamento(item: Agendamento) {
+    return item.data || item.created_at?.slice(0, 10) || "";
+  }
+
+  function valorDoAgendamento(item: Agendamento) {
+    const valorPago = Number(item.valor_pago ?? 0);
+    const valor = Number(item.valor ?? 0);
+    const valorTotal = Number(item.valor_total ?? 0);
+
+    if (valorPago > 0) return valorPago;
+    if (valor > 0) return valor;
+    if (valorTotal > 0) return valorTotal;
+
+    return 0;
+  }
+
   const lancamentosFiltrados = useMemo(() => {
     return lancamentos.filter((item) => {
       const batePeriodo = dentroDoPeriodo(item.data_lancamento);
       const bateTipo = filtroTipo ? item.tipo === filtroTipo : true;
       const bateStatus = filtroStatus ? item.status === filtroStatus : true;
       const bateProfissional = filtroProfissionalId
-        ? item.profissional_id === filtroProfissionalId || item.profissional === profissionais.find((p) => p.id === filtroProfissionalId)?.nome
+        ? item.profissional_id === filtroProfissionalId ||
+          item.profissional ===
+            profissionais.find((p) => p.id === filtroProfissionalId)?.nome
         : true;
 
       return batePeriodo && bateTipo && bateStatus && bateProfissional;
     });
-  }, [lancamentos, filtroDataInicio, filtroDataFim, filtroTipo, filtroStatus, filtroProfissionalId, profissionais]);
+  }, [
+    lancamentos,
+    filtroDataInicio,
+    filtroDataFim,
+    filtroTipo,
+    filtroStatus,
+    filtroProfissionalId,
+    profissionais,
+  ]);
+
+  const agendamentosFiltrados = useMemo(() => {
+    return agendamentos.filter((item) => {
+      const batePeriodo = dentroDoPeriodo(dataAgendamento(item));
+      const bateProfissional = filtroProfissionalId
+        ? item.profissional_id === filtroProfissionalId ||
+          item.profissional ===
+            profissionais.find((p) => p.id === filtroProfissionalId)?.nome
+        : true;
+
+      return batePeriodo && bateProfissional;
+    });
+  }, [
+    agendamentos,
+    filtroDataInicio,
+    filtroDataFim,
+    filtroProfissionalId,
+    profissionais,
+  ]);
 
   const despesasFiltradas = useMemo(() => {
     return despesas.filter((item) => dentroDoPeriodo(dataDespesa(item)));
   }, [despesas, filtroDataInicio, filtroDataFim]);
 
-  const profissionalSelecionado = profissionais.find((item) => item.id === filtroProfissionalId);
+  const profissionalSelecionado = profissionais.find(
+    (item) => item.id === filtroProfissionalId,
+  );
 
-  const produtoVendaSelecionado = produtos.find((item) => item.id === produtoIdVenda);
+  const produtoVendaSelecionado = produtos.find(
+    (item) => item.id === produtoIdVenda,
+  );
   const quantidadeVendaNumero = normalizarNumero(quantidadeVenda) || 0;
-  const valorVendaProduto = Number(produtoVendaSelecionado?.preco || 0) * quantidadeVendaNumero;
+  const valorVendaProduto =
+    Number(produtoVendaSelecionado?.preco || 0) * quantidadeVendaNumero;
 
-  const lancamentosPagos = lancamentosFiltrados.filter(
-    (item) => item.tipo === "entrada" && item.status === "pago",
+  function statusNormalizado(valor?: string | null) {
+    return String(valor || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+  }
+
+  const STATUS_PAGOS = ["pago", "recebido", "finalizado", "quitado"];
+  const STATUS_A_RECEBER = [
+    "pendente",
+    "aberto",
+    "agendado",
+    "aguardando",
+    "a receber",
+    "areceber",
+    "em aberto",
+  ];
+
+  const lancamentosPagos = lancamentosFiltrados.filter((item) => {
+    const status = statusNormalizado(item.status);
+    return item.tipo === "entrada" && STATUS_PAGOS.includes(status);
+  });
+
+  const lancamentosPendentes = lancamentosFiltrados.filter((item) => {
+    const status = statusNormalizado(item.status);
+    return item.tipo === "entrada" && STATUS_A_RECEBER.includes(status);
+  });
+
+  const agendamentosComLancamento = new Set(
+    lancamentos
+      .map((item) => item.agendamento_id)
+      .filter((id): id is string => Boolean(id)),
   );
 
-  const lancamentosPendentes = lancamentosFiltrados.filter(
-    (item) => item.tipo === "entrada" && item.status === "pendente",
-  );
+  const agendamentosAReceber = agendamentosFiltrados.filter((item) => {
+    const status = statusNormalizado(item.status);
+    const statusPagamento = statusNormalizado(item.status_pagamento);
+
+    if (agendamentosComLancamento.has(item.id)) return false;
+    if (["cancelado", "finalizado", "pago", "recebido"].includes(status)) {
+      return false;
+    }
+    if (["pago", "recebido", "quitado"].includes(statusPagamento)) {
+      return false;
+    }
+
+    return valorDoAgendamento(item) > 0;
+  });
 
   const totalReceitas = lancamentosPagos.reduce(
-    (acc, item) => acc + Number(item.valor_bruto ?? item.valor ?? 0),
+    (acc, item) => acc + valorDoLancamento(item),
     0,
   );
 
-  const totalAReceber = lancamentosPendentes.reduce(
-    (acc, item) => acc + Number(item.valor_bruto ?? item.valor ?? 0),
+  const totalAReceberFinanceiro = lancamentosPendentes.reduce(
+    (acc, item) => acc + valorDoLancamento(item),
     0,
   );
+
+  const totalAReceberAgendamentos = agendamentosAReceber.reduce(
+    (acc, item) => acc + valorDoAgendamento(item),
+    0,
+  );
+
+  const totalAReceber = totalAReceberFinanceiro + totalAReceberAgendamentos;
 
   const totalSaidasFinanceiro = lancamentosFiltrados
-    .filter((item) => item.tipo === "saida" && item.status !== "cancelado")
+    .filter(
+      (item) =>
+        item.tipo === "saida" && statusNormalizado(item.status) !== "cancelado",
+    )
     .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
   const totalDespesas = despesasFiltradas
-    .filter((item) => item.status !== "cancelado")
+    .filter((item) => statusNormalizado(item.status) !== "cancelado")
     .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
   const totalComissoes = lancamentosPagos.reduce(
@@ -530,7 +642,8 @@ export default function FinanceiroPage() {
     0,
   );
 
-  const lucroLiquido = totalReceitasLiquidas - totalSaidasFinanceiro - totalDespesas;
+  const lucroLiquido =
+    totalReceitasLiquidas - totalSaidasFinanceiro - totalDespesas;
 
   function formatarMoeda(valor: number) {
     return Number(valor || 0).toLocaleString("pt-BR", {
@@ -550,9 +663,15 @@ export default function FinanceiroPage() {
       { Indicador: "A receber", Valor: totalAReceber },
       { Indicador: "Comissões", Valor: totalComissoes },
       { Indicador: "Receita líquida", Valor: totalReceitasLiquidas },
-      { Indicador: "Despesas/saídas", Valor: totalSaidasFinanceiro + totalDespesas },
+      {
+        Indicador: "Despesas/saídas",
+        Valor: totalSaidasFinanceiro + totalDespesas,
+      },
       { Indicador: "Lucro líquido", Valor: lucroLiquido },
-      { Indicador: "Profissional filtrado", Valor: profissionalSelecionado?.nome || "Todos" },
+      {
+        Indicador: "Profissional filtrado",
+        Valor: profissionalSelecionado?.nome || "Todos",
+      },
       { Indicador: "Período inicial", Valor: filtroDataInicio || "Todos" },
       { Indicador: "Período final", Valor: filtroDataFim || "Todos" },
     ];
@@ -565,10 +684,13 @@ export default function FinanceiroPage() {
       Serviço: item.servico || "",
       Profissional: item.profissional || "",
       "Forma de pagamento": item.forma_pagamento || "",
-      "Valor bruto": Number(item.valor || item.valor_bruto || 0),
+      "Valor bruto": valorDoLancamento(item),
       "Comissão (%)": Number(item.comissao_percentual || 0),
       "Comissão (R$)": Number(item.comissao_valor || 0),
-      "Valor líquido": Number(item.valor_liquido ?? Number(item.valor || 0) - Number(item.comissao_valor || 0)),
+      "Valor líquido": Number(
+        item.valor_liquido ??
+          Number(item.valor || 0) - Number(item.comissao_valor || 0),
+      ),
       Status: item.status || "",
       Observações: item.observacoes || "",
     }));
@@ -596,7 +718,10 @@ export default function FinanceiroPage() {
       ? `-${profissionalSelecionado.nome.toLowerCase().replace(/\s+/g, "-")}`
       : "";
 
-    XLSX.writeFile(workbook, `relatorio-financeiro${profissionalArquivo}-${dataArquivo}.xlsx`);
+    XLSX.writeFile(
+      workbook,
+      `relatorio-financeiro${profissionalArquivo}-${dataArquivo}.xlsx`,
+    );
   }
 
   function limparFiltros() {
@@ -627,7 +752,10 @@ export default function FinanceiroPage() {
               Exportar Excel
             </SecondaryButton>
 
-            <SecondaryButton type="button" onClick={() => setModalVendaProduto(true)}>
+            <SecondaryButton
+              type="button"
+              onClick={() => setModalVendaProduto(true)}
+            >
               + Venda de produto
             </SecondaryButton>
 
@@ -648,19 +776,44 @@ export default function FinanceiroPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <ResumoCard title="Receita bruta" value={formatarMoeda(totalReceitas)} valueClassName="text-emerald-600" />
-        <ResumoCard title="A receber" value={formatarMoeda(totalAReceber)} valueClassName="text-amber-600" />
-        <ResumoCard title="Comissões" value={formatarMoeda(totalComissoes)} valueClassName="text-violet-600" />
-        <ResumoCard title="Receita líquida" value={formatarMoeda(totalReceitasLiquidas)} valueClassName="text-blue-700" />
-        <ResumoCard title="Despesas/saídas" value={formatarMoeda(totalSaidasFinanceiro + totalDespesas)} valueClassName="text-red-600" />
+        <ResumoCard
+          title="Receita bruta"
+          value={formatarMoeda(totalReceitas)}
+          valueClassName="text-emerald-600"
+        />
+        <ResumoCard
+          title="A receber"
+          value={formatarMoeda(totalAReceber)}
+          valueClassName="text-amber-600"
+        />
+        <ResumoCard
+          title="Comissões"
+          value={formatarMoeda(totalComissoes)}
+          valueClassName="text-violet-600"
+        />
+        <ResumoCard
+          title="Receita líquida"
+          value={formatarMoeda(totalReceitasLiquidas)}
+          valueClassName="text-blue-700"
+        />
+        <ResumoCard
+          title="Despesas/saídas"
+          value={formatarMoeda(totalSaidasFinanceiro + totalDespesas)}
+          valueClassName="text-red-600"
+        />
         <ResumoCard
           title="Lucro líquido"
           value={formatarMoeda(lucroLiquido)}
-          valueClassName={lucroLiquido >= 0 ? "text-emerald-700" : "text-red-700"}
+          valueClassName={
+            lucroLiquido >= 0 ? "text-emerald-700" : "text-red-700"
+          }
         />
       </div>
 
-      <SectionCard title="Filtros" description="Refine a visualização por período, tipo e status">
+      <SectionCard
+        title="Filtros"
+        description="Refine a visualização por período, tipo e status"
+      >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <input
             type="date"
@@ -693,10 +846,12 @@ export default function FinanceiroPage() {
           >
             <option value="">Todos os status</option>
             <option value="pendente">Pendente</option>
+            <option value="agendado">Agendado</option>
+            <option value="aberto">Aberto</option>
             <option value="pago">Pago</option>
+            <option value="finalizado">Finalizado</option>
             <option value="cancelado">Cancelado</option>
           </select>
-
 
           <select
             value={filtroProfissionalId}
@@ -720,11 +875,11 @@ export default function FinanceiroPage() {
       {filtroProfissionalId && (
         <SectionCard
           title={`Resumo do profissional${profissionalSelecionado?.nome ? `: ${profissionalSelecionado.nome}` : ""}`}
-          description="Use este bloco para saber quanto precisa pagar de comissão ao profissional no período filtrado. Somente lançamentos pagos entram neste resumo."
+          description="Use este bloco para saber quanto precisa pagar de comissão ao profissional no período filtrado."
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <ResumoCard
-              title="Recebido pelo profissional"
+              title="Faturado pelo profissional"
               value={formatarMoeda(totalReceitas)}
               valueClassName="text-emerald-600"
             />
@@ -747,8 +902,15 @@ export default function FinanceiroPage() {
           title={editandoId ? "Editar lançamento" : "Novo lançamento"}
           description="Cadastre manualmente entradas ou saídas financeiras."
         >
-          <form onSubmit={salvarLancamento} className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="rounded-2xl border border-slate-200 p-3">
+          <form
+            onSubmit={salvarLancamento}
+            className="grid grid-cols-1 gap-3 md:grid-cols-2"
+          >
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            >
               <option value="entrada">Entrada</option>
               <option value="saida">Saída</option>
             </select>
@@ -776,7 +938,11 @@ export default function FinanceiroPage() {
               className="rounded-2xl border border-slate-200 p-3"
             />
 
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-2xl border border-slate-200 p-3">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            >
               <option value="pendente">Pendente</option>
               <option value="pago">Pago</option>
               <option value="cancelado">Cancelado</option>
@@ -796,9 +962,24 @@ export default function FinanceiroPage() {
               <option value="outro">Outro</option>
             </select>
 
-            <input placeholder="Cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} className="rounded-2xl border border-slate-200 p-3" />
-            <input placeholder="Profissional" value={profissional} onChange={(e) => setProfissional(e.target.value)} className="rounded-2xl border border-slate-200 p-3" />
-            <input placeholder="Serviço" value={servico} onChange={(e) => setServico(e.target.value)} className="rounded-2xl border border-slate-200 p-3 md:col-span-2" />
+            <input
+              placeholder="Cliente"
+              value={cliente}
+              onChange={(e) => setCliente(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            />
+            <input
+              placeholder="Profissional"
+              value={profissional}
+              onChange={(e) => setProfissional(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3"
+            />
+            <input
+              placeholder="Serviço"
+              value={servico}
+              onChange={(e) => setServico(e.target.value)}
+              className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
+            />
 
             <textarea
               placeholder="Observações"
@@ -820,16 +1001,25 @@ export default function FinanceiroPage() {
         </SectionCard>
       )}
 
-      <SectionCard title="Receitas e lançamentos" description="Movimentações registradas no financeiro">
+      <SectionCard
+        title="Receitas e lançamentos"
+        description="Movimentações registradas no financeiro"
+      >
         {loading ? (
           <p>Carregando...</p>
         ) : lancamentosFiltrados.length === 0 ? (
-          <EmptyState title="Nenhum lançamento encontrado" description="Os lançamentos filtrados aparecerão aqui." />
+          <EmptyState
+            title="Nenhum lançamento encontrado"
+            description="Os lançamentos filtrados aparecerão aqui."
+          />
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="text-left text-sm text-white" style={{ backgroundColor: "var(--color-primary)" }}>
+                <tr
+                  className="text-left text-sm text-white"
+                  style={{ backgroundColor: "var(--color-primary)" }}
+                >
                   <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">Descrição</th>
                   <th className="px-4 py-3">Cliente</th>
@@ -846,23 +1036,45 @@ export default function FinanceiroPage() {
 
               <tbody>
                 {lancamentosFiltrados.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 odd:bg-white even:bg-slate-50">
-                    <td className="px-4 py-3 text-sm text-slate-700">{formatarData(item.data_lancamento)}</td>
+                  <tr
+                    key={item.id}
+                    className="border-b border-slate-100 odd:bg-white even:bg-slate-50"
+                  >
                     <td className="px-4 py-3 text-sm text-slate-700">
-                      <div className="font-bold text-slate-900">{item.descricao}</div>
+                      {formatarData(item.data_lancamento)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      <div className="font-bold text-slate-900">
+                        {item.descricao}
+                      </div>
                       {item.agendamento_id && (
                         <span className="mt-1 inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">
                           vindo da agenda
                         </span>
                       )}
-                      {item.observacoes && <div className="mt-1 text-xs text-slate-500">{item.observacoes}</div>}
+                      {item.observacoes && (
+                        <div className="mt-1 text-xs text-slate-500">
+                          {item.observacoes}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{item.cliente || "-"}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{item.servico || "-"}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{item.profissional || "-"}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{item.forma_pagamento || "-"}</td>
-                    <td className={`px-4 py-3 text-right text-sm font-extrabold ${item.tipo === "entrada" ? "text-emerald-600" : "text-orange-600"}`}>
-                      {item.tipo === "entrada" ? "+" : "-"} {formatarMoeda(Number(item.valor || item.valor_bruto || 0))}
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {item.cliente || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {item.servico || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {item.profissional || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {item.forma_pagamento || "-"}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right text-sm font-extrabold ${item.tipo === "entrada" ? "text-emerald-600" : "text-orange-600"}`}
+                    >
+                      {item.tipo === "entrada" ? "+" : "-"}{" "}
+                      {formatarMoeda(valorDoLancamento(item))}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-bold text-violet-600">
                       {Number(item.comissao_valor || 0) > 0 ? (
@@ -877,30 +1089,53 @@ export default function FinanceiroPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-extrabold text-blue-700">
-                      {formatarMoeda(Number(item.valor_liquido ?? Number(item.valor || 0) - Number(item.comissao_valor || 0)))}
+                      {formatarMoeda(
+                        Number(
+                          item.valor_liquido ??
+                            Number(item.valor || 0) -
+                              Number(item.comissao_valor || 0),
+                        ),
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <StatusBadge status={item.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        {item.status !== "pago" && item.status !== "cancelado" && (
-                          <button type="button" onClick={() => marcarComoPago(item)} className="text-sm font-bold text-emerald-600 hover:underline">
-                            Pago
-                          </button>
-                        )}
+                        {item.status !== "pago" &&
+                          item.status !== "cancelado" && (
+                            <button
+                              type="button"
+                              onClick={() => marcarComoPago(item.id)}
+                              className="text-sm font-bold text-emerald-600 hover:underline"
+                            >
+                              Pago
+                            </button>
+                          )}
 
-                        <button type="button" onClick={() => editarLancamento(item)} className="text-sm font-bold text-blue-600 hover:underline">
+                        <button
+                          type="button"
+                          onClick={() => editarLancamento(item)}
+                          className="text-sm font-bold text-blue-600 hover:underline"
+                        >
                           Editar
                         </button>
 
                         {item.status !== "cancelado" && (
-                          <button type="button" onClick={() => cancelarLancamento(item.id)} className="text-sm font-bold text-orange-600 hover:underline">
+                          <button
+                            type="button"
+                            onClick={() => cancelarLancamento(item.id)}
+                            className="text-sm font-bold text-orange-600 hover:underline"
+                          >
                             Cancelar
                           </button>
                         )}
 
-                        <button type="button" onClick={() => excluirLancamento(item.id)} className="text-sm font-bold text-red-600 hover:underline">
+                        <button
+                          type="button"
+                          onClick={() => excluirLancamento(item.id)}
+                          className="text-sm font-bold text-red-600 hover:underline"
+                        >
                           Excluir
                         </button>
                       </div>
@@ -913,26 +1148,43 @@ export default function FinanceiroPage() {
         )}
       </SectionCard>
 
-      <SectionCard title="Despesas do período" description="Itens vindos da tabela despesas">
+      <SectionCard
+        title="Despesas do período"
+        description="Itens vindos da tabela despesas"
+      >
         {loading ? (
           <p>Carregando...</p>
         ) : despesasFiltradas.length === 0 ? (
-          <EmptyState title="Nenhuma despesa encontrada" description="As despesas do período aparecerão aqui." />
+          <EmptyState
+            title="Nenhuma despesa encontrada"
+            description="As despesas do período aparecerão aqui."
+          />
         ) : (
           <div className="space-y-3">
             {despesasFiltradas.map((item) => (
-              <div key={item.id} className="flex justify-between gap-4 rounded-2xl border border-slate-200 p-4">
+              <div
+                key={item.id}
+                className="flex justify-between gap-4 rounded-2xl border border-slate-200 p-4"
+              >
                 <div>
                   <p className="font-bold text-slate-800">{item.descricao}</p>
-                  <p className="text-sm text-slate-500">{item.categoria || "Sem categoria"}</p>
-                  <p className="text-sm text-slate-500">{formatarData(dataDespesa(item))}</p>
+                  <p className="text-sm text-slate-500">
+                    {item.categoria || "Sem categoria"}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {formatarData(dataDespesa(item))}
+                  </p>
                   {(item.observacao || item.observacoes) && (
-                    <p className="mt-1 text-sm text-slate-400">{item.observacao || item.observacoes}</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {item.observacao || item.observacoes}
+                    </p>
                   )}
                 </div>
 
                 <div className="text-right">
-                  <p className="font-extrabold text-red-600">- {formatarMoeda(Number(item.valor))}</p>
+                  <p className="font-extrabold text-red-600">
+                    - {formatarMoeda(Number(item.valor))}
+                  </p>
                 </div>
               </div>
             ))}
@@ -945,9 +1197,15 @@ export default function FinanceiroPage() {
           <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-bold uppercase text-slate-500">Estoque</p>
-                <h2 className="text-2xl font-extrabold text-slate-900">Venda de produto</h2>
-                <p className="text-sm text-slate-500">Registre a venda, baixe estoque e lance no financeiro.</p>
+                <p className="text-sm font-bold uppercase text-slate-500">
+                  Estoque
+                </p>
+                <h2 className="text-2xl font-extrabold text-slate-900">
+                  Venda de produto
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Registre a venda, baixe estoque e lance no financeiro.
+                </p>
               </div>
 
               <SecondaryButton type="button" onClick={limparVendaProduto}>
@@ -964,7 +1222,8 @@ export default function FinanceiroPage() {
                 <option value="">Selecione o produto</option>
                 {produtos.map((produto) => (
                   <option key={produto.id} value={produto.id}>
-                    {produto.nome} — estoque: {Number(produto.estoque || 0)} — {formatarMoeda(Number(produto.preco || 0))}
+                    {produto.nome} — estoque: {Number(produto.estoque || 0)} —{" "}
+                    {formatarMoeda(Number(produto.preco || 0))}
                   </option>
                 ))}
               </select>
@@ -1014,7 +1273,11 @@ export default function FinanceiroPage() {
                   Cancelar
                 </SecondaryButton>
 
-                <PrimaryButton type="button" onClick={salvarVendaProduto} disabled={salvandoVenda}>
+                <PrimaryButton
+                  type="button"
+                  onClick={salvarVendaProduto}
+                  disabled={salvandoVenda}
+                >
                   {salvandoVenda ? "Salvando..." : "Salvar venda"}
                 </PrimaryButton>
               </div>
@@ -1038,7 +1301,9 @@ function ResumoCard({
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-semibold text-slate-500">{title}</p>
-      <p className={`mt-2 text-3xl font-extrabold ${valueClassName || "text-slate-800"}`}>
+      <p
+        className={`mt-2 text-3xl font-extrabold ${valueClassName || "text-slate-800"}`}
+      >
         {value}
       </p>
     </div>

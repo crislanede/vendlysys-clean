@@ -141,7 +141,7 @@ export default function MeuEspaco() {
     anamneseObrigatoria || assinaturaComplementarObrigatoria;
 
   const [isMobile, setIsMobile] = useState(false);
-  
+  const [configuracoes, setConfiguracoes] = useState<any>(null);
 
   useEffect(() => {
     const atualizarMobile = () => setIsMobile(window.innerWidth < 640);
@@ -562,6 +562,34 @@ export default function MeuEspaco() {
     setCadastrando(false);
   }
 
+ async function carregarConfiguracoes(empresaId: string | null) {
+  if (!empresaId) {
+    setConfiguracoes(null);
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("empresas")
+    .select(`
+      banner_cliente_ativo,
+      banner_cliente_categoria,
+      banner_cliente_titulo,
+      banner_cliente_texto,
+      banner_cliente_botao_texto,
+      banner_cliente_botao_link,
+      banner_cliente_imagem_url
+    `)
+    .eq("id", empresaId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Não foi possível carregar banner:", error);
+    setConfiguracoes(null);
+    return;
+  }
+
+  setConfiguracoes(data);
+}
   async function carregarCliente(clienteId: string) {
     const { data } = await supabase
       .from("clientes")
@@ -583,6 +611,7 @@ export default function MeuEspaco() {
       data.empresa_id || ags.find((a: any) => a.empresa_id)?.empresa_id || null;
     await carregarAnamnese(data.id, empresaId);
     await carregarOpcoesAgendamento(empresaId);
+    await carregarConfiguracoes(empresaId);
   }
 
   async function carregarAgendamentos(clienteId: string) {
@@ -2822,110 +2851,123 @@ const botaoAba = (valor: string, label: string) => {
         </div>
 
        {/* BANNER PROMOCIONAL */}
-{!anamneseObrigatoria && !assinaturaComplementarObrigatoria && (
-  <div
-    style={{
-      position: "relative",
-      borderRadius: isMobile ? 18 : 24,
-      overflow: "hidden",
-      marginBottom: isMobile ? 12 : 20,
-      boxShadow: "0 14px 35px rgba(15,23,42,.16)",
-      minHeight: isMobile ? 170 : 180,
-      display: "flex",
-      alignItems: "center",
-    }}
-  >
-    {/* IMAGEM DE FUNDO */}
-    <img
-      src="https://gzhhapdxrtzxhrhfxweg.supabase.co/storage/v1/object/public/campanhas/20260501022721_38765724.jpeg"
-      alt="Promoção"
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-      }}
-    />
+        {!anamneseObrigatoria &&
+          !assinaturaComplementarObrigatoria &&
+          configuracoes?.banner_cliente_ativo !== false && (
+            <div
+              style={{
+                position: "relative",
+                borderRadius: isMobile ? 18 : 24,
+                overflow: "hidden",
+                marginBottom: isMobile ? 12 : 20,
+                boxShadow: "0 14px 35px rgba(15,23,42,.16)",
+                minHeight: isMobile ? 170 : 180,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={
+                  configuracoes?.banner_cliente_imagem_url ||
+                  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1400&q=80"
+                }
+                alt={configuracoes?.banner_cliente_titulo || "Banner do Meu Espaço"}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
 
-    {/* ESCURECER IMAGEM */}
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        background:
-          "linear-gradient(90deg, rgba(15,23,42,.88) 0%, rgba(15,23,42,.38) 100%)",
-      }}
-    />
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(90deg, rgba(15,23,42,.88) 0%, rgba(15,23,42,.38) 100%)",
+                }}
+              />
 
-    {/* CONTEÚDO */}
-    <div
-      style={{
-        position: "relative",
-        zIndex: 2,
-        padding: isMobile ? 16 : 24,
-        maxWidth: 560,
-        color: "#fff",
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          fontSize: 12,
-          fontWeight: 800,
-          opacity: 0.9,
-          textTransform: "uppercase",
-          letterSpacing: 1,
-        }}
-      >
-        Promoção especial
-      </p>
+              <div
+                style={{
+                  position: "relative",
+                  zIndex: 2,
+                  padding: isMobile ? 16 : 24,
+                  maxWidth: 560,
+                  color: "#fff",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    opacity: 0.9,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                  }}
+                >
+                  {configuracoes?.banner_cliente_categoria || "Novidade"}
+                </p>
 
-      <h2
-        style={{
-          margin: "10px 0",
-          fontSize: isMobile ? 22 : 30,
-          lineHeight: 1.1,
-          fontWeight: 900,
-        }}
-      >
-        Realce sua beleza com condições especiais
-      </h2>
+                <h2
+                  style={{
+                    margin: "10px 0",
+                    fontSize: isMobile ? 22 : 30,
+                    lineHeight: 1.1,
+                    fontWeight: 900,
+                  }}
+                >
+                  {configuracoes?.banner_cliente_titulo ||
+                    "Bem-vinda ao Meu Espaço"}
+                </h2>
 
-      <p
-        style={{
-          margin: 0,
-          fontSize: isMobile ? 14 : 17,
-          opacity: 0.95,
-          lineHeight: 1.5,
-        }}
-      >
-        Aproveite nossos pacotes exclusivos deste mês e agende seu atendimento.
-      </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: isMobile ? 14 : 17,
+                    opacity: 0.95,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {configuracoes?.banner_cliente_texto ||
+                    "Acompanhe novidades, promoções e dicas exclusivas."}
+                </p>
 
-      <button
-        type="button"
-        onClick={() =>
-          window.open("https://wa.me/5511990040469", "_blank")
-        }
-        style={{
-          marginTop: 20,
-          background: "#fff",
-          color: "#111827",
-          border: "none",
-          borderRadius: 14,
-          padding: isMobile ? "11px 16px" : "14px 20px",
-          fontWeight: 900,
-          fontSize: 15,
-          cursor: "pointer",
-          boxShadow: "0 8px 20px rgba(0,0,0,.18)",
-        }}
-      >
-        Falar no WhatsApp
-      </button>
-    </div>
-  </div>
-)}
+                {(configuracoes?.banner_cliente_botao_texto ||
+                  configuracoes?.banner_cliente_botao_link) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = configuracoes?.banner_cliente_botao_link;
+
+                      if (link) {
+                        window.open(link, "_blank");
+                      }
+                    }}
+                    style={{
+                      marginTop: 20,
+                      background: "#fff",
+                      color: "#111827",
+                      border: "none",
+                      borderRadius: 14,
+                      padding: isMobile ? "11px 16px" : "14px 20px",
+                      fontWeight: 900,
+                      fontSize: 15,
+                      cursor: configuracoes?.banner_cliente_botao_link
+                        ? "pointer"
+                        : "default",
+                      boxShadow: "0 8px 20px rgba(0,0,0,.18)",
+                    }}
+                  >
+                    {configuracoes?.banner_cliente_botao_texto || "Saiba mais"}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
         {anamneseObrigatoria || assinaturaComplementarObrigatoria ? (
           <div

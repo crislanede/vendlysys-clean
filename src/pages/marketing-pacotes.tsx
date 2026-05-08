@@ -61,9 +61,19 @@ function dataAposDiasISO(dias: number) {
   return data.toISOString().slice(0, 10);
 }
 
+function calcularDataFimPorDias(dataInicio: string, diasTexto: string) {
+  const dias = Number(diasTexto || 0);
+  if (!dias || dias <= 0) return "";
+
+  const data = new Date(`${dataInicio}T00:00:00`);
+  data.setDate(data.getDate() + dias);
+  return data.toISOString().slice(0, 10);
+}
+
 export default function MarketingPacotes() {
   const { empresaId, corFundo } = useEmpresa() as any;
 
+  const [isMobile, setIsMobile] = useState(false);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [pacotes, setPacotes] = useState<Pacote[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -87,19 +97,36 @@ export default function MarketingPacotes() {
   const [descricao, setDescricao] = useState("");
   const [validadeDias, setValidadeDias] = useState(30);
   const [status, setStatus] = useState("ativo");
-  const [tipoDesconto, setTipoDesconto] = useState<"percentual" | "valor">("percentual");
+  const [tipoDesconto, setTipoDesconto] = useState<"percentual" | "valor">(
+    "percentual",
+  );
   const [descontoPercentual, setDescontoPercentual] = useState(0);
   const [descontoValor, setDescontoValor] = useState(0);
   const [itens, setItens] = useState<ItemPacote[]>([{ ...vazioItem }]);
 
   useEffect(() => {
+    function atualizarTela() {
+      setIsMobile(window.innerWidth < 768);
+    }
+
+    atualizarTela();
+    window.addEventListener("resize", atualizarTela);
+
+    return () => window.removeEventListener("resize", atualizarTela);
+  }, []);
+
+  useEffect(() => {
     if (empresaId) {
-      carregarTudo();
+      void carregarTudo();
     }
   }, [empresaId]);
 
   async function carregarTudo() {
-    await Promise.all([carregarServicos(), carregarPacotes(), carregarClientes()]);
+    await Promise.all([
+      carregarServicos(),
+      carregarPacotes(),
+      carregarClientes(),
+    ]);
   }
 
   async function carregarServicos() {
@@ -118,7 +145,6 @@ export default function MarketingPacotes() {
 
     setServicos(data || []);
   }
-
 
   async function carregarClientes() {
     if (!empresaId) return;
@@ -160,7 +186,11 @@ export default function MarketingPacotes() {
 
   function valorServico(servico?: Servico | null) {
     if (!servico) return 0;
-    return Number(servico.preco_promocional ?? servico.preco ?? servico.valor ?? 0) || 0;
+    return (
+      Number(
+        servico.preco_promocional ?? servico.preco ?? servico.valor ?? 0,
+      ) || 0
+    );
   }
 
   function formatarMoeda(valor: number) {
@@ -194,7 +224,9 @@ export default function MarketingPacotes() {
     setDescricao(pacote.descricao || "");
     setValidadeDias(Number(pacote.validade_dias || 30));
     setStatus(pacote.status || "ativo");
-    setTipoDesconto((pacote.tipo_desconto as "percentual" | "valor") || "percentual");
+    setTipoDesconto(
+      (pacote.tipo_desconto as "percentual" | "valor") || "percentual",
+    );
     setDescontoPercentual(Number(pacote.desconto_percentual || 0));
     setDescontoValor(Number(pacote.desconto_valor || 0));
 
@@ -232,7 +264,11 @@ export default function MarketingPacotes() {
     });
   }
 
-  function atualizarItem(index: number, campo: keyof ItemPacote, valor: string | number) {
+  function atualizarItem(
+    index: number,
+    campo: keyof ItemPacote,
+    valor: string | number,
+  ) {
     setItens((atuais) => {
       const novos = [...atuais];
       const item = { ...novos[index] };
@@ -257,7 +293,10 @@ export default function MarketingPacotes() {
   }
 
   const totalServicos = useMemo(() => {
-    return itens.reduce((total, item) => total + Number(item.valor_total || 0), 0);
+    return itens.reduce(
+      (total, item) => total + Number(item.valor_total || 0),
+      0,
+    );
   }, [itens]);
 
   const valorDesconto = useMemo(() => {
@@ -281,7 +320,9 @@ export default function MarketingPacotes() {
       return;
     }
 
-    const itensValidos = itens.filter((item) => item.servico_id && item.quantidade > 0);
+    const itensValidos = itens.filter(
+      (item) => item.servico_id && item.quantidade > 0,
+    );
 
     if (itensValidos.length === 0) {
       alert("Adicione pelo menos um serviço ao pacote.");
@@ -297,7 +338,8 @@ export default function MarketingPacotes() {
       validade_dias: validadeDias,
       status,
       tipo_desconto: tipoDesconto,
-      desconto_percentual: tipoDesconto === "percentual" ? descontoPercentual : 0,
+      desconto_percentual:
+        tipoDesconto === "percentual" ? descontoPercentual : 0,
       desconto_valor: tipoDesconto === "valor" ? descontoValor : 0,
       valor_original: totalServicos,
       valor_final: totalFinal,
@@ -318,7 +360,10 @@ export default function MarketingPacotes() {
         return;
       }
 
-      await supabase.from("marketing_pacote_servicos").delete().eq("pacote_id", editandoId);
+      await supabase
+        .from("marketing_pacote_servicos")
+        .delete()
+        .eq("pacote_id", editandoId);
     } else {
       const { data, error } = await supabase
         .from("marketing_pacotes")
@@ -356,7 +401,7 @@ export default function MarketingPacotes() {
 
     setModalAberto(false);
     limparFormulario();
-    carregarPacotes();
+    void carregarPacotes();
   }
 
   async function alterarStatusPacote(pacote: Pacote) {
@@ -375,14 +420,17 @@ export default function MarketingPacotes() {
       return;
     }
 
-    carregarPacotes();
+    void carregarPacotes();
   }
 
   async function excluirPacote(id: string) {
     const confirmar = confirm("Tem certeza que deseja excluir este pacote?");
     if (!confirmar) return;
 
-    await supabase.from("marketing_pacote_servicos").delete().eq("pacote_id", id);
+    await supabase
+      .from("marketing_pacote_servicos")
+      .delete()
+      .eq("pacote_id", id);
 
     const { error } = await supabase
       .from("marketing_pacotes")
@@ -395,14 +443,18 @@ export default function MarketingPacotes() {
       return;
     }
 
-    carregarPacotes();
+    void carregarPacotes();
   }
 
-
   function abrirVincularPacote(pacote?: Pacote) {
-    const pacoteInicial = pacote || pacotes.find((item) => (item.status || "ativo") === "ativo") || pacotes[0];
+    const pacoteInicial =
+      pacote ||
+      pacotes.find((item) => (item.status || "ativo") === "ativo") ||
+      pacotes[0];
 
-    const diasPadrao = pacoteInicial?.validade_dias ? String(pacoteInicial.validade_dias) : "30";
+    const diasPadrao = pacoteInicial?.validade_dias
+      ? String(pacoteInicial.validade_dias)
+      : "30";
 
     setVinculoClienteId("");
     setVinculoPacoteId(pacoteInicial?.id || "");
@@ -413,18 +465,11 @@ export default function MarketingPacotes() {
     setModalVinculoAberto(true);
   }
 
-  function calcularDataFimPorDias(dataInicio: string, diasTexto: string) {
-    const dias = Number(diasTexto || 0);
-    if (!dias || dias <= 0) return "";
-
-    const data = new Date(`${dataInicio}T00:00:00`);
-    data.setDate(data.getDate() + dias);
-    return data.toISOString().slice(0, 10);
-  }
-
   function atualizarPacoteDoVinculo(pacoteId: string) {
     const pacote = pacotes.find((item) => item.id === pacoteId);
-    const diasPadrao = pacote?.validade_dias ? String(pacote.validade_dias) : "";
+    const diasPadrao = pacote?.validade_dias
+      ? String(pacote.validade_dias)
+      : "";
 
     setVinculoPacoteId(pacoteId);
     setVinculoValidadeDias(diasPadrao);
@@ -518,7 +563,9 @@ export default function MarketingPacotes() {
     setVinculando(false);
 
     if (erroSaldos) {
-      alert("Pacote vinculado, mas erro ao gerar saldos: " + erroSaldos.message);
+      alert(
+        "Pacote vinculado, mas erro ao gerar saldos: " + erroSaldos.message,
+      );
       return;
     }
 
@@ -527,72 +574,232 @@ export default function MarketingPacotes() {
   }
 
   const pacotesFiltrados = pacotes.filter((pacote) => {
-    const texto = `${pacote.nome || ""} ${pacote.descricao || ""}`.toLowerCase();
+    const texto =
+      `${pacote.nome || ""} ${pacote.descricao || ""}`.toLowerCase();
     return texto.includes(busca.toLowerCase());
   });
 
-  const inputStyle = {
+  const inputStyle: React.CSSProperties = {
     width: "100%",
     border: "1px solid #cbd5e1",
-    borderRadius: 14,
-    padding: "14px 16px",
-    fontSize: 15,
+    borderRadius: isMobile ? 12 : 14,
+    padding: isMobile ? "12px 13px" : "14px 16px",
+    fontSize: isMobile ? 14 : 15,
     background: "#fff",
+    boxSizing: "border-box",
   };
 
-  const cardStyle = {
+  const cardStyle: React.CSSProperties = {
     background: "#fff",
     border: "1px solid #d8def0",
-    borderRadius: 18,
-    padding: 22,
+    borderRadius: isMobile ? 18 : 22,
+    padding: isMobile ? 16 : 22,
     boxShadow: "0 8px 20px rgba(15, 23, 42, 0.06)",
   };
 
-  const primaryButton = {
+  const primaryButton: React.CSSProperties = {
     background: "var(--cor-primaria, #27245f)",
     color: "#fff",
     border: "none",
     borderRadius: 14,
-    padding: "13px 18px",
+    padding: isMobile ? "12px 14px" : "13px 18px",
     fontWeight: 800,
     cursor: "pointer",
+    width: isMobile ? "100%" : undefined,
   };
 
-  const secondaryButton = {
+  const secondaryButton: React.CSSProperties = {
     background: "#fff",
     color: "#172554",
     border: "1px solid #cbd5e1",
     borderRadius: 12,
-    padding: "10px 14px",
+    padding: isMobile ? "10px 12px" : "10px 14px",
     fontWeight: 800,
     cursor: "pointer",
   };
 
-  const dangerButton = {
+  const dangerButton: React.CSSProperties = {
     background: "#fee2e2",
     color: "#dc2626",
     border: "none",
     borderRadius: 12,
-    padding: "10px 14px",
+    padding: isMobile ? "10px 12px" : "10px 14px",
     fontWeight: 800,
     cursor: "pointer",
   };
 
+  function renderStatus(pacote: Pacote) {
+    const statusAtual = pacote.status || "ativo";
+
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          padding: "5px 10px",
+          borderRadius: 999,
+          fontWeight: 800,
+          fontSize: 12,
+          background: statusAtual === "inativo" ? "#fee2e2" : "#dcfce7",
+          color: statusAtual === "inativo" ? "#b91c1c" : "#15803d",
+        }}
+      >
+        {statusAtual === "inativo" ? "Inativo" : "Ativo"}
+      </span>
+    );
+  }
+
+  function descontoDoPacote(pacote: Pacote) {
+    const tipo = pacote.tipo_desconto || "percentual";
+    return tipo === "valor"
+      ? formatarMoeda(Number(pacote.desconto_valor || 0))
+      : `${Number(pacote.desconto_percentual || 0)}%`;
+  }
+
+  function renderAcoesPacote(pacote: Pacote, mobile = false) {
+    const statusAtual = pacote.status || "ativo";
+
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: mobile ? "1fr 1fr" : undefined,
+          gap: 8,
+          justifyContent: mobile ? undefined : "flex-end",
+        }}
+      >
+        {!mobile && (
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => abrirVincularPacote(pacote)}
+              style={secondaryButton}
+            >
+              Vincular
+            </button>
+            <button
+              type="button"
+              onClick={() => void abrirEditarPacote(pacote)}
+              style={secondaryButton}
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={() => void alterarStatusPacote(pacote)}
+              style={secondaryButton}
+            >
+              {statusAtual === "inativo" ? "Ativar" : "Inativar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void excluirPacote(pacote.id)}
+              style={dangerButton}
+            >
+              Excluir
+            </button>
+          </div>
+        )}
+
+        {mobile && (
+          <>
+            <button
+              type="button"
+              onClick={() => abrirVincularPacote(pacote)}
+              style={secondaryButton}
+            >
+              Vincular
+            </button>
+            <button
+              type="button"
+              onClick={() => void abrirEditarPacote(pacote)}
+              style={secondaryButton}
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={() => void alterarStatusPacote(pacote)}
+              style={secondaryButton}
+            >
+              {statusAtual === "inativo" ? "Ativar" : "Inativar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void excluirPacote(pacote.id)}
+              style={dangerButton}
+            >
+              Excluir
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ padding: 28, background: corFundo || "transparent", minHeight: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
+    <div
+      style={{
+        padding: isMobile ? "72px 14px 18px" : 28,
+        background: corFundo || "transparent",
+        minHeight: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          justifyContent: "space-between",
+          gap: 16,
+          alignItems: isMobile ? "stretch" : "flex-start",
+        }}
+      >
         <div>
-          <div style={{ color: "#172554", fontSize: 13, fontWeight: 900, textTransform: "uppercase" }}>
+          <div
+            style={{
+              color: "#172554",
+              fontSize: 13,
+              fontWeight: 900,
+              textTransform: "uppercase",
+            }}
+          >
             Marketing
           </div>
-          <h1 style={{ margin: "6px 0 8px", fontSize: 34 }}>Pacotes / Combos</h1>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 16 }}>
-            Crie combos, pacotes e saldos de serviços para aplicar na finalização do atendimento.
+          <h1
+            style={{
+              margin: "6px 0 8px",
+              fontSize: isMobile ? 27 : 34,
+              lineHeight: 1.1,
+            }}
+          >
+            Pacotes / Combos
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: isMobile ? 14 : 16,
+              lineHeight: 1.5,
+            }}
+          >
+            Crie combos, pacotes e saldos de serviços para aplicar na
+            finalização do atendimento.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button type="button" onClick={() => abrirVincularPacote()} style={secondaryButton}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            gap: 10,
+            alignItems: isMobile ? "stretch" : "center",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => abrirVincularPacote()}
+            style={{ ...secondaryButton, width: isMobile ? "100%" : undefined }}
+          >
             + Vincular ao cliente
           </button>
 
@@ -602,10 +809,20 @@ export default function MarketingPacotes() {
         </div>
       </div>
 
-      <div style={{ ...cardStyle, marginTop: 26 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+      <div style={{ ...cardStyle, marginTop: isMobile ? 18 : 26 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: "space-between",
+            gap: 14,
+            alignItems: isMobile ? "stretch" : "center",
+          }}
+        >
           <div>
-            <h2 style={{ margin: 0, fontSize: 22 }}>Pacotes cadastrados</h2>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 22 }}>
+              Pacotes cadastrados
+            </h2>
             <p style={{ margin: "6px 0 0", color: "#64748b" }}>
               {pacotesFiltrados.length} pacote(s) encontrado(s).
             </p>
@@ -615,102 +832,229 @@ export default function MarketingPacotes() {
             placeholder="Buscar pacote..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            style={{ ...inputStyle, maxWidth: 380 }}
+            style={{ ...inputStyle, maxWidth: isMobile ? undefined : 380 }}
           />
         </div>
 
-        <div style={{ marginTop: 18, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: "#f8fafc", color: "#475569" }}>
-                <th style={{ padding: 14, textAlign: "left" }}>Pacote</th>
-                <th style={{ padding: 14, textAlign: "left" }}>Validade</th>
-                <th style={{ padding: 14, textAlign: "left" }}>Desconto</th>
-                <th style={{ padding: 14, textAlign: "left" }}>Valor</th>
-                <th style={{ padding: 14, textAlign: "left" }}>Status</th>
-                <th style={{ padding: 14, textAlign: "right" }}>Ações</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {carregando ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
-                    Carregando pacotes...
-                  </td>
+        {!isMobile && (
+          <div style={{ marginTop: 18, overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fafc", color: "#475569" }}>
+                  <th style={{ padding: 14, textAlign: "left" }}>Pacote</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Validade</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Desconto</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Valor</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Status</th>
+                  <th style={{ padding: 14, textAlign: "right" }}>Ações</th>
                 </tr>
-              ) : pacotesFiltrados.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
-                    Nenhum pacote cadastrado ainda.
-                  </td>
-                </tr>
-              ) : (
-                pacotesFiltrados.map((pacote) => {
-                  const statusAtual = pacote.status || "ativo";
-                  const tipo = pacote.tipo_desconto || "percentual";
-                  const descontoTexto =
-                    tipo === "valor"
-                      ? formatarMoeda(Number(pacote.desconto_valor || 0))
-                      : `${Number(pacote.desconto_percentual || 0)}%`;
+              </thead>
 
-                  return (
-                    <tr key={pacote.id} style={{ borderTop: "1px solid #e2e8f0" }}>
+              <tbody>
+                {carregando ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      style={{
+                        padding: 24,
+                        textAlign: "center",
+                        color: "#64748b",
+                      }}
+                    >
+                      Carregando pacotes...
+                    </td>
+                  </tr>
+                ) : pacotesFiltrados.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      style={{
+                        padding: 24,
+                        textAlign: "center",
+                        color: "#64748b",
+                      }}
+                    >
+                      Nenhum pacote cadastrado ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  pacotesFiltrados.map((pacote) => (
+                    <tr
+                      key={pacote.id}
+                      style={{ borderTop: "1px solid #e2e8f0" }}
+                    >
                       <td style={{ padding: 14 }}>
                         <div style={{ fontWeight: 900 }}>{pacote.nome}</div>
-                        <div style={{ color: "#64748b", fontSize: 12 }}>{pacote.descricao || "-"}</div>
+                        <div style={{ color: "#64748b", fontSize: 12 }}>
+                          {pacote.descricao || "-"}
+                        </div>
                       </td>
-                      <td style={{ padding: 14 }}>{Number(pacote.validade_dias || 0)} dias</td>
-                      <td style={{ padding: 14 }}>{descontoTexto}</td>
+                      <td style={{ padding: 14 }}>
+                        {Number(pacote.validade_dias || 0)} dias
+                      </td>
+                      <td style={{ padding: 14 }}>
+                        {descontoDoPacote(pacote)}
+                      </td>
                       <td style={{ padding: 14 }}>
                         <div style={{ color: "#64748b", fontSize: 12 }}>
                           De {formatarMoeda(Number(pacote.valor_original || 0))}
                         </div>
-                        <strong>{formatarMoeda(Number(pacote.valor_final || 0))}</strong>
+                        <strong>
+                          {formatarMoeda(Number(pacote.valor_final || 0))}
+                        </strong>
                       </td>
-                      <td style={{ padding: 14 }}>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            padding: "5px 10px",
-                            borderRadius: 999,
-                            fontWeight: 800,
-                            fontSize: 12,
-                            background: statusAtual === "inativo" ? "#fee2e2" : "#dcfce7",
-                            color: statusAtual === "inativo" ? "#b91c1c" : "#15803d",
-                          }}
-                        >
-                          {statusAtual === "inativo" ? "Inativo" : "Ativo"}
-                        </span>
-                      </td>
+                      <td style={{ padding: 14 }}>{renderStatus(pacote)}</td>
                       <td style={{ padding: 14, textAlign: "right" }}>
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                          <button type="button" onClick={() => abrirVincularPacote(pacote)} style={secondaryButton}>
-                            Vincular
-                          </button>
-
-                          <button type="button" onClick={() => abrirEditarPacote(pacote)} style={secondaryButton}>
-                            Editar
-                          </button>
-
-                          <button type="button" onClick={() => alterarStatusPacote(pacote)} style={secondaryButton}>
-                            {statusAtual === "inativo" ? "Ativar" : "Inativar"}
-                          </button>
-
-                          <button type="button" onClick={() => excluirPacote(pacote.id)} style={dangerButton}>
-                            Excluir
-                          </button>
-                        </div>
+                        {renderAcoesPacote(pacote)}
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
+        {isMobile && (
+          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            {carregando ? (
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#64748b",
+                  textAlign: "center",
+                }}
+              >
+                Carregando pacotes...
+              </div>
+            ) : pacotesFiltrados.length === 0 ? (
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#64748b",
+                  textAlign: "center",
+                }}
+              >
+                Nenhum pacote cadastrado ainda.
+              </div>
+            ) : (
+              pacotesFiltrados.map((pacote) => (
+                <div
+                  key={pacote.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 18,
+                    padding: 14,
+                    background: "#fff",
+                    boxShadow: "0 6px 16px rgba(15,23,42,.05)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <h3 style={{ margin: 0, fontSize: 16, color: "#0f172a" }}>
+                        {pacote.nome}
+                      </h3>
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "#64748b",
+                          fontSize: 12,
+                        }}
+                      >
+                        {pacote.descricao || "Sem descrição"}
+                      </p>
+                    </div>
+                    {renderStatus(pacote)}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        padding: 10,
+                      }}
+                    >
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+                        Validade
+                      </p>
+                      <strong>{Number(pacote.validade_dias || 0)} dias</strong>
+                    </div>
+                    <div
+                      style={{
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        padding: 10,
+                      }}
+                    >
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+                        Desconto
+                      </p>
+                      <strong>{descontoDoPacote(pacote)}</strong>
+                    </div>
+                    <div
+                      style={{
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        padding: 10,
+                      }}
+                    >
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+                        De
+                      </p>
+                      <strong>
+                        {formatarMoeda(Number(pacote.valor_original || 0))}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        padding: 10,
+                      }}
+                    >
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+                        Por
+                      </p>
+                      <strong>
+                        {formatarMoeda(Number(pacote.valor_final || 0))}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    {renderAcoesPacote(pacote, true)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {modalVinculoAberto && (
         <div
@@ -722,35 +1066,59 @@ export default function MarketingPacotes() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 20,
+            padding: isMobile ? 10 : 20,
           }}
         >
           <div
             style={{
-              width: "min(720px, 96vw)",
+              width: isMobile ? "100%" : "min(720px, 96vw)",
               maxHeight: "92vh",
               overflowY: "auto",
               background: "#fff",
-              borderRadius: 22,
-              padding: 26,
+              borderRadius: isMobile ? 20 : 22,
+              padding: isMobile ? 16 : 26,
               boxShadow: "0 24px 60px rgba(15, 23, 42, 0.30)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: isMobile ? "stretch" : "center",
+              }}
+            >
               <div>
                 <h2 style={{ margin: 0 }}>Vincular pacote ao cliente</h2>
-                <p style={{ margin: "6px 0 0", color: "#64748b" }}>
-                  Escolha o cliente e o pacote. O sistema vai gerar os saldos automaticamente.
+                <p
+                  style={{ margin: "6px 0 0", color: "#64748b", fontSize: 14 }}
+                >
+                  Escolha o cliente e o pacote. O sistema vai gerar os saldos
+                  automaticamente.
                 </p>
               </div>
-              <button type="button" onClick={() => setModalVinculoAberto(false)} style={secondaryButton}>
+              <button
+                type="button"
+                onClick={() => setModalVinculoAberto(false)}
+                style={secondaryButton}
+              >
                 Fechar
               </button>
             </div>
 
-            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Cliente *</label>
+            <div
+              style={{
+                marginTop: 22,
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                gap: 16,
+              }}
+            >
+              <div style={{ gridColumn: isMobile ? undefined : "1 / -1" }}>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Cliente *
+                </label>
                 <select
                   value={vinculoClienteId}
                   onChange={(e) => setVinculoClienteId(e.target.value)}
@@ -759,14 +1127,17 @@ export default function MarketingPacotes() {
                   <option value="">Selecione um cliente</option>
                   {clientes.map((cliente) => (
                     <option key={cliente.id} value={cliente.id}>
-                      {cliente.nome || "Sem nome"} {cliente.telefone ? `- ${cliente.telefone}` : ""}
+                      {cliente.nome || "Sem nome"}{" "}
+                      {cliente.telefone ? `- ${cliente.telefone}` : ""}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Pacote *</label>
+              <div style={{ gridColumn: isMobile ? undefined : "1 / -1" }}>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Pacote *
+                </label>
                 <select
                   value={vinculoPacoteId}
                   onChange={(e) => atualizarPacoteDoVinculo(e.target.value)}
@@ -777,14 +1148,17 @@ export default function MarketingPacotes() {
                     .filter((pacote) => (pacote.status || "ativo") === "ativo")
                     .map((pacote) => (
                       <option key={pacote.id} value={pacote.id}>
-                        {pacote.nome} - {formatarMoeda(Number(pacote.valor_final || 0))}
+                        {pacote.nome} -{" "}
+                        {formatarMoeda(Number(pacote.valor_final || 0))}
                       </option>
                     ))}
                 </select>
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Quantidade de pacotes *</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Quantidade de pacotes *
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -792,13 +1166,12 @@ export default function MarketingPacotes() {
                   onChange={(e) => setVinculoQuantidadePacotes(e.target.value)}
                   style={inputStyle}
                 />
-                <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12 }}>
-                  Ex.: se o pacote tem 4 serviços e o cliente comprou 2, o saldo será dobrado.
-                </p>
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Validade em dias</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Validade em dias
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -807,13 +1180,12 @@ export default function MarketingPacotes() {
                   onChange={(e) => atualizarValidadeDiasVinculo(e.target.value)}
                   style={inputStyle}
                 />
-                <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12 }}>
-                  Use 30, 60, 90 etc. Deixe vazio/0 para pacote sem vencimento.
-                </p>
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Data início</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Data início
+                </label>
                 <input
                   type="date"
                   value={vinculoDataInicio}
@@ -823,16 +1195,15 @@ export default function MarketingPacotes() {
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Válido até</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Válido até
+                </label>
                 <input
                   type="date"
                   value={vinculoDataFim}
                   onChange={(e) => setVinculoDataFim(e.target.value)}
                   style={inputStyle}
                 />
-                <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12 }}>
-                  Se ficar em branco, o pacote fica sem data de vencimento.
-                </p>
               </div>
             </div>
 
@@ -844,16 +1215,36 @@ export default function MarketingPacotes() {
                 borderRadius: 18,
                 padding: 16,
                 color: "#334155",
+                fontSize: 14,
               }}
             >
-              <strong>Importante:</strong> ao salvar, o cliente passa a ter saldo disponível dos serviços incluídos no pacote. A quantidade de pacotes multiplica o saldo. Se a validade ficar vazia, o pacote não vence por data.
+              <strong>Importante:</strong> ao salvar, o cliente passa a ter
+              saldo disponível dos serviços incluídos no pacote. A quantidade de
+              pacotes multiplica o saldo.
             </div>
 
-            <div style={{ marginTop: 22, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => setModalVinculoAberto(false)} style={secondaryButton}>
+            <div
+              style={{
+                marginTop: 22,
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                gap: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setModalVinculoAberto(false)}
+                style={secondaryButton}
+              >
                 Cancelar
               </button>
-              <button type="button" onClick={salvarVinculoClientePacote} disabled={vinculando} style={primaryButton}>
+              <button
+                type="button"
+                onClick={() => void salvarVinculoClientePacote()}
+                disabled={vinculando}
+                style={primaryButton}
+              >
                 {vinculando ? "Vinculando..." : "Vincular pacote"}
               </button>
             </div>
@@ -871,30 +1262,53 @@ export default function MarketingPacotes() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 20,
+            padding: isMobile ? 10 : 20,
           }}
         >
           <div
             style={{
-              width: "min(1180px, 96vw)",
+              width: isMobile ? "100%" : "min(1180px, 96vw)",
               maxHeight: "92vh",
               overflowY: "auto",
               background: "#fff",
-              borderRadius: 22,
-              padding: 26,
+              borderRadius: isMobile ? 20 : 22,
+              padding: isMobile ? 16 : 26,
               boxShadow: "0 24px 60px rgba(15, 23, 42, 0.30)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
-              <h2 style={{ margin: 0 }}>{editandoId ? "Editar pacote" : "Novo pacote"}</h2>
-              <button type="button" onClick={() => setModalAberto(false)} style={secondaryButton}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: isMobile ? "stretch" : "center",
+              }}
+            >
+              <h2 style={{ margin: 0 }}>
+                {editandoId ? "Editar pacote" : "Novo pacote"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModalAberto(false)}
+                style={secondaryButton}
+              >
                 Fechar
               </button>
             </div>
 
-            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div
+              style={{
+                marginTop: 22,
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                gap: 16,
+              }}
+            >
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Nome do pacote *</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Nome do pacote *
+                </label>
                 <input
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
@@ -904,11 +1318,21 @@ export default function MarketingPacotes() {
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Desconto</label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Desconto
+                </label>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                    gap: 10,
+                  }}
+                >
                   <select
                     value={tipoDesconto}
-                    onChange={(e) => setTipoDesconto(e.target.value as "percentual" | "valor")}
+                    onChange={(e) =>
+                      setTipoDesconto(e.target.value as "percentual" | "valor")
+                    }
                     style={inputStyle}
                   >
                     <option value="percentual">Porcentagem (%)</option>
@@ -918,10 +1342,15 @@ export default function MarketingPacotes() {
                   <input
                     type="number"
                     min={0}
-                    value={tipoDesconto === "percentual" ? descontoPercentual : descontoValor}
+                    value={
+                      tipoDesconto === "percentual"
+                        ? descontoPercentual
+                        : descontoValor
+                    }
                     onChange={(e) => {
                       const valor = Number(e.target.value || 0);
-                      if (tipoDesconto === "percentual") setDescontoPercentual(valor);
+                      if (tipoDesconto === "percentual")
+                        setDescontoPercentual(valor);
                       else setDescontoValor(valor);
                     }}
                     style={inputStyle}
@@ -930,26 +1359,36 @@ export default function MarketingPacotes() {
               </div>
 
               <div>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Validade em dias</label>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Validade em dias
+                </label>
                 <input
                   type="number"
                   min={1}
                   value={validadeDias}
-                  onChange={(e) => setValidadeDias(Number(e.target.value || 30))}
+                  onChange={(e) =>
+                    setValidadeDias(Number(e.target.value || 30))
+                  }
                   style={inputStyle}
                 />
               </div>
 
               <div>
                 <label style={{ fontWeight: 900, fontSize: 13 }}>Status</label>
-                <select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  style={inputStyle}
+                >
                   <option value="ativo">Ativo</option>
                   <option value="inativo">Inativo</option>
                 </select>
               </div>
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label style={{ fontWeight: 900, fontSize: 13 }}>Descrição</label>
+              <div style={{ gridColumn: isMobile ? undefined : "1 / -1" }}>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Descrição
+                </label>
                 <textarea
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
@@ -960,9 +1399,21 @@ export default function MarketingPacotes() {
             </div>
 
             <div style={{ marginTop: 24 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  justifyContent: "space-between",
+                  alignItems: isMobile ? "stretch" : "center",
+                  gap: 12,
+                }}
+              >
                 <h3 style={{ margin: 0 }}>Serviços incluídos</h3>
-                <button type="button" onClick={adicionarServico} style={secondaryButton}>
+                <button
+                  type="button"
+                  onClick={adicionarServico}
+                  style={secondaryButton}
+                >
                   + Adicionar serviço
                 </button>
               </div>
@@ -973,14 +1424,21 @@ export default function MarketingPacotes() {
                     key={index}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 120px 150px 150px 110px",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "1fr 120px 150px 150px 110px",
                       gap: 10,
                       alignItems: "center",
+                      border: isMobile ? "1px solid #e2e8f0" : undefined,
+                      borderRadius: isMobile ? 16 : undefined,
+                      padding: isMobile ? 12 : undefined,
                     }}
                   >
                     <select
                       value={item.servico_id}
-                      onChange={(e) => atualizarItem(index, "servico_id", e.target.value)}
+                      onChange={(e) =>
+                        atualizarItem(index, "servico_id", e.target.value)
+                      }
                       style={inputStyle}
                     >
                       <option value="">Selecione um serviço</option>
@@ -995,21 +1453,38 @@ export default function MarketingPacotes() {
                       type="number"
                       min={1}
                       value={item.quantidade}
-                      onChange={(e) => atualizarItem(index, "quantidade", Number(e.target.value || 1))}
+                      onChange={(e) =>
+                        atualizarItem(
+                          index,
+                          "quantidade",
+                          Number(e.target.value || 1),
+                        )
+                      }
                       style={inputStyle}
                     />
 
                     <div style={{ ...inputStyle, background: "#f8fafc" }}>
-                      <div style={{ fontSize: 12, color: "#475569" }}>Valor unitário</div>
+                      <div style={{ fontSize: 12, color: "#475569" }}>
+                        Valor unitário
+                      </div>
                       <strong>{formatarMoeda(item.valor_unitario)}</strong>
                     </div>
 
                     <div style={{ ...inputStyle, background: "#f8fafc" }}>
-                      <div style={{ fontSize: 12, color: "#475569" }}>Subtotal</div>
+                      <div style={{ fontSize: 12, color: "#475569" }}>
+                        Subtotal
+                      </div>
                       <strong>{formatarMoeda(item.valor_total)}</strong>
                     </div>
 
-                    <button type="button" onClick={() => removerServico(index)} style={dangerButton}>
+                    <button
+                      type="button"
+                      onClick={() => removerServico(index)}
+                      style={{
+                        ...dangerButton,
+                        width: isMobile ? "100%" : undefined,
+                      }}
+                    >
                       Remover
                     </button>
                   </div>
@@ -1027,33 +1502,82 @@ export default function MarketingPacotes() {
               }}
             >
               <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
                   <span>Total real dos serviços</span>
                   <strong>{formatarMoeda(totalServicos)}</strong>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
                   <span>
-                    Desconto {tipoDesconto === "percentual" ? `(${descontoPercentual}%)` : "(R$)"}
+                    Desconto{" "}
+                    {tipoDesconto === "percentual"
+                      ? `(${descontoPercentual}%)`
+                      : "(R$)"}
                   </span>
                   <strong>- {formatarMoeda(valorDesconto)}</strong>
                 </div>
 
-                <hr style={{ border: "none", borderTop: "1px solid #d8def0" }} />
+                <hr
+                  style={{
+                    border: "none",
+                    borderTop: "1px solid #cbd5e1",
+                    margin: "4px 0",
+                  }}
+                />
 
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20 }}>
-                  <span>Total do pacote</span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    fontSize: isMobile ? 18 : 22,
+                  }}
+                >
+                  <strong>Valor final do pacote</strong>
                   <strong>{formatarMoeda(totalFinal)}</strong>
                 </div>
               </div>
             </div>
 
-            <div style={{ marginTop: 22, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => setModalAberto(false)} style={secondaryButton}>
+            <div
+              style={{
+                marginTop: 22,
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                gap: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setModalAberto(false)}
+                style={secondaryButton}
+              >
                 Cancelar
               </button>
-              <button type="button" onClick={salvarPacote} disabled={salvando} style={primaryButton}>
-                {salvando ? "Salvando..." : editandoId ? "Salvar alterações" : "Criar pacote"}
+              <button
+                type="button"
+                onClick={() => void salvarPacote()}
+                disabled={salvando}
+                style={primaryButton}
+              >
+                {salvando
+                  ? "Salvando..."
+                  : editandoId
+                    ? "Salvar alterações"
+                    : "Criar pacote"}
               </button>
             </div>
           </div>
