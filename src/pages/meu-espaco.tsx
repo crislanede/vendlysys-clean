@@ -114,6 +114,8 @@ export default function MeuEspaco() {
 
   const [agendamentos, setAgendamentos] = useState<any[]>([]);
   const [historico, setHistorico] = useState<any[]>([]);
+  const [pacotesCliente, setPacotesCliente] = useState<any[]>([]);
+  const [carregandoPacotesCliente, setCarregandoPacotesCliente] = useState(false);
 
   const [anamneseObrigatoria, setAnamneseObrigatoria] = useState(false);
   const [modalAnamneseAberto, setModalAnamneseAberto] = useState(false);
@@ -610,6 +612,7 @@ export default function MeuEspaco() {
 
     const ags = await carregarAgendamentos(data.id);
     await carregarHistorico(data.id);
+    await carregarPacotesCliente(data.id);
 
     const empresaId =
       data.empresa_id || ags.find((a: any) => a.empresa_id)?.empresa_id || null;
@@ -639,6 +642,99 @@ export default function MeuEspaco() {
       .order("data", { ascending: false });
 
     setHistorico(data || []);
+  }
+
+
+  async function carregarPacotesCliente(clienteId: string) {
+    setCarregandoPacotesCliente(true);
+
+    const { data: vinculos, error: erroVinculos } = await supabase
+      .from("cliente_pacotes")
+      .select("id, cliente_id, pacote_id, data_inicio, data_fim, validade_dias, quantidade_pacotes, status, created_at")
+      .eq("cliente_id", clienteId)
+      .order("created_at", { ascending: false });
+
+    if (erroVinculos) {
+      console.error("Erro ao carregar pacotes da cliente:", erroVinculos);
+      setPacotesCliente([]);
+      setCarregandoPacotesCliente(false);
+      return;
+    }
+
+    const listaVinculos = vinculos || [];
+
+    if (listaVinculos.length === 0) {
+      setPacotesCliente([]);
+      setCarregandoPacotesCliente(false);
+      return;
+    }
+
+    const idsVinculos = listaVinculos.map((item: any) => item.id).filter(Boolean);
+    const idsPacotes = Array.from(
+      new Set(listaVinculos.map((item: any) => item.pacote_id).filter(Boolean)),
+    );
+
+    const { data: pacotesBanco } = idsPacotes.length
+      ? await supabase
+          .from("marketing_pacotes")
+          .select("id, nome, descricao, valor_final, valor_original, status")
+          .in("id", idsPacotes)
+      : { data: [] as any[] };
+
+    const { data: saldosBanco, error: erroSaldos } = idsVinculos.length
+      ? await supabase
+          .from("cliente_pacote_saldos")
+          .select("id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada")
+          .in("cliente_pacote_id", idsVinculos)
+      : { data: [] as any[], error: null };
+
+    if (erroSaldos) {
+      console.error("Erro ao carregar saldos dos pacotes:", erroSaldos);
+    }
+
+    const idsServicos = Array.from(
+      new Set((saldosBanco || []).map((item: any) => item.servico_id).filter(Boolean)),
+    );
+
+    const { data: servicosBanco } = idsServicos.length
+      ? await supabase.from("servicos").select("id, nome").in("id", idsServicos)
+      : { data: [] as any[] };
+
+    const mapaPacotes = new Map((pacotesBanco || []).map((item: any) => [item.id, item]));
+    const mapaServicos = new Map((servicosBanco || []).map((item: any) => [item.id, item]));
+
+    const pacotesMontados = listaVinculos.map((vinculo: any) => {
+      const pacote = mapaPacotes.get(vinculo.pacote_id) || null;
+      const saldos = (saldosBanco || [])
+        .filter((saldo: any) => saldo.cliente_pacote_id === vinculo.id)
+        .map((saldo: any) => {
+          const total = Number(saldo.quantidade_total || 0);
+          const usada = Number(saldo.quantidade_usada || 0);
+          return {
+            ...saldo,
+            servico_nome: mapaServicos.get(saldo.servico_id)?.nome || "Serviço",
+            quantidade_total: total,
+            quantidade_usada: usada,
+            quantidade_restante: Math.max(total - usada, 0),
+          };
+        });
+
+      const totalSessoes = saldos.reduce((total: number, saldo: any) => total + saldo.quantidade_total, 0);
+      const totalUsado = saldos.reduce((total: number, saldo: any) => total + saldo.quantidade_usada, 0);
+      const totalRestante = Math.max(totalSessoes - totalUsado, 0);
+
+      return {
+        ...vinculo,
+        pacote,
+        saldos,
+        total_sessoes: totalSessoes,
+        total_usado: totalUsado,
+        total_restante: totalRestante,
+      };
+    });
+
+    setPacotesCliente(pacotesMontados);
+    setCarregandoPacotesCliente(false);
   }
 
   async function carregarOpcoesAgendamento(empresaId: string | null) {
@@ -971,6 +1067,7 @@ export default function MeuEspaco() {
   function limparFormularioAgendamento() {
     setAgendamentoReagendandoId(null);
     setNovoAgendamentoAberto(false);
+    setPacotesCliente([]);
     setAgendamentoReagendandoId(null);
     setServicoAgendamentoId("");
     setProfissionalAgendamentoId("");
@@ -4150,6 +4247,186 @@ const botaoAba = (valor: string, label: string) => {
                 ))}
               </div>
             )}
+
+
+          {aba === "pacotes" &&
+            !anamneseObrigatoria &&
+            !assinaturaComplementarObrigatoria && (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 14,
+                    flexWrap: "wrap",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: 0 }}>Pacotes e Combos</h2>
+                    <p style={{ color: "#64748b", margin: "6px 0 0" }}>
+                      Consulte seus pacotes ativos, saldos restantes e validade.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => cliente?.id && carregarPacotesCliente(cliente.id)}
+                    style={{
+                      padding: "11px 14px",
+                      borderRadius: 14,
+                      border: "1px solid #cbd5e1",
+                      background: "#fff",
+                      color: "#282663",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Atualizar
+                  </button>
+                </div>
+
+                {carregandoPacotesCliente && (
+                  <p style={{ color: "#64748b" }}>Carregando pacotes...</p>
+                )}
+
+                {!carregandoPacotesCliente && pacotesCliente.length === 0 && (
+                  <div
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: isMobile ? 13 : 18,
+                      marginBottom: 14,
+                      background: "#f8fafc",
+                    }}
+                  >
+                    <strong>Nenhum pacote ativo encontrado.</strong>
+                    <p style={{ color: "#64748b", marginTop: 8 }}>
+                      Quando o estabelecimento vincular um pacote ao seu cadastro,
+                      ele aparecerá aqui.
+                    </p>
+                  </div>
+                )}
+
+                {pacotesCliente.map((vinculo: any) => {
+                  const percentual = vinculo.total_sessoes
+                    ? Math.min((vinculo.total_usado / vinculo.total_sessoes) * 100, 100)
+                    : 0;
+                  const status = String(vinculo.status || "ativo").toLowerCase();
+
+                  return (
+                    <div
+                      key={vinculo.id}
+                      style={{
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 22,
+                        padding: isMobile ? 14 : 20,
+                        marginBottom: 16,
+                        background: "#fff",
+                        boxShadow: "0 10px 25px rgba(15,23,42,.05)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 14,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <h3 style={{ margin: "0 0 6px", color: "#0f172a" }}>
+                            {vinculo.pacote?.nome || "Pacote"}
+                          </h3>
+                          <p style={{ margin: 0, color: "#64748b", fontWeight: 700 }}>
+                            Validade: {vinculo.data_fim ? formatarData(vinculo.data_fim) : "Sem data final"}
+                          </p>
+                        </div>
+
+                        <div
+                          style={{
+                            background: status === "ativo" ? "#dcfce7" : "#fee2e2",
+                            color: status === "ativo" ? "#166534" : "#991b1b",
+                            border: status === "ativo" ? "1px solid #bbf7d0" : "1px solid #fecaca",
+                            borderRadius: 999,
+                            padding: "8px 12px",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {vinculo.total_restante} sessões restantes
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 18 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: 8,
+                            fontWeight: 800,
+                            color: "#334155",
+                          }}
+                        >
+                          <span>Uso do pacote</span>
+                          <span>
+                            {vinculo.total_usado}/{vinculo.total_sessoes}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            width: "100%",
+                            height: 14,
+                            background: "#e2e8f0",
+                            borderRadius: 999,
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${percentual}%`,
+                              height: "100%",
+                              background: "linear-gradient(90deg,#282663,#5b5bd6)",
+                              borderRadius: 999,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {vinculo.saldos.length > 0 && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
+                            gap: 10,
+                            marginTop: 18,
+                          }}
+                        >
+                          {vinculo.saldos.map((saldo: any) => (
+                            <div
+                              key={saldo.id}
+                              style={{
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 16,
+                                padding: 12,
+                                background: "#f8fafc",
+                              }}
+                            >
+                              <strong>{saldo.servico_nome}</strong>
+                              <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+                                Restam {saldo.quantidade_restante} de {saldo.quantidade_total}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
         </div>
 
         {navInferior && (
@@ -4166,7 +4443,7 @@ const botaoAba = (valor: string, label: string) => {
               boxShadow: "0 18px 45px rgba(15,23,42,.18)",
               padding: "8px 8px calc(8px + env(safe-area-inset-bottom))",
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(5, 1fr)",
               gap: 6,
               backdropFilter: "blur(14px)",
             }}
@@ -4176,6 +4453,7 @@ const botaoAba = (valor: string, label: string) => {
               ["dados", "👤", "Dados"],
               ["anamnese", "🧾", "Ficha"],
               ["historico", "🕘", "Histórico"],
+              ["pacotes", "🎁", "Pacotes"],
             ].map(([valor, icone, label]) => (
               <button
                 key={valor}

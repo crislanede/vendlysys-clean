@@ -25,6 +25,10 @@ type Financeiro = {
   tipo?: string | null;
   descricao?: string | null;
   valor?: number | null;
+  valor_bruto?: number | null;
+  valor_liquido?: number | null;
+  comissao_valor?: number | null;
+  agendamento_id?: string | null;
   data_lancamento?: string | null;
   status?: string | null;
   cliente?: string | null;
@@ -54,6 +58,9 @@ type Agendamento = {
   status?: string | null;
   valor?: number | null;
   preco?: number | null;
+  valor_pago?: number | null;
+  valor_final?: number | null;
+  preco_servico?: number | null;
   created_at?: string | null;
 };
 
@@ -112,22 +119,49 @@ function tipoFinanceiro(item: Financeiro) {
   return (item.tipo || "").toLowerCase().trim();
 }
 
+function statusPago(status?: string | null) {
+  return ["pago", "recebido", "finalizado"].includes(normalizarStatus(status));
+}
+
+function statusPendente(status?: string | null) {
+  return [
+    "pendente",
+    "aberto",
+    "agendado",
+    "aguardando",
+    "confirmado",
+  ].includes(normalizarStatus(status));
+}
+
 function entradaPaga(item: Financeiro) {
-  return (
-    tipoFinanceiro(item) === "entrada" &&
-    normalizarStatus(item.status) === "pago"
-  );
+  return tipoFinanceiro(item) === "entrada" && statusPago(item.status);
 }
 
 function entradaPendente(item: Financeiro) {
-  return (
-    tipoFinanceiro(item) === "entrada" &&
-    normalizarStatus(item.status) === "pendente"
-  );
+  return tipoFinanceiro(item) === "entrada" && statusPendente(item.status);
+}
+
+function saidaFinanceira(item: Financeiro) {
+  return tipoFinanceiro(item) === "saida";
 }
 
 function lancamentoCancelado(item: Financeiro | Despesa | Agendamento) {
   return normalizarStatus(item.status) === "cancelado";
+}
+
+function valorFinanceiro(item: Financeiro) {
+  return Number(item.valor_bruto ?? item.valor ?? 0);
+}
+
+function valorAgendamento(item: Agendamento) {
+  return Number(
+    item.valor_final ??
+      item.valor_pago ??
+      item.valor ??
+      item.preco ??
+      item.preco_servico ??
+      0,
+  );
 }
 
 function dataDespesa(item: Despesa) {
@@ -150,6 +184,9 @@ function agruparPorData(
   dataFim: string,
 ): GraficoLinha[] {
   const mapa = new Map<string, GraficoLinha>();
+  const agendamentosComFinanceiro = new Set(
+    financeiro.map((item) => item.agendamento_id).filter(Boolean),
+  );
 
   function garantirData(data: string) {
     if (!mapa.has(data)) {
@@ -169,25 +206,23 @@ function agruparPorData(
   for (const item of financeiro) {
     const data = dataFinanceiro(item);
     if (!data) continue;
+    if (lancamentoCancelado(item)) continue;
 
     const linha = garantirData(data);
-    const valor = Number(item.valor || 0);
-
-    if (lancamentoCancelado(item)) continue;
+    const valor = valorFinanceiro(item);
 
     if (entradaPaga(item)) {
       linha.receita += valor;
     } else if (entradaPendente(item)) {
       linha.aReceber += valor;
-    } else if (tipoFinanceiro(item) === "saida") {
-      linha.despesa += valor;
+    } else if (saidaFinanceira(item)) {
+      linha.despesa += Number(item.valor || 0);
     }
   }
 
   for (const item of despesas) {
     const data = dataDespesa(item);
     if (!data) continue;
-
     if (lancamentoCancelado(item)) continue;
 
     const linha = garantirData(data);
@@ -197,12 +232,20 @@ function agruparPorData(
   for (const item of agendamentos) {
     const data = dataAgendamento(item);
     if (!data) continue;
+    if (lancamentoCancelado(item)) continue;
 
     const status = normalizarStatus(item.status);
-    if (status === "cancelado") continue;
-
     const linha = garantirData(data);
     linha.agendamentos += 1;
+
+    const jaTemFinanceiro = agendamentosComFinanceiro.has(item.id);
+    const deveEntrarAReceber =
+      !jaTemFinanceiro &&
+      ["agendado", "confirmado", "pendente"].includes(status);
+
+    if (deveEntrarAReceber) {
+      linha.aReceber += valorAgendamento(item);
+    }
   }
 
   const datas: string[] = [];
@@ -346,44 +389,60 @@ export default function Dashboard() {
 
     const entradasPagas = financeiroValido.filter(entradaPaga);
     const entradasPendentes = financeiroValido.filter(entradaPendente);
-
-    const saidasFinanceiro = financeiroValido.filter(
-      (item) => tipoFinanceiro(item) === "saida",
-    );
+    const saidasFinanceiro = financeiroValido.filter(saidaFinanceira);
 
     const despesasValidas = despesas.filter(
       (item) => !lancamentoCancelado(item),
     );
-
     const agendamentosValidos = agendamentos.filter(
       (item) => !lancamentoCancelado(item),
     );
 
-    const agendamentosFinalizados = agendamentos.filter((item) => {
+    const agendamentosComFinanceiro = new Set(
+      financeiroValido.map((item) => item.agendamento_id).filter(Boolean),
+    );
+
+    const agendamentosAReceber = agendamentosValidos.filter((item) => {
+      const status = normalizarStatus(item.status);
+      return (
+        !agendamentosComFinanceiro.has(item.id) &&
+        ["agendado", "confirmado", "pendente"].includes(status)
+      );
+    });
+
+    const agendamentosFinalizados = agendamentosValidos.filter((item) => {
       const status = normalizarStatus(item.status);
       return status === "finalizado" || status === "pago";
     });
 
     const receita = entradasPagas.reduce(
+      (acc, item) => acc + valorFinanceiro(item),
+      0,
+    );
+
+    const aReceberFinanceiro = entradasPendentes.reduce(
+      (acc, item) => acc + valorFinanceiro(item),
+      0,
+    );
+
+    const aReceberAgendamentos = agendamentosAReceber.reduce(
+      (acc, item) => acc + valorAgendamento(item),
+      0,
+    );
+
+    const aReceber = aReceberFinanceiro + aReceberAgendamentos;
+
+    const saidaFinanceiraTotal = saidasFinanceiro.reduce(
       (acc, item) => acc + Number(item.valor || 0),
       0,
     );
 
-    const aReceber = entradasPendentes.reduce(
-      (acc, item) => acc + Number(item.valor || 0),
-      0,
-    );
-
-    const saidaFinanceira = saidasFinanceiro.reduce(
-      (acc, item) => acc + Number(item.valor || 0),
-      0,
-    );
     const totalDespesas = despesasValidas.reduce(
       (acc, item) => acc + Number(item.valor || 0),
       0,
     );
 
-    const despesaTotal = saidaFinanceira + totalDespesas;
+    const despesaTotal = saidaFinanceiraTotal + totalDespesas;
     const resultado = receita - despesaTotal;
 
     const ticketMedio =
@@ -400,7 +459,7 @@ export default function Dashboard() {
           forma.includes("online")
         );
       })
-      .reduce((acc, item) => acc + Number(item.valor || 0), 0);
+      .reduce((acc, item) => acc + valorFinanceiro(item), 0);
 
     return {
       faturamento: resultado,
@@ -435,10 +494,11 @@ export default function Dashboard() {
     const mapa = new Map<string, number>();
 
     for (const item of financeiro) {
+      if (lancamentoCancelado(item)) continue;
       if (!entradaPaga(item)) continue;
 
       const categoria = item.servico || item.descricao || "Sem categoria";
-      mapa.set(categoria, (mapa.get(categoria) || 0) + Number(item.valor || 0));
+      mapa.set(categoria, (mapa.get(categoria) || 0) + valorFinanceiro(item));
     }
 
     return Array.from(mapa.entries())
@@ -568,7 +628,7 @@ export default function Dashboard() {
         <KpiCard
           title="A receber"
           value={formatarMoeda(indicadores.aReceber)}
-          variant="amber"
+          variant="orange"
         />
         <KpiCard
           title="Despesa"
@@ -715,7 +775,7 @@ export default function Dashboard() {
           )}
         </SectionCard>
 
-        <SectionCard title="Representatividade por serviço em R$ pagos">
+        <SectionCard title="Representatividade por serviço em R$">
           {loading ? (
             <ChartSkeleton />
           ) : dadosPorCategoria.length === 0 ? (
@@ -844,7 +904,7 @@ export default function Dashboard() {
                       {(item.tipo || "").toLowerCase() === "entrada"
                         ? "+"
                         : "-"}{" "}
-                      {formatarMoeda(Number(item.valor || 0))}
+                      {formatarMoeda(valorFinanceiro(item))}
                     </td>
                   </tr>
                 ))}
@@ -940,11 +1000,11 @@ function KpiCard({
 }: {
   title: string;
   value: string;
-  variant: "green" | "amber" | "red" | "blue" | "purple" | "indigo" | "slate";
+  variant: "green" | "orange" | "red" | "blue" | "purple" | "indigo" | "slate";
 }) {
   const variantClass = {
     green: "text-emerald-600 bg-emerald-50",
-    amber: "text-amber-600 bg-amber-50",
+    orange: "text-orange-600 bg-orange-50",
     red: "text-red-600 bg-red-50",
     blue: "text-sky-600 bg-sky-50",
     purple: "text-purple-700 bg-purple-50",

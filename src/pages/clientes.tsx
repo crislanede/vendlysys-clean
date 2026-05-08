@@ -75,6 +75,16 @@ export default function ClientesPage() {
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [precosEspeciais, setPrecosEspeciais] = useState<Record<string, string>>({});
   const [salvandoPrecoEspecial, setSalvandoPrecoEspecial] = useState(false);
+  const [pacotesDoCliente, setPacotesDoCliente] = useState<any[]>([]);
+  const [carregandoPacotesDoCliente, setCarregandoPacotesDoCliente] = useState(false);
+  const [pacotesDisponiveis, setPacotesDisponiveis] = useState<any[]>([]);
+  const [pacoteParaVincularId, setPacoteParaVincularId] = useState("");
+  const [vinculandoPacote, setVinculandoPacote] = useState(false);
+  const [editandoPacoteClienteId, setEditandoPacoteClienteId] = useState<string | null>(null);
+  const [validadePacoteEdicao, setValidadePacoteEdicao] = useState("");
+  const [statusPacoteEdicao, setStatusPacoteEdicao] = useState("ativo");
+  const [saldosPacoteEdicao, setSaldosPacoteEdicao] = useState<Record<string, string>>({});
+  const [salvandoEdicaoPacote, setSalvandoEdicaoPacote] = useState(false);
 
   const chaveRascunhoNovoCliente = empresaId
     ? `vendlysys:novo-cliente:${empresaId}`
@@ -84,6 +94,7 @@ export default function ClientesPage() {
     if (empresaId) {
       carregarClientes();
       carregarServicos();
+      carregarPacotesDisponiveis();
     }
   }, [empresaId]);
 
@@ -176,6 +187,24 @@ export default function ClientesPage() {
     setServicos((data || []) as Servico[]);
   }
 
+  async function carregarPacotesDisponiveis() {
+    if (!empresaId) return;
+
+    const { data, error } = await supabase
+      .from("marketing_pacotes")
+      .select("id, nome, validade_dias, status, valor_final")
+      .eq("empresa_id", empresaId)
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar pacotes disponíveis:", error);
+      setPacotesDisponiveis([]);
+      return;
+    }
+
+    setPacotesDisponiveis((data || []).filter((item: any) => item.status !== "inativo"));
+  }
+
   async function carregarPrecosEspeciais(clienteId: string) {
     const { data, error } = await supabase
       .from("cliente_precos_servicos")
@@ -195,6 +224,289 @@ export default function ClientesPage() {
     });
 
     setPrecosEspeciais(mapa);
+  }
+
+
+  async function carregarPacotesDoCliente(clienteId: string) {
+    setCarregandoPacotesDoCliente(true);
+
+    const { data: vinculos, error: erroVinculos } = await supabase
+      .from("cliente_pacotes")
+      .select("id, cliente_id, pacote_id, data_inicio, data_fim, validade_dias, quantidade_pacotes, status, created_at")
+      .eq("cliente_id", clienteId)
+      .order("created_at", { ascending: false });
+
+    if (erroVinculos) {
+      console.error("Erro ao carregar pacotes do cliente:", erroVinculos);
+      setPacotesDoCliente([]);
+      setCarregandoPacotesDoCliente(false);
+      return;
+    }
+
+    const listaVinculos = vinculos || [];
+
+    if (listaVinculos.length === 0) {
+      setPacotesDoCliente([]);
+      setCarregandoPacotesDoCliente(false);
+      return;
+    }
+
+    const idsVinculos = listaVinculos.map((item: any) => item.id).filter(Boolean);
+    const idsPacotes = Array.from(new Set(listaVinculos.map((item: any) => item.pacote_id).filter(Boolean)));
+
+    const { data: pacotesBanco } = idsPacotes.length
+      ? await supabase
+          .from("marketing_pacotes")
+          .select("id, nome, descricao, valor_final, valor_original, status")
+          .in("id", idsPacotes)
+      : { data: [] as any[] };
+
+    const { data: saldosBanco } = idsVinculos.length
+      ? await supabase
+          .from("cliente_pacote_saldos")
+          .select("id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada")
+          .in("cliente_pacote_id", idsVinculos)
+      : { data: [] as any[] };
+
+    const idsServicos = Array.from(new Set((saldosBanco || []).map((item: any) => item.servico_id).filter(Boolean)));
+
+    const { data: servicosBanco } = idsServicos.length
+      ? await supabase.from("servicos").select("id, nome").in("id", idsServicos)
+      : { data: [] as any[] };
+
+    const mapaPacotes = new Map((pacotesBanco || []).map((item: any) => [item.id, item]));
+    const mapaServicos = new Map((servicosBanco || []).map((item: any) => [item.id, item]));
+
+    const montados = listaVinculos.map((vinculo: any) => {
+      const pacote = mapaPacotes.get(vinculo.pacote_id) || null;
+      const saldos = (saldosBanco || [])
+        .filter((saldo: any) => saldo.cliente_pacote_id === vinculo.id)
+        .map((saldo: any) => {
+          const total = Number(saldo.quantidade_total || 0);
+          const usada = Number(saldo.quantidade_usada || 0);
+          return {
+            ...saldo,
+            servico_nome: mapaServicos.get(saldo.servico_id)?.nome || "Serviço",
+            quantidade_total: total,
+            quantidade_usada: usada,
+            quantidade_restante: Math.max(total - usada, 0),
+          };
+        });
+
+      const totalSessoes = saldos.reduce((total: number, saldo: any) => total + saldo.quantidade_total, 0);
+      const totalUsado = saldos.reduce((total: number, saldo: any) => total + saldo.quantidade_usada, 0);
+
+      return {
+        ...vinculo,
+        pacote,
+        saldos,
+        total_sessoes: totalSessoes,
+        total_usado: totalUsado,
+        total_restante: Math.max(totalSessoes - totalUsado, 0),
+      };
+    });
+
+    setPacotesDoCliente(montados);
+    setCarregandoPacotesDoCliente(false);
+  }
+
+  function hojePacoteISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function calcularDataFimPacote(validadeDias?: number | string | null) {
+    const dias = Number(validadeDias || 30);
+    const data = new Date();
+    data.setDate(data.getDate() + (Number.isNaN(dias) ? 30 : dias));
+    return data.toISOString().slice(0, 10);
+  }
+
+  function iniciarEdicaoPacoteCliente(vinculo: any) {
+    setEditandoPacoteClienteId(vinculo.id);
+    setValidadePacoteEdicao(vinculo.data_fim || "");
+    setStatusPacoteEdicao(vinculo.status || "ativo");
+
+    const mapa: Record<string, string> = {};
+    (vinculo.saldos || []).forEach((saldo: any) => {
+      mapa[saldo.id] = String(saldo.quantidade_restante ?? 0);
+    });
+
+    setSaldosPacoteEdicao(mapa);
+  }
+
+  function cancelarEdicaoPacoteCliente() {
+    setEditandoPacoteClienteId(null);
+    setValidadePacoteEdicao("");
+    setStatusPacoteEdicao("ativo");
+    setSaldosPacoteEdicao({});
+  }
+
+  async function vincularPacoteAoCliente() {
+    if (!clienteEditando?.id || !pacoteParaVincularId) {
+      alert("Selecione um pacote para vincular.");
+      return;
+    }
+
+    const pacoteSelecionado = pacotesDisponiveis.find((item) => item.id === pacoteParaVincularId);
+
+    setVinculandoPacote(true);
+
+    const dataInicio = hojePacoteISO();
+    const dataFim = calcularDataFimPacote(pacoteSelecionado?.validade_dias);
+
+    const { data: vinculo, error: erroVinculo } = await supabase
+      .from("cliente_pacotes")
+      .insert({
+        cliente_id: clienteEditando.id,
+        pacote_id: pacoteParaVincularId,
+        data_inicio: dataInicio,
+        data_fim: dataFim,
+        validade_dias: Number(pacoteSelecionado?.validade_dias || 30),
+        quantidade_pacotes: 1,
+        status: "ativo",
+      })
+      .select("id")
+      .single();
+
+    if (erroVinculo || !vinculo?.id) {
+      setVinculandoPacote(false);
+      alert("Erro ao vincular pacote: " + (erroVinculo?.message || "registro não retornado"));
+      return;
+    }
+
+    const { data: servicosPacote, error: erroServicosPacote } = await supabase
+      .from("marketing_pacote_servicos")
+      .select("servico_id, quantidade")
+      .eq("pacote_id", pacoteParaVincularId);
+
+    if (erroServicosPacote) {
+      setVinculandoPacote(false);
+      alert("Pacote vinculado, mas erro ao carregar serviços do pacote: " + erroServicosPacote.message);
+      await carregarPacotesDoCliente(clienteEditando.id);
+      return;
+    }
+
+    const saldosPayload = (servicosPacote || [])
+      .filter((item: any) => item.servico_id)
+      .map((item: any) => ({
+        cliente_pacote_id: vinculo.id,
+        servico_id: item.servico_id,
+        quantidade_total: Number(item.quantidade || 1),
+        quantidade_usada: 0,
+        empresa_id: empresaId || null,
+      }));
+
+    if (saldosPayload.length > 0) {
+      const { error: erroSaldos } = await supabase
+        .from("cliente_pacote_saldos")
+        .insert(saldosPayload);
+
+      if (erroSaldos) {
+        setVinculandoPacote(false);
+        alert("Pacote vinculado, mas erro ao criar saldos: " + erroSaldos.message);
+        await carregarPacotesDoCliente(clienteEditando.id);
+        return;
+      }
+    }
+
+    setPacoteParaVincularId("");
+    setVinculandoPacote(false);
+    await carregarPacotesDoCliente(clienteEditando.id);
+    alert("Pacote vinculado com sucesso.");
+  }
+
+  async function salvarEdicaoPacoteCliente(vinculo: any) {
+    if (!clienteEditando?.id || !vinculo?.id) return;
+
+    setSalvandoEdicaoPacote(true);
+
+    const { error: erroVinculo } = await supabase
+      .from("cliente_pacotes")
+      .update({
+        data_fim: validadePacoteEdicao || null,
+        status: statusPacoteEdicao || "ativo",
+      })
+      .eq("id", vinculo.id)
+      .eq("cliente_id", clienteEditando.id);
+
+    if (erroVinculo) {
+      setSalvandoEdicaoPacote(false);
+      alert("Erro ao salvar pacote: " + erroVinculo.message);
+      return;
+    }
+
+    for (const saldo of vinculo.saldos || []) {
+      const restanteDesejado = Number(saldosPacoteEdicao[saldo.id] ?? saldo.quantidade_restante ?? 0);
+
+      if (Number.isNaN(restanteDesejado) || restanteDesejado < 0) {
+        setSalvandoEdicaoPacote(false);
+        alert(`Saldo inválido para ${saldo.servico_nome}.`);
+        return;
+      }
+
+      const usadoAtual = Number(saldo.quantidade_usada || 0);
+      let novoTotal = usadoAtual + restanteDesejado;
+
+      if (novoTotal < usadoAtual) novoTotal = usadoAtual;
+
+      const { error: erroSaldo } = await supabase
+        .from("cliente_pacote_saldos")
+        .update({ quantidade_total: novoTotal })
+        .eq("id", saldo.id);
+
+      if (erroSaldo) {
+        setSalvandoEdicaoPacote(false);
+        alert("Erro ao salvar saldo: " + erroSaldo.message);
+        return;
+      }
+    }
+
+    setSalvandoEdicaoPacote(false);
+    cancelarEdicaoPacoteCliente();
+    await carregarPacotesDoCliente(clienteEditando.id);
+    alert("Pacote atualizado com sucesso.");
+  }
+
+  async function removerPacoteDoCliente(vinculo: any) {
+    if (!clienteEditando?.id || !vinculo?.id) return;
+
+    const confirmar = confirm(
+      `Deseja remover o pacote ${vinculo.pacote?.nome || "selecionado"} desta cliente?`,
+    );
+
+    if (!confirmar) return;
+
+    const { error: erroSaldos } = await supabase
+      .from("cliente_pacote_saldos")
+      .delete()
+      .eq("cliente_pacote_id", vinculo.id);
+
+    if (erroSaldos) {
+      alert("Erro ao remover saldos do pacote: " + erroSaldos.message);
+      return;
+    }
+
+    const { error: erroVinculo } = await supabase
+      .from("cliente_pacotes")
+      .delete()
+      .eq("id", vinculo.id)
+      .eq("cliente_id", clienteEditando.id);
+
+    if (erroVinculo) {
+      alert("Erro ao remover pacote: " + erroVinculo.message);
+      return;
+    }
+
+    cancelarEdicaoPacoteCliente();
+    await carregarPacotesDoCliente(clienteEditando.id);
+    alert("Pacote removido da cliente.");
+  }
+
+  function formatarDataPacote(data?: string | null) {
+    if (!data) return "-";
+    const partes = data.split("-");
+    if (partes.length !== 3) return data;
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
   }
 
   function atualizarPrecoEspecial(servicoId: string, valor: string) {
@@ -316,6 +628,7 @@ export default function ClientesPage() {
     setClienteEditando(null);
     setForm(rascunhoSalvo || formularioVazio);
     setPrecosEspeciais({});
+    setPacotesDoCliente([]);
     setModalAberto(true);
   }
 
@@ -336,6 +649,7 @@ export default function ClientesPage() {
     });
     setModalAberto(true);
     carregarPrecosEspeciais(cliente.id);
+    carregarPacotesDoCliente(cliente.id);
   }
 
   function fecharModal() {
@@ -343,6 +657,9 @@ export default function ClientesPage() {
     setClienteEditando(null);
     setForm(formularioVazio);
     setPrecosEspeciais({});
+    setPacotesDoCliente([]);
+    setPacoteParaVincularId("");
+    cancelarEdicaoPacoteCliente();
   }
 
   async function salvar() {
@@ -740,6 +1057,223 @@ export default function ClientesPage() {
                           />
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {clienteEditando && (
+                <div className="border-t pt-6">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Pacotes ativos da cliente</h3>
+                      <p className="text-sm text-slate-500">
+                        Consulte, edite, remova ou vincule pacotes para esta cliente.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => carregarPacotesDoCliente(clienteEditando.id)}
+                      className="rounded-xl border bg-white px-4 py-2 font-bold text-slate-700"
+                    >
+                      Atualizar pacotes
+                    </button>
+                  </div>
+
+                  <div className="mb-5 rounded-2xl border bg-slate-50 p-4">
+                    <h4 className="mb-3 font-bold text-slate-900">Vincular novo pacote</h4>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+                      <select
+                        value={pacoteParaVincularId}
+                        onChange={(e) => setPacoteParaVincularId(e.target.value)}
+                        className="rounded-xl border bg-white px-4 py-3"
+                      >
+                        <option value="">Selecione um pacote</option>
+                        {pacotesDisponiveis.map((pacote) => (
+                          <option key={pacote.id} value={pacote.id}>
+                            {pacote.nome} {pacote.valor_final ? `- ${formatarMoeda(pacote.valor_final)}` : ""}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={vincularPacoteAoCliente}
+                        disabled={vinculandoPacote || !pacoteParaVincularId}
+                        className="rounded-xl px-4 py-3 font-bold text-white disabled:opacity-60"
+                        style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+                      >
+                        {vinculandoPacote ? "Vinculando..." : "Vincular pacote"}
+                      </button>
+                    </div>
+
+                    {pacotesDisponiveis.length === 0 && (
+                      <p className="mt-3 text-sm text-amber-700">
+                        Nenhum pacote ativo encontrado. Cadastre em Pacotes / Combos antes de vincular.
+                      </p>
+                    )}
+                  </div>
+
+                  {carregandoPacotesDoCliente ? (
+                    <div className="rounded-2xl border bg-slate-50 p-4 text-sm text-slate-500">
+                      Carregando pacotes da cliente...
+                    </div>
+                  ) : pacotesDoCliente.length === 0 ? (
+                    <div className="rounded-2xl border bg-slate-50 p-4 text-sm text-slate-500">
+                      Nenhum pacote vinculado para esta cliente.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {pacotesDoCliente.map((vinculo) => {
+                        const percentual = vinculo.total_sessoes
+                          ? Math.min((vinculo.total_usado / vinculo.total_sessoes) * 100, 100)
+                          : 0;
+                        const estaEditando = editandoPacoteClienteId === vinculo.id;
+
+                        return (
+                          <div key={vinculo.id} className="rounded-2xl border bg-white p-4 shadow-sm">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-lg font-black text-slate-900">
+                                  {vinculo.pacote?.nome || "Pacote"}
+                                </p>
+                                <p className="text-sm text-slate-500">
+                                  Validade: {formatarDataPacote(vinculo.data_fim)} • Status: {vinculo.status || "ativo"}
+                                </p>
+                              </div>
+
+                              <div className="rounded-full bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 ring-1 ring-emerald-200">
+                                {vinculo.total_restante} restantes
+                              </div>
+                            </div>
+
+                            <div className="mt-4">
+                              <div className="mb-2 flex justify-between text-sm font-bold text-slate-700">
+                                <span>Uso total</span>
+                                <span>{vinculo.total_usado}/{vinculo.total_sessoes}</span>
+                              </div>
+                              <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${percentual}%`,
+                                    background: "linear-gradient(90deg,#282663,#5b5bd6)",
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {estaEditando && (
+                              <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border bg-violet-50 p-4 md:grid-cols-2">
+                                <div>
+                                  <label className="text-sm font-bold text-slate-700">Validade</label>
+                                  <input
+                                    type="date"
+                                    value={validadePacoteEdicao}
+                                    onChange={(e) => setValidadePacoteEdicao(e.target.value)}
+                                    className="mt-1 w-full rounded-xl border px-4 py-3"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-sm font-bold text-slate-700">Status</label>
+                                  <select
+                                    value={statusPacoteEdicao}
+                                    onChange={(e) => setStatusPacoteEdicao(e.target.value)}
+                                    className="mt-1 w-full rounded-xl border px-4 py-3"
+                                  >
+                                    <option value="ativo">Ativo</option>
+                                    <option value="inativo">Inativo</option>
+                                    <option value="cancelado">Cancelado</option>
+                                    <option value="vencido">Vencido</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+
+                            {vinculo.saldos.length > 0 && (
+                              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                {vinculo.saldos.map((saldo: any) => (
+                                  <div key={saldo.id} className="rounded-xl border bg-slate-50 p-3">
+                                    <p className="font-bold text-slate-900">{saldo.servico_nome}</p>
+
+                                    {!estaEditando ? (
+                                      <p className="text-sm text-slate-500">
+                                        Restam {saldo.quantidade_restante} de {saldo.quantidade_total}
+                                      </p>
+                                    ) : (
+                                      <div className="mt-2">
+                                        <label className="text-xs font-bold text-slate-600">
+                                          Restantes
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={saldosPacoteEdicao[saldo.id] ?? ""}
+                                          onChange={(e) =>
+                                            setSaldosPacoteEdicao((atual) => ({
+                                              ...atual,
+                                              [saldo.id]: e.target.value,
+                                            }))
+                                          }
+                                          className="mt-1 w-full rounded-xl border bg-white px-4 py-3"
+                                        />
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          Usadas: {saldo.quantidade_usada}. O total será ajustado automaticamente.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {!estaEditando ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => iniciarEdicaoPacoteCliente(vinculo)}
+                                    className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700"
+                                  >
+                                    Editar pacote
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => removerPacoteDoCliente(vinculo)}
+                                    className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-700"
+                                  >
+                                    Remover pacote
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => salvarEdicaoPacoteCliente(vinculo)}
+                                    disabled={salvandoEdicaoPacote}
+                                    className="rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
+                                    style={{ backgroundColor: "var(--cor-primaria, #4b2f3f)" }}
+                                  >
+                                    {salvandoEdicaoPacote ? "Salvando..." : "Salvar pacote"}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={cancelarEdicaoPacoteCliente}
+                                    className="rounded-xl border bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
