@@ -2825,8 +2825,8 @@ ${linkMeuEspaco}`;
       )}
 
       {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-3 md:p-4">
+  <div className="mx-auto my-4 w-full max-w-xl rounded-[28px] bg-white p-5 shadow-2xl md:my-8 md:p-6">
             <div className="mb-5">
               <h2 className="text-2xl font-bold text-slate-900">
                 Finalizar atendimento
