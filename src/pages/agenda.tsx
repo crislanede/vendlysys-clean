@@ -934,7 +934,13 @@ export default function AgendaPage() {
     const pacotes = await buscarPacotesDisponiveis(agendamento);
     setPacotesDisponiveis(pacotes);
     if (pacotes.length > 0) {
+      // Desconto automático: se existir pacote ativo com saldo para o serviço,
+      // o modal já abre usando o pacote selecionado.
       setSaldoPacoteSelecionadoId(pacotes[0].saldo_id);
+      setUsarPacote(true);
+      setValorPagamento("0");
+      setFormaPagamento("pacote");
+      setStatusPagamento("pago");
     }
 
     setModalFinalizarAberto(true);
@@ -1396,32 +1402,47 @@ ${linkMeuEspaco}`;
 
     try {
       if (usarPacote && pacoteSelecionado) {
-        const { error: erroSaldo } = await supabase
-          .from("cliente_pacote_saldos")
-          .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
-          .eq("id", pacoteSelecionado.saldo_id);
+        const { data: usoExistente, error: erroUsoExistente } = await supabase
+          .from("cliente_pacote_usos")
+          .select("id")
+          .eq("agendamento_id", agendamentoSelecionado.id)
+          .maybeSingle();
 
-        if (erroSaldo) {
+        if (erroUsoExistente) {
           throw new Error(
-            `Erro ao baixar saldo do pacote: ${erroSaldo.message}`,
+            `Erro ao verificar uso anterior do pacote: ${erroUsoExistente.message}`,
           );
         }
 
-        const { error: erroUso } = await supabase
-          .from("cliente_pacote_usos")
-          .insert([
-            {
-              cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
-              agendamento_id: agendamentoSelecionado.id,
-              servico_id: pacoteSelecionado.servico_id,
-              quantidade_usada: 1,
-            },
-          ]);
+        // Evita baixa duplicada caso alguém tente finalizar o mesmo agendamento novamente.
+        if (!usoExistente) {
+          const { error: erroSaldo } = await supabase
+            .from("cliente_pacote_saldos")
+            .update({ quantidade_usada: pacoteSelecionado.quantidade_usada + 1 })
+            .eq("id", pacoteSelecionado.saldo_id);
 
-        if (erroUso) {
-          throw new Error(
-            `Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`,
-          );
+          if (erroSaldo) {
+            throw new Error(
+              `Erro ao baixar saldo do pacote: ${erroSaldo.message}`,
+            );
+          }
+
+          const { error: erroUso } = await supabase
+            .from("cliente_pacote_usos")
+            .insert([
+              {
+                cliente_pacote_id: pacoteSelecionado.cliente_pacote_id,
+                agendamento_id: agendamentoSelecionado.id,
+                servico_id: pacoteSelecionado.servico_id,
+                quantidade_usada: 1,
+              },
+            ]);
+
+          if (erroUso) {
+            throw new Error(
+              `Saldo baixado, mas houve erro ao registrar uso do pacote: ${erroUso.message}`,
+            );
+          }
         }
       }
 
