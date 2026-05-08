@@ -24,6 +24,7 @@ type Servico = {
   categoria: string | null;
   preco: number | null;
   preco_promocional: number | null;
+  promocao_ativa?: boolean | null;
   preco_descricao: string | null;
   duracao_padrao_minutos: number | null;
   atendimento_residencial?: boolean | null;
@@ -43,6 +44,7 @@ type LinhaImportacao = {
   valor?: string | number;
   preco?: string | number;
   preco_promocional?: string | number;
+  promocao_ativa?: string | boolean;
   preco_residencial?: string | number;
   duracao_minutos?: string | number;
   duracao_padrao_minutos?: string | number;
@@ -84,6 +86,7 @@ export default function ServicosPage() {
   const [categoria, setCategoria] = useState("");
   const [preco, setPreco] = useState("");
   const [precoPromocional, setPrecoPromocional] = useState("");
+  const [promocaoAtiva, setPromocaoAtiva] = useState(false);
   const [precoResidencial, setPrecoResidencial] = useState("");
   const [precoDescricao, setPrecoDescricao] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -97,10 +100,14 @@ export default function ServicosPage() {
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
-  const [categoriaAberta, setCategoriaAberta] = useState<Record<string, boolean>>({});
+  const [categoriaAberta, setCategoriaAberta] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const [mostrarModalCategoria, setMostrarModalCategoria] = useState(false);
-  const [categoriaEditandoId, setCategoriaEditandoId] = useState<string | null>(null);
+  const [categoriaEditandoId, setCategoriaEditandoId] = useState<string | null>(
+    null,
+  );
   const [nomeCategoria, setNomeCategoria] = useState("");
 
   const [resumoImportacao, setResumoImportacao] = useState<{
@@ -158,6 +165,7 @@ export default function ServicosPage() {
     setCategoria("");
     setPreco("");
     setPrecoPromocional("");
+    setPromocaoAtiva(false);
     setPrecoResidencial("");
     setPrecoDescricao("");
     setDescricao("");
@@ -180,7 +188,7 @@ export default function ServicosPage() {
 
   function editarCategoria(nomeDaCategoria: string) {
     const categoriaExistente = categorias.find(
-      (item) => item.nome.toLowerCase() === nomeDaCategoria.toLowerCase()
+      (item) => item.nome.toLowerCase() === nomeDaCategoria.toLowerCase(),
     );
 
     setCategoriaEditandoId(categoriaExistente?.id || null);
@@ -206,7 +214,7 @@ export default function ServicosPage() {
     const categoriaDuplicada = categorias.some(
       (item) =>
         item.nome.toLowerCase() === nomeFinal.toLowerCase() &&
-        item.id !== categoriaEditandoId
+        item.id !== categoriaEditandoId,
     );
 
     if (categoriaDuplicada) {
@@ -215,7 +223,9 @@ export default function ServicosPage() {
     }
 
     if (categoriaEditandoId) {
-      const categoriaAntiga = categorias.find((item) => item.id === categoriaEditandoId);
+      const categoriaAntiga = categorias.find(
+        (item) => item.id === categoriaEditandoId,
+      );
 
       const { error } = await supabase
         .from("categorias_servicos")
@@ -236,13 +246,19 @@ export default function ServicosPage() {
           .eq("empresa_id", empresaId);
 
         if (erroServicos) {
-          alert("Categoria editada, mas não foi possível atualizar os serviços: " + erroServicos.message);
+          alert(
+            "Categoria editada, mas não foi possível atualizar os serviços: " +
+              erroServicos.message,
+          );
         }
       }
     } else {
-      const { error } = await supabase
-        .from("categorias_servicos")
-        .insert([{ nome: nomeFinal, empresa_id: empresaId }]);
+      const { error } = await supabase.from("categorias_servicos").insert([
+        {
+          empresa_id: empresaId,
+          nome: nomeFinal,
+        },
+      ]);
 
       if (error) {
         alert("Erro ao criar categoria: " + error.message);
@@ -253,31 +269,35 @@ export default function ServicosPage() {
     setMostrarModalCategoria(false);
     setCategoriaEditandoId(null);
     setNomeCategoria("");
-    await carregarTudo();
+    await Promise.all([carregarCategorias(), carregarServicos()]);
   }
 
   async function excluirCategoria(nomeDaCategoria: string) {
-    if (!empresaId) {
-      alert("Empresa não identificada. Faça login novamente.");
-      return;
-    }
-    const categoriaUsada = servicos.some((item) => item.categoria === nomeDaCategoria);
+    if (!empresaId) return;
 
-    if (categoriaUsada) {
-      alert("Essa categoria possui serviços vinculados. Mova ou edite os serviços antes de excluir.");
+    const servicosNaCategoria = servicos.filter(
+      (item) => item.categoria === nomeDaCategoria,
+    );
+
+    if (servicosNaCategoria.length > 0) {
+      alert(
+        `Não é possível excluir esta categoria porque existem ${servicosNaCategoria.length} serviço(s) vinculados a ela.`,
+      );
       return;
     }
 
     const categoriaExistente = categorias.find(
-      (item) => item.nome.toLowerCase() === nomeDaCategoria.toLowerCase()
+      (item) => item.nome.toLowerCase() === nomeDaCategoria.toLowerCase(),
     );
 
     if (!categoriaExistente) {
-      alert("Essa categoria foi criada pelos serviços existentes e não pode ser excluída diretamente.");
+      alert("Esta categoria é padrão ou não foi encontrada no banco.");
       return;
     }
 
-    const confirmar = window.confirm(`Deseja excluir a categoria "${nomeDaCategoria}"?`);
+    const confirmar = window.confirm(
+      `Deseja excluir a categoria "${nomeDaCategoria}"?`,
+    );
     if (!confirmar) return;
 
     const { error } = await supabase
@@ -329,18 +349,48 @@ export default function ServicosPage() {
       return;
     }
 
-    if (retornoAutomatico && (!retornoDiasNormalizado || retornoDiasNormalizado <= 0)) {
+    if (
+      promocaoAtiva &&
+      (precoPromocionalNormalizado === null ||
+        precoPromocionalNormalizado < 0)
+    ) {
+      alert("Informe um preço promocional válido ou desative a promoção.");
+      return;
+    }
+
+    if (
+      promocaoAtiva &&
+      precoPromocionalNormalizado !== null &&
+      precoPromocionalNormalizado >= precoNormalizado
+    ) {
+      alert("O preço promocional deve ser menor que o preço padrão.");
+      return;
+    }
+
+    if (
+      retornoAutomatico &&
+      (!retornoDiasNormalizado || retornoDiasNormalizado <= 0)
+    ) {
       alert("Informe o prazo de retorno em dias.");
       return;
     }
 
-    if (retornoAutomatico && retornoAlertaNormalizado !== null && retornoAlertaNormalizado < 0) {
+    if (
+      retornoAutomatico &&
+      retornoAlertaNormalizado !== null &&
+      retornoAlertaNormalizado < 0
+    ) {
       alert("O alerta de retorno não pode ser negativo.");
       return;
     }
 
-    if (atendimentoResidencial && (precoResidencialNormalizado === null || precoResidencialNormalizado < 0)) {
-      alert("Informe o preço residencial ou desmarque atendimento residencial.");
+    if (
+      atendimentoResidencial &&
+      (precoResidencialNormalizado === null || precoResidencialNormalizado < 0)
+    ) {
+      alert(
+        "Informe o preço residencial ou desmarque atendimento residencial.",
+      );
       return;
     }
 
@@ -352,6 +402,7 @@ export default function ServicosPage() {
         precoPromocionalNormalizado !== null && precoPromocionalNormalizado >= 0
           ? precoPromocionalNormalizado
           : null,
+      promocao_ativa: promocaoAtiva,
       preco_residencial:
         atendimentoResidencial && precoResidencialNormalizado !== null
           ? precoResidencialNormalizado
@@ -370,7 +421,11 @@ export default function ServicosPage() {
     };
 
     const resposta = editandoId
-      ? await supabase.from("servicos").update(payload).eq("id", editandoId).eq("empresa_id", empresaId)
+      ? await supabase
+          .from("servicos")
+          .update(payload)
+          .eq("id", editandoId)
+          .eq("empresa_id", empresaId)
       : await supabase.from("servicos").insert([payload]);
 
     if (resposta.error) {
@@ -388,43 +443,60 @@ export default function ServicosPage() {
     setCategoria(item.categoria || "");
     setPreco(item.preco != null ? String(item.preco) : "");
     setPrecoPromocional(
-      item.preco_promocional != null ? String(item.preco_promocional) : ""
+      item.preco_promocional != null ? String(item.preco_promocional) : "",
     );
+    setPromocaoAtiva(!!item.promocao_ativa);
     setPrecoResidencial(
-      item.preco_residencial != null ? String(item.preco_residencial) : ""
+      item.preco_residencial != null ? String(item.preco_residencial) : "",
     );
     setPrecoDescricao(item.preco_descricao || "");
     setDescricao(item.descricao || "");
     setDuracao(
       item.duracao_padrao_minutos != null
         ? String(item.duracao_padrao_minutos)
-        : "60"
+        : "60",
     );
     setAtendimentoResidencial(!!item.atendimento_residencial);
     setAtivo(item.ativo ?? true);
     setRetornoAutomatico(!!item.retorno_automatico);
     setRetornoDias(item.retorno_dias != null ? String(item.retorno_dias) : "");
-    setRetornoAlertaDias(item.retorno_alerta_dias != null ? String(item.retorno_alerta_dias) : "0");
+    setRetornoAlertaDias(
+      item.retorno_alerta_dias != null ? String(item.retorno_alerta_dias) : "0",
+    );
     setRetornoTipo(item.retorno_tipo || "");
     setEditandoId(item.id);
     setMostrarFormulario(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function toggleAtivo(id: string, ativoAtual: boolean) {
-    if (!empresaId) {
-      alert("Empresa não identificada. Faça login novamente.");
-      return;
-    }
+  async function alternarAtivo(item: Servico) {
     const { error } = await supabase
       .from("servicos")
-      .update({ ativo: !ativoAtual })
-      .eq("id", id)
+      .update({ ativo: !item.ativo })
+      .eq("id", item.id)
       .eq("empresa_id", empresaId);
 
     if (error) {
-      console.error("Erro ao atualizar status do serviço:", error);
-      alert(`Erro ao atualizar serviço: ${error.message}`);
+      alert("Erro ao alterar status: " + error.message);
+      return;
+    }
+
+    await carregarServicos();
+  }
+
+  async function excluirServico(item: Servico) {
+    const confirmar = window.confirm(
+      `Deseja excluir o serviço "${item.nome}"?`,
+    );
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("servicos")
+      .delete()
+      .eq("id", item.id)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      alert("Erro ao excluir serviço: " + error.message);
       return;
     }
 
@@ -445,6 +517,7 @@ export default function ServicosPage() {
         categoria: "Atendimento residencial",
         valor: 60,
         preco_promocional: "",
+        promocao_ativa: "NÃO",
         atendimento_residencial: "SIM",
         preco_residencial: 80,
         duracao_minutos: 60,
@@ -457,6 +530,7 @@ export default function ServicosPage() {
         categoria: "Manicure",
         valor: 30,
         preco_promocional: 25,
+        promocao_ativa: "SIM",
         atendimento_residencial: "NÃO",
         preco_residencial: "",
         duracao_minutos: 60,
@@ -479,6 +553,7 @@ export default function ServicosPage() {
       categoria: item.categoria || "",
       valor: item.preco || 0,
       preco_promocional: item.preco_promocional || "",
+      promocao_ativa: item.promocao_ativa ? "SIM" : "NÃO",
       atendimento_residencial: item.atendimento_residencial ? "SIM" : "NÃO",
       preco_residencial: item.preco_residencial || "",
       duracao_minutos: item.duracao_padrao_minutos || 0,
@@ -505,65 +580,25 @@ export default function ServicosPage() {
 
     if (!texto) return true;
     if (["sim", "s", "true", "1", "ativo"].includes(texto)) return true;
-    if (["nao", "não", "n", "false", "0", "inativo"].includes(texto)) return false;
+    if (["nao", "não", "n", "false", "0", "inativo"].includes(texto)) {
+      return false;
+    }
     return null;
   }
 
   function normalizarNumero(valor: unknown) {
     if (valor === null || valor === undefined || valor === "") return null;
 
-    const texto = String(valor).trim().replace(/\./g, "").replace(",", ".");
-    const numero = Number(texto);
+    const numero = Number(
+      String(valor).replace(/R\$/g, "").replace(/\./g, "").replace(",", "."),
+    );
 
-    if (Number.isNaN(numero)) return null;
-    return numero;
+    return Number.isFinite(numero) ? numero : null;
   }
 
-  const categoriasDisponiveis = useMemo(() => {
-    const set = new Set<string>(categoriasPadrao);
-
-    categorias.forEach((item) => {
-      if (item.nome) set.add(item.nome);
-    });
-
-    servicos.forEach((item) => {
-      if (item.categoria) set.add(item.categoria);
-    });
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [categorias, servicos]);
-
-  const servicosPorCategoria = useMemo(() => {
-    const grupos: Record<string, Servico[]> = {};
-
-    servicos.forEach((item) => {
-      const chave = item.categoria || "Sem categoria";
-      if (!grupos[chave]) grupos[chave] = [];
-      grupos[chave].push(item);
-    });
-
-    return Object.entries(grupos).sort(([a], [b]) => a.localeCompare(b));
-  }, [servicos]);
-
-  const chavesExistentes = useMemo(() => {
-    return new Set(
-      servicos.map((item) =>
-        `${(item.nome || "").trim().toLowerCase()}|${(item.categoria || "")
-          .trim()
-          .toLowerCase()}`
-      )
-    );
-  }, [servicos]);
-
-  async function importarArquivo(e: ChangeEvent<HTMLInputElement>) {
+  async function importarServicos(e: ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
-    if (!arquivo) return;
-
-    if (!empresaId) {
-      alert("Empresa não identificada. Faça login novamente.");
-      e.target.value = "";
-      return;
-    }
+    if (!arquivo || !empresaId) return;
 
     setImportando(true);
     setResumoImportacao(null);
@@ -571,15 +606,10 @@ export default function ServicosPage() {
     try {
       const buffer = await arquivo.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
-
       const nomeAba =
         workbook.SheetNames.find(
-          (nomeSheet) => nomeSheet.toLowerCase() === "serviços"
-        ) ||
-        workbook.SheetNames.find(
-          (nomeSheet) => nomeSheet.toLowerCase() === "servicos"
-        ) ||
-        workbook.SheetNames[0];
+          (nomeSheet) => nomeSheet.toLowerCase() === "servicos",
+        ) || workbook.SheetNames[0];
 
       const worksheet = workbook.Sheets[nomeAba];
       const linhas = XLSX.utils.sheet_to_json<LinhaImportacao>(worksheet, {
@@ -599,6 +629,7 @@ export default function ServicosPage() {
         categoria: string | null;
         preco: number;
         preco_promocional: number | null;
+        promocao_ativa: boolean;
         preco_residencial: number | null;
         atendimento_residencial: boolean;
         preco_descricao: string | null;
@@ -611,6 +642,18 @@ export default function ServicosPage() {
       const categoriasParaCriar = new Set<string>();
       const chavesArquivo = new Set<string>();
 
+      const servicosExistentes = servicos;
+      const categoriasDisponiveis = [
+        ...categoriasPadrao,
+        ...categorias.map((item) => item.nome),
+      ];
+      const chavesExistentes = new Set(
+        servicosExistentes.map(
+          (item) =>
+            `${item.nome.toLowerCase()}|${(item.categoria || "").toLowerCase()}`,
+        ),
+      );
+
       linhas.forEach((linha, index) => {
         const numeroLinha = index + 2;
 
@@ -618,14 +661,19 @@ export default function ServicosPage() {
         const categoriaServico = normalizarTexto(linha.categoria);
         const valorServico = normalizarNumero(linha.valor ?? linha.preco);
         const valorPromocional = normalizarNumero(linha.preco_promocional);
+        const promocaoAtivaNormalizada = normalizarBoolean(
+          linha.promocao_ativa,
+        );
         const valorResidencial = normalizarNumero(linha.preco_residencial);
         const duracaoServico = normalizarNumero(
-          linha.duracao_minutos ?? linha.duracao_padrao_minutos
+          linha.duracao_minutos ?? linha.duracao_padrao_minutos,
         );
         const descricaoPreco = normalizarTexto(linha.preco_descricao);
         const descricaoServico = normalizarTexto(linha.descricao);
         const ativoNormalizado = normalizarBoolean(linha.ativo);
-        const residencialNormalizado = normalizarBoolean(linha.atendimento_residencial);
+        const residencialNormalizado = normalizarBoolean(
+          linha.atendimento_residencial,
+        );
 
         if (!nomeServico) {
           erros.push({
@@ -667,6 +715,37 @@ export default function ServicosPage() {
           return;
         }
 
+        if (promocaoAtivaNormalizada === null) {
+          erros.push({
+            linha: numeroLinha,
+            motivo: "Campo promocao_ativa deve ser SIM ou NÃO.",
+          });
+          return;
+        }
+
+        if (
+          promocaoAtivaNormalizada &&
+          (valorPromocional === null || valorPromocional < 0)
+        ) {
+          erros.push({
+            linha: numeroLinha,
+            motivo: "Preço promocional obrigatório quando promocao_ativa = SIM.",
+          });
+          return;
+        }
+
+        if (
+          promocaoAtivaNormalizada &&
+          valorPromocional !== null &&
+          valorPromocional >= valorServico
+        ) {
+          erros.push({
+            linha: numeroLinha,
+            motivo: "Preço promocional deve ser menor que o valor normal.",
+          });
+          return;
+        }
+
         if (residencialNormalizado === null) {
           erros.push({
             linha: numeroLinha,
@@ -675,10 +754,14 @@ export default function ServicosPage() {
           return;
         }
 
-        if (residencialNormalizado && (valorResidencial === null || valorResidencial < 0)) {
+        if (
+          residencialNormalizado &&
+          (valorResidencial === null || valorResidencial < 0)
+        ) {
           erros.push({
             linha: numeroLinha,
-            motivo: "Preço residencial obrigatório quando atendimento residencial = SIM.",
+            motivo:
+              "Preço residencial obrigatório quando atendimento residencial = SIM.",
           });
           return;
         }
@@ -704,7 +787,7 @@ export default function ServicosPage() {
         chavesArquivo.add(chave);
 
         const categoriaExiste = categoriasDisponiveis.some(
-          (cat) => cat.toLowerCase() === categoriaServico.toLowerCase()
+          (cat) => cat.toLowerCase() === categoriaServico.toLowerCase(),
         );
 
         if (!categoriaExiste) categoriasParaCriar.add(categoriaServico);
@@ -714,9 +797,14 @@ export default function ServicosPage() {
           categoria: categoriaServico,
           preco: valorServico,
           preco_promocional:
-            valorPromocional !== null && valorPromocional >= 0 ? valorPromocional : null,
+            valorPromocional !== null && valorPromocional >= 0
+              ? valorPromocional
+              : null,
+          promocao_ativa: promocaoAtivaNormalizada ?? false,
           preco_residencial:
-            residencialNormalizado && valorResidencial !== null ? valorResidencial : null,
+            residencialNormalizado && valorResidencial !== null
+              ? valorResidencial
+              : null,
           atendimento_residencial: residencialNormalizado,
           preco_descricao: descricaoPreco || null,
           descricao: descricaoServico || null,
@@ -728,17 +816,22 @@ export default function ServicosPage() {
       });
 
       if (categoriasParaCriar.size > 0) {
-        const payloadCategorias = Array.from(categoriasParaCriar).map((nomeCategoria) => ({
-          nome: nomeCategoria,
-          empresa_id: empresaId,
-        }));
+        const payloadCategorias = Array.from(categoriasParaCriar).map(
+          (nomeCategoria) => ({
+            empresa_id: empresaId,
+            nome: nomeCategoria,
+          }),
+        );
 
-        const { error: erroCategorias } = await supabase
+        const { error } = await supabase
           .from("categorias_servicos")
           .insert(payloadCategorias);
 
-        if (erroCategorias) {
-          console.warn("Não foi possível criar algumas categorias:", erroCategorias.message);
+        if (error) {
+          alert("Erro ao criar categorias da planilha: " + error.message);
+          setImportando(false);
+          e.target.value = "";
+          return;
         }
       }
 
@@ -746,8 +839,7 @@ export default function ServicosPage() {
         const { error } = await supabase.from("servicos").insert(payloadValido);
 
         if (error) {
-          console.error("Erro ao importar serviços:", error);
-          alert(`Erro ao importar serviços: ${error.message}`);
+          alert("Erro ao importar serviços: " + error.message);
           setImportando(false);
           e.target.value = "";
           return;
@@ -760,136 +852,136 @@ export default function ServicosPage() {
       });
 
       await carregarTudo();
-    } catch (error) {
-      console.error("Erro ao processar arquivo:", error);
-      alert("Não foi possível ler o arquivo. Verifique se está no modelo correto.");
+    } catch (error: any) {
+      alert(error?.message || "Erro ao importar arquivo.");
     } finally {
       setImportando(false);
       e.target.value = "";
     }
   }
 
-  function alternarCategoria(nomeCategoria: string) {
-    setCategoriaAberta((prev) => ({
-      ...prev,
-      [nomeCategoria]: prev[nomeCategoria] === false ? true : false,
-    }));
-  }
+  const categoriasDisponiveis = useMemo(() => {
+    return Array.from(
+      new Set([
+        ...categoriasPadrao,
+        ...categorias.map((item) => item.nome),
+        ...servicos.map((item) => item.categoria || "").filter(Boolean),
+      ]),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [categorias, servicos]);
 
-  if (carregandoEmpresa) {
-    return (
-      <SectionCard>
-        <p>Carregando empresa...</p>
-      </SectionCard>
+  const servicosPorCategoria = useMemo(() => {
+    return categoriasDisponiveis.reduce<Record<string, Servico[]>>(
+      (acc, categoriaNome) => {
+        acc[categoriaNome] = servicos.filter(
+          (item) => (item.categoria || "Sem categoria") === categoriaNome,
+        );
+        return acc;
+      },
+      {},
     );
+  }, [categoriasDisponiveis, servicos]);
+
+  const totalResidenciais = servicos.filter(
+    (item) => item.atendimento_residencial,
+  ).length;
+
+  if (carregandoEmpresa || loading) {
+    return <div className="p-6">Carregando serviços...</div>;
   }
 
   if (!empresaId) {
-    return (
-      <SectionCard>
-        <p>Empresa não encontrada. Faça login novamente.</p>
-      </SectionCard>
-    );
+    return <div className="p-6">Empresa não encontrada.</div>;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Catálogo"
+        eyebrow="Catálogo comercial"
         title="Serviços"
-        description="Gerencie categorias, preços, atendimento residencial, promoções, duração e importação em lote."
+        description="Cadastre serviços, categorias, preços, duração e opções residenciais."
         action={
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={abrirNovaCategoria}
-              className="rounded-2xl px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
-              style={{ backgroundColor: "var(--color-primary)", border: "1px solid var(--color-primary)" }}
-            >
-              + Categoria
-            </button>
-
             <PrimaryButton
-              type="button"
               onClick={() => {
-                if (mostrarFormulario) {
-                  limparFormulario();
-                } else {
-                  setMostrarFormulario(true);
-                }
+                limparFormulario();
+                setMostrarFormulario(true);
               }}
             >
-              {mostrarFormulario ? "Fechar" : "+ Serviço"}
+              + Serviço
             </PrimaryButton>
-
-            <button
-              type="button"
-              onClick={exportarServicos}
-              className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Exportar
-            </button>
-
-            <button
-              type="button"
-              onClick={baixarModelo}
-              className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Baixar modelo
-            </button>
-
-            <label className="cursor-pointer rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+            <PrimaryButton onClick={abrirNovaCategoria}>+ Categoria</PrimaryButton>
+            {mostrarFormulario && (
+              <PrimaryButton onClick={() => setMostrarFormulario(false)}>
+                Fechar
+              </PrimaryButton>
+            )}
+            <SecondaryButton onClick={exportarServicos}>Exportar</SecondaryButton>
+            <SecondaryButton onClick={baixarModelo}>Baixar modelo</SecondaryButton>
+            <label className="cursor-pointer rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
               {importando ? "Importando..." : "Importar serviços"}
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv"
-                onChange={importarArquivo}
                 className="hidden"
                 disabled={importando}
+                onChange={importarServicos}
               />
             </label>
           </div>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <SectionCard>
-          <p className="text-sm font-semibold text-slate-500">Serviços cadastrados</p>
-          <p className="mt-2 text-3xl font-extrabold text-slate-900">{servicos.length}</p>
+          <p className="text-sm font-semibold text-slate-500">
+            Serviços cadastrados
+          </p>
+          <p className="mt-4 text-4xl font-black text-slate-900">
+            {servicos.length}
+          </p>
         </SectionCard>
 
         <SectionCard>
           <p className="text-sm font-semibold text-slate-500">Categorias</p>
-          <p className="mt-2 text-3xl font-extrabold text-slate-900">{categoriasDisponiveis.length}</p>
+          <p className="mt-4 text-4xl font-black text-slate-900">
+            {categoriasDisponiveis.length}
+          </p>
         </SectionCard>
 
         <SectionCard>
           <p className="text-sm font-semibold text-slate-500">Residenciais</p>
-          <p className="mt-2 text-3xl font-extrabold" style={{ color: "var(--color-primary)" }}>
-            {servicos.filter((item) => item.atendimento_residencial).length}
+          <p className="mt-4 text-4xl font-black text-purple-700">
+            {totalResidenciais}
           </p>
         </SectionCard>
       </div>
 
       {resumoImportacao && (
-        <SectionCard
-          title="Resultado da importação"
-          description={`${resumoImportacao.sucesso} serviço(s) importado(s) com sucesso`}
-        >
-          {resumoImportacao.erros.length === 0 ? (
-            <p className="text-sm text-emerald-700">
-              Importação concluída sem erros.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-amber-700">
-                Algumas linhas não foram importadas:
+        <SectionCard>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-lg font-black text-slate-900">
+                Resultado da importação
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {resumoImportacao.sucesso} serviço(s) importado(s) com sucesso.
               </p>
+            </div>
+            <SecondaryButton onClick={() => setResumoImportacao(null)}>
+              Fechar resumo
+            </SecondaryButton>
+          </div>
 
-              <div className="max-h-60 space-y-2 overflow-auto rounded-2xl border border-slate-200 p-3">
+          {resumoImportacao.erros.length > 0 && (
+            <div className="mt-4 max-h-64 overflow-auto rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-bold text-amber-900">
+                Linhas ignoradas ({resumoImportacao.erros.length})
+              </p>
+              <div className="mt-3 space-y-2 text-sm text-amber-800">
                 {resumoImportacao.erros.map((erro, index) => (
-                  <p key={`${erro.linha}-${index}`} className="text-sm text-slate-600">
-                    <span className="font-medium">Linha {erro.linha}:</span> {erro.motivo}
+                  <p key={`${erro.linha}-${index}`}>
+                    Linha {erro.linha}: {erro.motivo}
                   </p>
                 ))}
               </div>
@@ -899,95 +991,113 @@ export default function ServicosPage() {
       )}
 
       {mostrarFormulario && (
-        <SectionCard
-          title={editandoId ? "Editar serviço" : "Novo serviço"}
-          description="Cadastre ou ajuste as informações do serviço"
-        >
-          <form
-            onSubmit={salvarServico}
-            className="grid grid-cols-1 gap-3 md:grid-cols-2"
-          >
-            <input
-              placeholder="Nome do serviço"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3"
-            />
+        <SectionCard>
+          <form onSubmit={salvarServico}>
+            <div className="mb-5">
+              <h2 className="text-xl font-black text-slate-900">
+                {editandoId ? "Editar serviço" : "Novo serviço"}
+              </h2>
+              <p className="mt-1 text-slate-500">
+                Cadastre ou ajuste as informações do serviço
+              </p>
+            </div>
 
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3"
-            >
-              <option value="">Selecione a categoria</option>
-              {categoriasDisponiveis.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Preço padrão"
-              value={preco}
-              onChange={(e) => setPreco(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3"
-            />
-
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Preço promocional"
-              value={precoPromocional}
-              onChange={(e) => setPrecoPromocional(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3"
-            />
-
-            <label className="flex items-center gap-2 rounded-2xl border border-slate-200 p-3 text-sm text-slate-700">
+            <div className="grid gap-4 md:grid-cols-2">
               <input
-                type="checkbox"
-                checked={atendimentoResidencial}
-                onChange={(e) => setAtendimentoResidencial(e.target.checked)}
+                placeholder="Nome do serviço"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
               />
-              Permite atendimento residencial
-            </label>
 
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Preço residencial"
-              value={precoResidencial}
-              onChange={(e) => setPrecoResidencial(e.target.value)}
-              disabled={!atendimentoResidencial}
-              className="rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
-            />
+              <select
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
+              >
+                <option value="">Selecione a categoria</option>
+                {categoriasDisponiveis.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
 
-            <input
-              placeholder="Descrição do preço (ex: a partir de R$20)"
-              value={precoDescricao}
-              onChange={(e) => setPrecoDescricao(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
-            />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Preço padrão"
+                value={preco}
+                onChange={(e) => setPreco(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
+              />
 
-            <textarea
-              placeholder="Descrição do serviço"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
-            />
+              <div className="rounded-2xl border border-slate-200 p-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={promocaoAtiva}
+                    onChange={(e) => setPromocaoAtiva(e.target.checked)}
+                  />
+                  Ativar promoção
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Preço promocional"
+                  value={precoPromocional}
+                  onChange={(e) => setPrecoPromocional(e.target.value)}
+                  disabled={!promocaoAtiva}
+                  className="mt-3 w-full rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  O valor promocional só será usado quando esta opção estiver
+                  marcada.
+                </p>
+              </div>
 
-            <input
-              type="number"
-              min="1"
-              placeholder="Duração em minutos"
-              value={duracao}
-              onChange={(e) => setDuracao(e.target.value)}
-              className="rounded-2xl border border-slate-200 p-3"
-            />
+              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 p-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={atendimentoResidencial}
+                  onChange={(e) => setAtendimentoResidencial(e.target.checked)}
+                />
+                Permite atendimento residencial
+              </label>
 
-            <div className="flex items-center">
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Preço residencial"
+                value={precoResidencial}
+                onChange={(e) => setPrecoResidencial(e.target.value)}
+                disabled={!atendimentoResidencial}
+                className="rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
+              />
+
+              <input
+                placeholder="Descrição do preço (ex: a partir de R$20)"
+                value={precoDescricao}
+                onChange={(e) => setPrecoDescricao(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
+              />
+
+              <textarea
+                placeholder="Descrição do serviço"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3 md:col-span-2"
+              />
+
+              <input
+                type="number"
+                min="1"
+                placeholder="Duração padrão em minutos"
+                value={duracao}
+                onChange={(e) => setDuracao(e.target.value)}
+                className="rounded-2xl border border-slate-200 p-3"
+              />
+
               <label className="flex items-center gap-2 rounded-2xl border border-slate-200 p-3 text-sm text-slate-700">
                 <input
                   type="checkbox"
@@ -998,55 +1108,48 @@ export default function ServicosPage() {
               </label>
             </div>
 
-            <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-              <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+            <div className="mt-5 rounded-2xl border border-purple-100 bg-purple-50 p-4">
+              <label className="flex items-center gap-2 text-sm font-black text-purple-900">
                 <input
                   type="checkbox"
                   checked={retornoAutomatico}
                   onChange={(e) => setRetornoAutomatico(e.target.checked)}
                 />
-                Criar retorno automático ao finalizar atendimento
+                Criar retorno automático ao finalizar este serviço
               </label>
 
               {retornoAutomatico && (
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
                   <input
                     type="number"
                     min="1"
-                    placeholder="Prazo do retorno (dias)"
+                    placeholder="Retorno em dias"
                     value={retornoDias}
                     onChange={(e) => setRetornoDias(e.target.value)}
-                    className="rounded-2xl border border-slate-200 p-3"
+                    className="rounded-2xl border border-purple-100 bg-white p-3"
                   />
-
                   <input
                     type="number"
                     min="0"
-                    placeholder="Alertar antes (dias)"
+                    placeholder="Alertar antes em dias"
                     value={retornoAlertaDias}
                     onChange={(e) => setRetornoAlertaDias(e.target.value)}
-                    className="rounded-2xl border border-slate-200 p-3"
+                    className="rounded-2xl border border-purple-100 bg-white p-3"
                   />
-
                   <input
-                    placeholder="Tipo de retorno (manutenção, avaliação...)"
+                    placeholder="Tipo/observação do retorno"
                     value={retornoTipo}
                     onChange={(e) => setRetornoTipo(e.target.value)}
-                    className="rounded-2xl border border-slate-200 p-3"
+                    className="rounded-2xl border border-purple-100 bg-white p-3"
                   />
                 </div>
               )}
-
-              <p className="mt-2 text-xs text-slate-500">
-                Exemplo: prazo 20 dias e alerta 3 dias antes → o alerta aparece 17 dias após o atendimento.
-              </p>
             </div>
 
-            <div className="md:col-span-2 flex gap-2">
+            <div className="mt-6 flex gap-3">
               <PrimaryButton type="submit">
-                {editandoId ? "Atualizar" : "Salvar"}
+                {editandoId ? "Salvar alterações" : "Cadastrar serviço"}
               </PrimaryButton>
-
               <SecondaryButton type="button" onClick={limparFormulario}>
                 Cancelar
               </SecondaryButton>
@@ -1055,75 +1158,72 @@ export default function ServicosPage() {
         </SectionCard>
       )}
 
-      {loading ? (
-        <SectionCard>
-          <p>Carregando...</p>
-        </SectionCard>
-      ) : servicos.length === 0 ? (
-        <EmptyState
-          title="Nenhum serviço cadastrado"
-          description="Cadastre o primeiro serviço ou importe uma planilha para começar."
-        />
-      ) : (
-        <div className="space-y-5">
-          {servicosPorCategoria.map(([nomeCategoria, itens]) => {
-            const aberta = categoriaAberta[nomeCategoria] !== false;
+      <div className="space-y-4">
+        {categoriasDisponiveis.map((categoriaNome) => {
+          const lista = servicosPorCategoria[categoriaNome] || [];
+          const aberta = categoriaAberta[categoriaNome] ?? true;
 
-            return (
-              <div key={nomeCategoria} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between px-5 py-4 text-white"
-                style={{ backgroundColor: "var(--color-primary)" }}>
-                  <button
-                    type="button"
-                    onClick={() => alternarCategoria(nomeCategoria)}
-                    className="flex flex-1 items-center gap-3 text-left"
-                  >
-                    <span className="text-xl">{aberta ? "▾" : "▸"}</span>
-                    <div>
-                      <h3 className="text-xl font-bold">{nomeCategoria}</h3>
-                      <p className="text-sm text-white/85">
-                        {itens.length} serviço(s) cadastrado(s)
-                      </p>
-                    </div>
-                  </button>
-
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => editarCategoria(nomeCategoria)}
-                      className="text-sm font-bold text-white hover:underline"
-                    >
-                      Editar categoria
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => excluirCategoria(nomeCategoria)}
-                      className="text-sm font-bold text-white hover:underline"
-                    >
-                      Excluir categoria
-                    </button>
+          return (
+            <SectionCard key={categoriaNome}>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCategoriaAberta((prev) => ({
+                      ...prev,
+                      [categoriaNome]: !aberta,
+                    }))
+                  }
+                  className="flex items-center gap-3 text-left"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-100 text-purple-700">
+                    {aberta ? "−" : "+"}
+                  </span>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">
+                      {categoriaNome}
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      {lista.length} serviço(s)
+                    </p>
                   </div>
-                </div>
+                </button>
 
-                {aberta && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
+                <div className="flex flex-wrap gap-2">
+                  <SecondaryButton onClick={() => editarCategoria(categoriaNome)}>
+                    Editar categoria
+                  </SecondaryButton>
+                  <SecondaryButton
+                    onClick={() => excluirCategoria(categoriaNome)}
+                  >
+                    Excluir categoria
+                  </SecondaryButton>
+                </div>
+              </div>
+
+              {aberta && (
+                <div className="mt-5 overflow-x-auto">
+                  {lista.length === 0 ? (
+                    <EmptyState
+                      title="Nenhum serviço nesta categoria"
+                      description="Cadastre serviços ou importe uma planilha para preencher este grupo."
+                    />
+                  ) : (
+                    <table className="min-w-full divide-y divide-slate-100">
                       <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-left text-sm text-slate-600">
+                        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                           <th className="px-4 py-3">Serviço</th>
                           <th className="px-4 py-3">Descrição</th>
-                          <th className="px-4 py-3 text-right">Preço padrão</th>
-                          <th className="px-4 py-3 text-right">Preço promocional</th>
+                          <th className="px-4 py-3 text-right">Preço</th>
+                          <th className="px-4 py-3 text-right">Promoção</th>
                           <th className="px-4 py-3 text-right">Residencial</th>
                           <th className="px-4 py-3 text-right">Duração</th>
                           <th className="px-4 py-3 text-right">Ações</th>
                         </tr>
                       </thead>
-
-                      <tbody>
-                        {itens.map((item) => (
-                          <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                      <tbody className="divide-y divide-slate-100">
+                        {lista.map((item) => (
+                          <tr key={item.id}>
                             <td className="px-4 py-4">
                               <div className="text-lg font-semibold text-slate-900">
                                 {item.nome}
@@ -1144,9 +1244,15 @@ export default function ServicosPage() {
                             </td>
 
                             <td className="px-4 py-4 text-right text-slate-700">
-                              {item.preco_promocional
+                              {item.promocao_ativa && item.preco_promocional
                                 ? formatarMoeda(item.preco_promocional)
                                 : "--"}
+                              {item.promocao_ativa &&
+                                item.preco_promocional && (
+                                  <div className="mt-1 text-xs font-bold text-emerald-600">
+                                    Promoção ativa
+                                  </div>
+                                )}
                             </td>
 
                             <td className="px-4 py-4 text-right text-slate-700">
@@ -1160,50 +1266,63 @@ export default function ServicosPage() {
                             </td>
 
                             <td className="px-4 py-4">
-                              <div className="flex justify-end gap-3">
-                                <button
-                                  type="button"
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <SecondaryButton
                                   onClick={() => editarServico(item)}
-                                  className="text-sm font-bold text-blue-600 hover:underline"
                                 >
                                   Editar
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAtivo(item.id, item.ativo)}
-                                  className="text-sm font-bold hover:underline"
-                                  style={{ color: "var(--color-primary)" }}
+                                </SecondaryButton>
+                                <SecondaryButton
+                                  onClick={() => alternarAtivo(item)}
                                 >
                                   {item.ativo ? "Inativar" : "Ativar"}
-                                </button>
+                                </SecondaryButton>
+                                <SecondaryButton
+                                  onClick={() => excluirServico(item)}
+                                >
+                                  Excluir
+                                </SecondaryButton>
                               </div>
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  )}
+                </div>
+              )}
+            </SectionCard>
+          );
+        })}
+      </div>
 
       {mostrarModalCategoria && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <form
             onSubmit={salvarCategoria}
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"
           >
-            <h3 className="text-xl font-extrabold text-slate-900">
-              {categoriaEditandoId ? "Editar categoria" : "Nova categoria"}
-            </h3>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Organize seus serviços por área, tipo de atendimento ou categoria comercial.
-            </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-purple-700">
+                  Categoria
+                </p>
+                <h2 className="text-2xl font-black text-slate-900">
+                  {categoriaEditandoId ? "Editar categoria" : "Nova categoria"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalCategoria(false);
+                  setCategoriaEditandoId(null);
+                  setNomeCategoria("");
+                }}
+                className="rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
+              >
+                Fechar
+              </button>
+            </div>
 
             <input
               value={nomeCategoria}
@@ -1224,9 +1343,7 @@ export default function ServicosPage() {
                 Cancelar
               </SecondaryButton>
 
-              <PrimaryButton type="submit">
-                Salvar categoria
-              </PrimaryButton>
+              <PrimaryButton type="submit">Salvar categoria</PrimaryButton>
             </div>
           </form>
         </div>

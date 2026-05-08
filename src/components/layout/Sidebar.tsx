@@ -1,15 +1,5 @@
-import { useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { useEmpresa } from "../../hooks/useEmpresa";
-
-type Perfil =
-  | "admin"
-  | "recepcao"
-  | "consulta"
-  | "profissional"
-  | "financeiro"
-  | "super_admin"
-  | "admin_saas";
+import { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 type MenuItem = {
   nome: string;
@@ -21,242 +11,194 @@ type MenuSecao = {
   itens: MenuItem[];
 };
 
-const menuAdmin: MenuSecao[] = [
-  {
-    titulo: "Principal",
-    itens: [
-      { nome: "Dashboard", rota: "/dashboard" },
-      { nome: "Agenda", rota: "/agenda" },
-      { nome: "Consulta", rota: "/consulta-agendamentos" },
-    ],
-  },
-  {
-    titulo: "Cadastros",
-    itens: [
-      { nome: "Clientes", rota: "/clientes" },
-      { nome: "Profissionais", rota: "/profissionais" },
-      { nome: "Serviços", rota: "/servicos" },
-      { nome: "Produtos", rota: "/produtos" },
-      { nome: "Pacotes / Combos", rota: "/marketing-pacotes" },
-      { nome: "Usuários", rota: "/usuarios" },
-    ],
-  },
-  {
-    titulo: "Operação",
-    itens: [
-      { nome: "Financeiro", rota: "/financeiro" },
-      { nome: "Caixa", rota: "/caixa" },
-      { nome: "Comissões", rota: "/comissoes" },
-      { nome: "Despesas", rota: "/despesas" },
-      { nome: "Pagamentos", rota: "/pagamentos" },
-      { nome: "Relatórios", rota: "/relatorios" },
-    ],
-  },
-  {
-    titulo: "Sistema",
-    itens: [
-      { nome: "Anamnese", rota: "/anamnese-configuracao" },
-      { nome: "Mensagens", rota: "/whatsapp-mensagens" },
-      { nome: "Campanhas", rota: "/campanhas" },
-      { nome: "Bloqueios", rota: "/bloqueios" },
-      { nome: "Configurações", rota: "/configuracoes" },
-    ],
-  },
-];
-
-const menuProfissional: MenuSecao[] = [
-  {
-    titulo: "Minha área",
-    itens: [
-      { nome: "Agenda", rota: "/agenda" },
-      { nome: "Minhas comissões", rota: "/minhas-comissoes" },
-    ],
-  },
-  {
-    titulo: "Consulta",
-    itens: [
-      { nome: "Serviços", rota: "/servicos" },
-      { nome: "Produtos", rota: "/produtos" },
-    ],
-  },
-];
-
-const menuRecepcao: MenuSecao[] = [
-  {
-    titulo: "Principal",
-    itens: [
-      { nome: "Agenda", rota: "/agenda" },
-      { nome: "Consulta", rota: "/consulta-agendamentos" },
-    ],
-  },
-  {
-    titulo: "Cadastros",
-    itens: [
-      { nome: "Clientes", rota: "/clientes" },
-      { nome: "Profissionais", rota: "/profissionais" },
-      { nome: "Serviços", rota: "/servicos" },
-      { nome: "Produtos", rota: "/produtos" },
-      { nome: "Pacotes / Combos", rota: "/marketing-pacotes" },
-    ],
-  },
-  {
-    titulo: "Sistema",
-    itens: [
-      { nome: "Mensagens", rota: "/whatsapp-mensagens" },
-      { nome: "Campanhas", rota: "/campanhas" },
-    ],
-  },
-];
-
-const menuConsulta: MenuSecao[] = [
-  {
-    titulo: "Principal",
-    itens: [
-      { nome: "Agenda", rota: "/agenda" },
-      { nome: "Consulta", rota: "/consulta-agendamentos" },
-    ],
-  },
-  {
-    titulo: "Cadastros",
-    itens: [
-      { nome: "Clientes", rota: "/clientes" },
-      { nome: "Serviços", rota: "/servicos" },
-      { nome: "Produtos", rota: "/produtos" },
-    ],
-  },
-];
-
-const menuFinanceiro: MenuSecao[] = [
-  {
-    titulo: "Operação",
-    itens: [
-      { nome: "Financeiro", rota: "/financeiro" },
-      { nome: "Caixa", rota: "/caixa" },
-      { nome: "Comissões", rota: "/comissoes" },
-      { nome: "Despesas", rota: "/despesas" },
-      { nome: "Pagamentos", rota: "/pagamentos" },
-      { nome: "Relatórios", rota: "/relatorios" },
-    ],
-  },
-];
-
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const dadosEmpresa = useEmpresa() as any;
 
-  const empresaNome = dadosEmpresa?.empresaNome || "VendlySys";
-  const corPrimaria = dadosEmpresa?.corPrimaria || "#27245f";
+  const [isMobile, setIsMobile] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
 
-  const perfil: Perfil =
-    dadosEmpresa?.perfilEmpresa ||
-    dadosEmpresa?.perfil ||
-    dadosEmpresa?.empresa?.perfil ||
-    "admin";
+  useEffect(() => {
+    function verificarTela() {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
 
-  const [recolhida, setRecolhida] = useState(false);
-
-  const menu = useMemo<MenuSecao[]>(() => {
-    if (perfil === "admin" || perfil === "super_admin" || perfil === "admin_saas") {
-      return menuAdmin;
+      if (!mobile) {
+        setMenuAberto(false);
+      }
     }
 
-    if (perfil === "profissional") {
-      return menuProfissional;
-    }
+    verificarTela();
+    window.addEventListener("resize", verificarTela);
 
-    if (perfil === "recepcao") {
-      return menuRecepcao;
-    }
+    return () => window.removeEventListener("resize", verificarTela);
+  }, []);
 
-    if (perfil === "consulta") {
-      return menuConsulta;
-    }
+  const menuAdmin: MenuSecao[] = [
+    {
+      titulo: "Principal",
+      itens: [
+        { nome: "Dashboard", rota: "/dashboard" },
+        { nome: "Agenda", rota: "/agenda" },
+        { nome: "Consulta", rota: "/consulta-agendamentos" },
+      ],
+    },
+    {
+      titulo: "Cadastros",
+      itens: [
+        { nome: "Clientes", rota: "/clientes" },
+        { nome: "Profissionais", rota: "/profissionais" },
+        { nome: "Serviços", rota: "/servicos" },
+        { nome: "Produtos", rota: "/produtos" },
+        { nome: "Pacotes / Combos", rota: "/pacotes-clientes" },
+        { nome: "Usuários", rota: "/usuarios" },
+      ],
+    },
+   {
+  titulo: "Operação",
+  itens: [
+    { nome: "Financeiro", rota: "/financeiro" },
+    { nome: "Caixa", rota: "/caixa" },
+    { nome: "Comissões", rota: "/comissoes" },
+    { nome: "Configurações", rota: "/configuracoes" },
+  ],
+},
+    {
+      titulo: "Ajuda",
+      itens: [{ nome: "Manual do Sistema", rota: "/manual" }],
+    },
+  ];
 
-    if (perfil === "financeiro") {
-      return menuFinanceiro;
-    }
-
-    return [];
-  }, [perfil]);
-
-  function estaAtivo(rota: string) {
-    return location.pathname === rota;
+  function irPara(rota: string) {
+    navigate(rota);
+    setMenuAberto(false);
   }
 
   return (
-    <aside
-      style={{
-        width: recolhida ? 88 : 280,
-        background: corPrimaria,
-        color: "#fff",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div style={{ padding: 18 }}>
-        <strong>{recolhida ? empresaNome.charAt(0) : empresaNome}</strong>
-      </div>
-
-      <nav style={{ flex: 1, padding: 14 }}>
-        {menu.map((secao) => (
-          <div key={secao.titulo} style={{ marginBottom: 20 }}>
-            {!recolhida && (
-              <div
-                style={{
-                  fontSize: 12,
-                  opacity: 0.7,
-                  marginBottom: 10,
-                }}
-              >
-                {secao.titulo}
-              </div>
-            )}
-
-            {secao.itens.map((item) => (
-              <button
-                key={item.rota}
-                type="button"
-                onClick={() => navigate(item.rota)}
-                title={item.nome}
-                style={{
-                  width: "100%",
-                  background: estaAtivo(item.rota)
-                    ? "rgba(255,255,255,0.2)"
-                    : "transparent",
-                  color: "#fff",
-                  border: "none",
-                  padding: 12,
-                  textAlign: "left",
-                  cursor: "pointer",
-                  borderRadius: 10,
-                  marginBottom: 4,
-                  fontWeight: estaAtivo(item.rota) ? 800 : 600,
-                }}
-              >
-                {recolhida ? item.nome.charAt(0) : item.nome}
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
-
-      <div style={{ padding: 14 }}>
+    <>
+      {isMobile && (
         <button
           type="button"
-          onClick={() => setRecolhida(!recolhida)}
+          onClick={() => setMenuAberto(true)}
           style={{
-            width: "100%",
-            border: "none",
+            position: "fixed",
+            top: 12,
+            left: 12,
+            zIndex: 1000,
+            width: 44,
+            height: 44,
             borderRadius: 12,
-            padding: "10px 12px",
+            border: 0,
+            background: "#5b3cc4",
+            color: "#fff",
+            fontSize: 24,
+            fontWeight: 900,
+            boxShadow: "0 8px 20px rgba(0,0,0,.22)",
             cursor: "pointer",
-            fontWeight: 800,
           }}
         >
-          {recolhida ? "Abrir" : "Recolher"}
+          ☰
         </button>
-      </div>
-    </aside>
+      )}
+
+      {isMobile && menuAberto && (
+        <div
+          onClick={() => setMenuAberto(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, .55)",
+            zIndex: 998,
+          }}
+        />
+      )}
+
+      <aside
+        style={{
+          width: 240,
+          background: "#5b3cc4",
+          color: "#fff",
+          height: "100vh",
+          padding: "16px 12px",
+          boxSizing: "border-box",
+          position: isMobile ? "fixed" : "sticky",
+          top: 0,
+          left: isMobile ? (menuAberto ? 0 : -260) : 0,
+          zIndex: 999,
+          transition: "left .25s ease",
+          overflowY: "auto",
+          boxShadow:
+            isMobile && menuAberto
+              ? "10px 0 30px rgba(0,0,0,.28)"
+              : "none",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 20,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 18 }}>Espaço Áurea</h2>
+
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setMenuAberto(false)}
+              style={{
+                background: "rgba(255,255,255,.15)",
+                color: "#fff",
+                border: 0,
+                borderRadius: 10,
+                width: 34,
+                height: 34,
+                fontSize: 20,
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {menuAdmin.map((secao) => (
+          <div key={secao.titulo} style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.7,
+                marginBottom: 8,
+              }}
+            >
+              {secao.titulo}
+            </div>
+
+            {secao.itens.map((item) => {
+              const ativo = location.pathname === item.rota;
+
+              return (
+                <div
+                  key={item.rota}
+                  onClick={() => irPara(item.rota)}
+                  style={{
+                    padding: "12px 12px",
+                    borderRadius: 10,
+                    cursor: "pointer",
+                    background: ativo ? "#7c5ce6" : "transparent",
+                    marginBottom: 6,
+                    transition: "0.2s",
+                    fontWeight: ativo ? 900 : 700,
+                  }}
+                >
+                  {item.nome}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </aside>
+    </>
   );
 }

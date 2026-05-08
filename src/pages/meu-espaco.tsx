@@ -9,7 +9,7 @@ import type {
   CampoAnamnese,
   ServicoCliente,
   ProfissionalCliente,
-}from "./meu-espaco/types";
+} from "./meu-espaco/types";
 
 import {
   limparTelefone,
@@ -141,6 +141,7 @@ export default function MeuEspaco() {
     anamneseObrigatoria || assinaturaComplementarObrigatoria;
 
   const [isMobile, setIsMobile] = useState(false);
+  
 
   useEffect(() => {
     const atualizarMobile = () => setIsMobile(window.innerWidth < 640);
@@ -710,13 +711,23 @@ export default function MeuEspaco() {
   }
 
   function precoBaseServico(servico: ServicoCliente | null) {
-    const valor = Number(
-      servico?.preco_promocional ?? servico?.preco ?? servico?.valor ?? 0,
-    );
+  if (!servico) return 0;
 
-    return Number.isNaN(valor) ? 0 : valor;
-  }
+  const promocaoAtiva =
+    servico?.promocao_ativa === true ||
+    servico?.promocao_ativa === "true";
 
+  const valor = promocaoAtiva
+    ? Number(
+        servico?.preco_promocional ??
+          servico?.preco ??
+          servico?.valor ??
+          0,
+      )
+    : Number(servico?.preco ?? servico?.valor ?? 0);
+
+  return Number.isNaN(valor) ? 0 : valor;
+}
   async function calcularValorServicoCliente(
     servico: ServicoCliente | null,
     clienteAtual = cliente,
@@ -873,7 +884,8 @@ export default function MeuEspaco() {
       profissionalSelecionado.inicio_almoco,
     );
     const fimAlmoco = normalizarHorario(profissionalSelecionado.fim_almoco);
- 
+
+
     const { data: agendamentosDia, error } = await supabase
       .from("agendamentos")
       .select("id, data, horario, status, duracao_minutos, profissional_id")
@@ -893,19 +905,17 @@ export default function MeuEspaco() {
     const livres = gerarHorariosBase(
       inicioExpediente,
       fimExpediente,
-      30,
-   ).filter((horario: string) => {
+     30 ,
+ ).filter((horario: string) => {
       const fimServico = somarMinutos(horario, duracaoTotal);
 
       if (horario < inicioExpediente) return false;
       if (fimServico > fimExpediente) return false;
 
       if (
-        inicioAlmoco &&
-        fimAlmoco &&
         horarioSobrepoeIntervalo(
           horario,
-          fimServico,
+          duracaoTotal,
           inicioAlmoco,
           fimAlmoco,
         )
@@ -1043,22 +1053,12 @@ export default function MeuEspaco() {
       return;
     }
 
-    const inicioAlmocoAgendamento = normalizarHorario(
-      profissionalSelecionado.inicio_almoco,
-    );
-    const fimAlmocoAgendamento = normalizarHorario(
-      profissionalSelecionado.fim_almoco,
-    );
-    const fimAgendamento = somarMinutos(horarioAgendamento, duracaoTotal);
-
     if (
-      inicioAlmocoAgendamento &&
-      fimAlmocoAgendamento &&
       horarioSobrepoeIntervalo(
         horarioAgendamento,
-        fimAgendamento,
-        inicioAlmocoAgendamento,
-        fimAlmocoAgendamento,
+        duracaoTotal,
+        profissionalSelecionado.inicio_almoco,
+        profissionalSelecionado.fim_almoco,
       )
     ) {
       alert("Este horário está no intervalo de almoço do profissional. Escolha outro horário.");
@@ -1579,7 +1579,9 @@ export default function MeuEspaco() {
 
         const respostaExistente = respostasPorCampo.get(campoId);
         const dataAtual = new Date(item?.created_at || 0).getTime();
-        const dataExistente = new Date(respostaExistente?.created_at || 0).getTime();
+        const dataExistente = new Date(
+          respostaExistente?.created_at || 0,
+        ).getTime();
 
         if (!respostaExistente || dataAtual >= dataExistente) {
           respostasPorCampo.set(campoId, item);
@@ -1919,6 +1921,7 @@ export default function MeuEspaco() {
 
           return {
             anamnese_id: anamnese.id,
+            cliente_id: cliente.id,
             campo_id: campo.id,
             resposta:
               campo.tipo === "sim_nao_justificativa" && resposta === "Sim"
@@ -2081,7 +2084,7 @@ export default function MeuEspaco() {
           style={estiloCampo}
         >
           <option value="">Selecione</option>
-       {opcoes.map((opcao: string) => (
+       {opcoes.map((opcao: any) => (
             <option key={opcao} value={opcao}>
               {opcao}
             </option>
@@ -2317,7 +2320,7 @@ export default function MeuEspaco() {
     </div>
   );
 
-  const botaoAba = (valor: string, label: string) => {
+const botaoAba = (valor: string, label: string) => {
     const abaBloqueada = acessoBloqueadoPorAnamnese && valor !== "anamnese";
 
     return (
@@ -2817,6 +2820,112 @@ export default function MeuEspaco() {
             Sair
           </button>
         </div>
+
+       {/* BANNER PROMOCIONAL */}
+{!anamneseObrigatoria && !assinaturaComplementarObrigatoria && (
+  <div
+    style={{
+      position: "relative",
+      borderRadius: isMobile ? 18 : 24,
+      overflow: "hidden",
+      marginBottom: isMobile ? 12 : 20,
+      boxShadow: "0 14px 35px rgba(15,23,42,.16)",
+      minHeight: isMobile ? 170 : 180,
+      display: "flex",
+      alignItems: "center",
+    }}
+  >
+    {/* IMAGEM DE FUNDO */}
+    <img
+      src="https://gzhhapdxrtzxhrhfxweg.supabase.co/storage/v1/object/public/campanhas/20260501022721_38765724.jpeg"
+      alt="Promoção"
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+      }}
+    />
+
+    {/* ESCURECER IMAGEM */}
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "linear-gradient(90deg, rgba(15,23,42,.88) 0%, rgba(15,23,42,.38) 100%)",
+      }}
+    />
+
+    {/* CONTEÚDO */}
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        padding: isMobile ? 16 : 24,
+        maxWidth: 560,
+        color: "#fff",
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          fontSize: 12,
+          fontWeight: 800,
+          opacity: 0.9,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+        }}
+      >
+        Promoção especial
+      </p>
+
+      <h2
+        style={{
+          margin: "10px 0",
+          fontSize: isMobile ? 22 : 30,
+          lineHeight: 1.1,
+          fontWeight: 900,
+        }}
+      >
+        Realce sua beleza com condições especiais
+      </h2>
+
+      <p
+        style={{
+          margin: 0,
+          fontSize: isMobile ? 14 : 17,
+          opacity: 0.95,
+          lineHeight: 1.5,
+        }}
+      >
+        Aproveite nossos pacotes exclusivos deste mês e agende seu atendimento.
+      </p>
+
+      <button
+        type="button"
+        onClick={() =>
+          window.open("https://wa.me/5511990040469", "_blank")
+        }
+        style={{
+          marginTop: 20,
+          background: "#fff",
+          color: "#111827",
+          border: "none",
+          borderRadius: 14,
+          padding: isMobile ? "11px 16px" : "14px 20px",
+          fontWeight: 900,
+          fontSize: 15,
+          cursor: "pointer",
+          boxShadow: "0 8px 20px rgba(0,0,0,.18)",
+        }}
+      >
+        Falar no WhatsApp
+      </button>
+    </div>
+  </div>
+)}
 
         {anamneseObrigatoria || assinaturaComplementarObrigatoria ? (
           <div

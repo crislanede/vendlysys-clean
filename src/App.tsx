@@ -34,10 +34,12 @@ import Caixa from "./pages/caixa";
 import Comissoes from "./pages/comissoes";
 import Pagamentos from "./pages/pagamentos";
 import Despesas from "./pages/despesas";
+
 import MeuEspaco from "./pages/meu-espaco";
 
-
 import MarketingPacotes from "./pages/marketing-pacotes";
+import PacotesClientesPage from "./pages/marketing-pacotes";
+
 import Relatorios from "./pages/relatorios";
 import RelatoriosRetorno from "./pages/relatorios-retorno";
 
@@ -48,17 +50,21 @@ import AnamneseConfiguracao from "./pages/anamnese-configuracao";
 import WhatsappMensagens from "./pages/whatsapp-mensagens";
 import Configuracoes from "./pages/configuracoes";
 
+import Manual from "./pages/manual";
+
 function App() {
   return (
     <BrowserRouter>
       <ThemeLoader />
 
       <Routes>
+        {/* ROTAS PÚBLICAS */}
         <Route path="/login" element={<Login />} />
         <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
 
+        {/* ADMIN SAAS */}
         <Route
           path="/admin"
           element={
@@ -72,38 +78,76 @@ function App() {
           <Route path="nova-empresa" element={<NovaEmpresa />} />
           <Route path="usuarios-empresa" element={<UsuariosEmpresa />} />
           <Route path="licencas" element={<Licencas />} />
-          
         </Route>
 
+        {/* SISTEMA INTERNO */}
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
 
+          {/* PRINCIPAL */}
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agenda" element={<Agenda />} />
-          <Route path="consulta-agendamentos" element={<ConsultaAgendamentos />} />
+          <Route
+            path="consulta-agendamentos"
+            element={<ConsultaAgendamentos />}
+          />
 
+          {/* CADASTROS */}
           <Route path="clientes" element={<Clientes />} />
           <Route path="profissionais" element={<Profissionais />} />
           <Route path="servicos" element={<Servicos />} />
           <Route path="produtos" element={<Produtos />} />
-          <Route path="marketing-pacotes" element={<MarketingPacotes />} />
 
+          {/* PACOTES */}
+          <Route
+            path="marketing-pacotes"
+            element={<MarketingPacotes />}
+          />
+
+          <Route
+            path="pacotes-clientes"
+            element={<PacotesClientesPage />}
+          />
+
+          {/* FINANCEIRO */}
           <Route path="financeiro" element={<Financeiro />} />
           <Route path="caixa" element={<Caixa />} />
           <Route path="comissoes" element={<Comissoes />} />
           <Route path="minhas-comissoes" element={<Comissoes />} />
           <Route path="despesas" element={<Despesas />} />
           <Route path="pagamentos" element={<Pagamentos />} />
-          <Route path="relatorios" element={<Relatorios />} />
-          <Route path="relatorios-retorno" element={<RelatoriosRetorno />} />
 
-          <Route path="anamnese-configuracao" element={<AnamneseConfiguracao />} />
-          <Route path="whatsapp-mensagens" element={<WhatsappMensagens />} />
+          {/* RELATÓRIOS */}
+          <Route path="relatorios" element={<Relatorios />} />
+          <Route
+            path="relatorios-retorno"
+            element={<RelatoriosRetorno />}
+          />
+
+          {/* CONFIGURAÇÕES */}
+          <Route
+            path="anamnese-configuracao"
+            element={<AnamneseConfiguracao />}
+          />
+
+          <Route
+            path="whatsapp-mensagens"
+            element={<WhatsappMensagens />}
+          />
+
           <Route path="campanhas" element={<Campanhas />} />
           <Route path="bloqueios" element={<Bloqueios />} />
-          <Route path="configuracoes" element={<Configuracoes />} />
+
+          <Route
+            path="configuracoes"
+            element={<Configuracoes />}
+          />
+
+          {/* MANUAL */}
+          <Route path="manual" element={<Manual tipo="admin" />} />
         </Route>
 
+        {/* FALLBACK */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

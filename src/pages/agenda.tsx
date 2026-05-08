@@ -30,8 +30,13 @@ type Cliente = {
 type Servico = {
   id: string;
   nome: string;
+
   valor?: number | null;
   preco?: number | null;
+
+  promocao_ativa?: boolean | string | null;
+  preco_promocional?: number | string | null;
+
   descricao?: string | null;
   duracao?: number | null;
   duracao_padrao_minutos?: number | null;
@@ -383,6 +388,8 @@ export default function AgendaPage() {
   const [data, setData] = useState(getTodayString());
   const [hora, setHora] = useState("09:00");
   const [observacoes, setObservacoes] = useState("");
+  const [aplicarPromocao, setAplicarPromocao] = useState(false);
+  const [valorAgendamentoManual, setValorAgendamentoManual] = useState("");
 
   const [alertas, setAlertas] = useState<AlertaAnamneseItem[]>([]);
   const [confirmou, setConfirmou] = useState(false);
@@ -542,6 +549,8 @@ export default function AgendaPage() {
     setData(selectedDate);
     setHora("09:00");
     setObservacoes("");
+    setAplicarPromocao(false);
+    setValorAgendamentoManual("");
     setAlertas([]);
     setConfirmou(false);
   }
@@ -615,6 +624,7 @@ export default function AgendaPage() {
         horario: hora,
         observacoes: observacoes || null,
         duracao_minutos: duracaoTotal,
+        valor: Number(valorAgendamentoManual || 0),
         status: "agendado",
         no_show: false,
       },
@@ -802,21 +812,50 @@ export default function AgendaPage() {
     }
   }
 
+  function obterValorServico(servicoItem: Servico | null | undefined) {
+    if (!servicoItem) return 0;
+
+    const promocaoAtiva =
+      servicoItem.promocao_ativa === true ||
+      String(servicoItem.promocao_ativa).toLowerCase() === "true";
+
+    const valor = promocaoAtiva
+      ? Number(
+          servicoItem.preco_promocional ??
+            servicoItem.preco ??
+            servicoItem.valor ??
+            0,
+        )
+      : Number(servicoItem.preco ?? servicoItem.valor ?? 0);
+
+    return Number.isNaN(valor) ? 0 : valor;
+  }
+
   function valorPadraoDoAgendamento(agendamento: Agendamento) {
+    if (agendamento.valor !== null && agendamento.valor !== undefined) {
+      return String(agendamento.valor);
+    }
+
     let valor = "";
 
     if (agendamento.servico_id) {
       const servicoBanco = servicos.find(
         (item) => item.id === agendamento.servico_id,
       );
-      valor = String(servicoBanco?.valor ?? servicoBanco?.preco ?? "");
+
+      if (servicoBanco) {
+        valor = String(obterValorServico(servicoBanco));
+      }
     }
 
     if (!valor && agendamento.servico) {
       const servicoPorNome = servicos.find(
         (item) => item.nome === agendamento.servico,
       );
-      valor = String(servicoPorNome?.valor ?? servicoPorNome?.preco ?? "");
+
+      if (servicoPorNome) {
+        valor = String(obterValorServico(servicoPorNome));
+      }
     }
 
     return valor && valor !== "undefined" ? valor : "";
@@ -1720,6 +1759,7 @@ ${linkMeuEspaco}`;
         action={
           <PrimaryButton
             onClick={() => {
+              limparFormulario();
               setData(selectedDate);
               setModalNovoAberto(true);
             }}
@@ -2126,7 +2166,28 @@ ${linkMeuEspaco}`;
 
               <select
                 value={servico}
-                onChange={(e) => setServico(e.target.value)}
+                onChange={(e) => {
+                  const nomeServico = e.target.value;
+                  setServico(nomeServico);
+                  setAplicarPromocao(false);
+
+                  const servicoSelecionado = servicos.find(
+                    (item) => item.nome === nomeServico,
+                  );
+
+                  if (!servicoSelecionado) {
+                    setValorAgendamentoManual("");
+                    return;
+                  }
+
+                  setValorAgendamentoManual(
+                    String(
+                      servicoSelecionado.preco ??
+                        servicoSelecionado.valor ??
+                        0,
+                    ),
+                  );
+                }}
                 className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
               >
                 <option value="">Selecione o serviço</option>
@@ -2136,6 +2197,62 @@ ${linkMeuEspaco}`;
                   </option>
                 ))}
               </select>
+
+              {servico && (
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+                  Valor do serviço: {Number(
+                    obterValorServico(
+                      servicos.find((item) => item.nome === servico),
+                    ),
+                  ).toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })}
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={aplicarPromocao}
+                  disabled={!servico}
+                  onChange={(e) => {
+                    const ativo = e.target.checked;
+                    setAplicarPromocao(ativo);
+
+                    const servicoSelecionado = servicos.find(
+                      (item) => item.nome === servico,
+                    );
+
+                    if (!servicoSelecionado) return;
+
+                    if (ativo && servicoSelecionado.preco_promocional) {
+                      setValorAgendamentoManual(
+                        String(servicoSelecionado.preco_promocional),
+                      );
+                    } else {
+                      setValorAgendamentoManual(
+                        String(
+                          servicoSelecionado.preco ??
+                            servicoSelecionado.valor ??
+                            0,
+                        ),
+                      );
+                    }
+                  }}
+                />
+                Aplicar promoção
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={valorAgendamentoManual}
+                onChange={(e) => setValorAgendamentoManual(e.target.value)}
+                placeholder="Valor final"
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-orange-300"
+              />
 
               <select
                 value={profissional}

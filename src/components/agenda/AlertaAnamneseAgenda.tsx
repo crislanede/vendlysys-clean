@@ -5,6 +5,27 @@ type Props = {
   alertas: AlertaAnamneseItem[];
 };
 
+function tituloAlerta(item: any) {
+  return (
+    item.label ||
+    item.pergunta ||
+    item.campo ||
+    item.nome_campo ||
+    item.titulo ||
+    "Informação da anamnese"
+  );
+}
+
+function respostaAlerta(item: any) {
+  return (
+    item.resposta ||
+    item.valor ||
+    item.descricao ||
+    item.observacao ||
+    "-"
+  );
+}
+
 export default function AlertaAnamneseAgenda({
   loading = false,
   alertas,
@@ -28,22 +49,32 @@ export default function AlertaAnamneseAgenda({
       </p>
 
       <div className="mt-3 space-y-2">
-        {alertas.map((item, index) => (
-          <div
-            key={`${item.label}-${index}`}
-            className="rounded-xl bg-white p-3 text-sm text-slate-700 ring-1 ring-red-100"
-          >
-            <p className="font-medium text-slate-900">{item.label}</p>
-            <p className="mt-1">{item.resposta}</p>
+        {alertas.map((item: any, index) => {
+          const titulo = tituloAlerta(item);
+          const resposta = respostaAlerta(item);
 
-            {item.preenchido_em ? (
-              <p className="mt-1 text-xs text-slate-500">
-                Última ficha:{" "}
-                {new Date(item.preenchido_em).toLocaleString("pt-BR")}
+          return (
+            <div
+              key={`${titulo}-${index}`}
+              className="rounded-xl bg-white p-3 text-sm text-slate-700 ring-1 ring-red-100"
+            >
+              <p className="font-bold text-slate-900">
+                {titulo}
               </p>
-            ) : null}
-          </div>
-        ))}
+
+              <p className="mt-1 text-red-700">
+                {resposta}
+              </p>
+
+              {item.preenchido_em ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  Última ficha:{" "}
+                  {new Date(item.preenchido_em).toLocaleString("pt-BR")}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

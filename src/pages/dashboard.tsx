@@ -60,6 +60,7 @@ type Agendamento = {
 type GraficoLinha = {
   data: string;
   receita: number;
+  aReceber: number;
   despesa: number;
   resultado: number;
   agendamentos: number;
@@ -78,7 +79,9 @@ function hojeISO() {
 
 function inicioDoMesISO() {
   const hoje = new Date();
-  return new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+  return new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+    .toISOString()
+    .slice(0, 10);
 }
 
 function diasAtrasISO(dias: number) {
@@ -105,6 +108,28 @@ function normalizarStatus(status?: string | null) {
   return (status || "").toLowerCase().trim();
 }
 
+function tipoFinanceiro(item: Financeiro) {
+  return (item.tipo || "").toLowerCase().trim();
+}
+
+function entradaPaga(item: Financeiro) {
+  return (
+    tipoFinanceiro(item) === "entrada" &&
+    normalizarStatus(item.status) === "pago"
+  );
+}
+
+function entradaPendente(item: Financeiro) {
+  return (
+    tipoFinanceiro(item) === "entrada" &&
+    normalizarStatus(item.status) === "pendente"
+  );
+}
+
+function lancamentoCancelado(item: Financeiro | Despesa | Agendamento) {
+  return normalizarStatus(item.status) === "cancelado";
+}
+
 function dataDespesa(item: Despesa) {
   return item.data_lancamento || item.data || "";
 }
@@ -122,7 +147,7 @@ function agruparPorData(
   despesas: Despesa[],
   agendamentos: Agendamento[],
   dataInicio: string,
-  dataFim: string
+  dataFim: string,
 ): GraficoLinha[] {
   const mapa = new Map<string, GraficoLinha>();
 
@@ -131,6 +156,7 @@ function agruparPorData(
       mapa.set(data, {
         data,
         receita: 0,
+        aReceber: 0,
         despesa: 0,
         resultado: 0,
         agendamentos: 0,
@@ -146,13 +172,14 @@ function agruparPorData(
 
     const linha = garantirData(data);
     const valor = Number(item.valor || 0);
-    const status = normalizarStatus(item.status);
 
-    if (status === "cancelado") continue;
+    if (lancamentoCancelado(item)) continue;
 
-    if ((item.tipo || "").toLowerCase() === "entrada") {
+    if (entradaPaga(item)) {
       linha.receita += valor;
-    } else if ((item.tipo || "").toLowerCase() === "saida") {
+    } else if (entradaPendente(item)) {
+      linha.aReceber += valor;
+    } else if (tipoFinanceiro(item) === "saida") {
       linha.despesa += valor;
     }
   }
@@ -161,8 +188,7 @@ function agruparPorData(
     const data = dataDespesa(item);
     if (!data) continue;
 
-    const status = normalizarStatus(item.status);
-    if (status === "cancelado") continue;
+    if (lancamentoCancelado(item)) continue;
 
     const linha = garantirData(data);
     linha.despesa += Number(item.valor || 0);
@@ -191,6 +217,7 @@ function agruparPorData(
     const linha = mapa.get(data) || {
       data,
       receita: 0,
+      aReceber: 0,
       despesa: 0,
       resultado: 0,
       agendamentos: 0,
@@ -290,11 +317,13 @@ export default function Dashboard() {
       console.warn("Erro ao carregar despesas:", despesasResp.error);
       setDespesas([]);
     } else {
-      const todasDespesas = ((despesasResp.data || []) as Despesa[]).filter((item) => {
-        const data = dataDespesa(item);
-        if (!data) return false;
-        return data >= dataInicio && data <= dataFim;
-      });
+      const todasDespesas = ((despesasResp.data || []) as Despesa[]).filter(
+        (item) => {
+          const data = dataDespesa(item);
+          if (!data) return false;
+          return data >= dataInicio && data <= dataFim;
+        },
+      );
 
       setDespesas(todasDespesas);
     }
@@ -312,23 +341,22 @@ export default function Dashboard() {
 
   const indicadores = useMemo(() => {
     const financeiroValido = financeiro.filter(
-      (item) => normalizarStatus(item.status) !== "cancelado"
+      (item) => !lancamentoCancelado(item),
     );
 
-    const entradas = financeiroValido.filter(
-      (item) => (item.tipo || "").toLowerCase() === "entrada"
-    );
+    const entradasPagas = financeiroValido.filter(entradaPaga);
+    const entradasPendentes = financeiroValido.filter(entradaPendente);
 
     const saidasFinanceiro = financeiroValido.filter(
-      (item) => (item.tipo || "").toLowerCase() === "saida"
+      (item) => tipoFinanceiro(item) === "saida",
     );
 
     const despesasValidas = despesas.filter(
-      (item) => normalizarStatus(item.status) !== "cancelado"
+      (item) => !lancamentoCancelado(item),
     );
 
     const agendamentosValidos = agendamentos.filter(
-      (item) => normalizarStatus(item.status) !== "cancelado"
+      (item) => !lancamentoCancelado(item),
     );
 
     const agendamentosFinalizados = agendamentos.filter((item) => {
@@ -336,22 +364,32 @@ export default function Dashboard() {
       return status === "finalizado" || status === "pago";
     });
 
-    const receita = entradas.reduce((acc, item) => acc + Number(item.valor || 0), 0);
+    const receita = entradasPagas.reduce(
+      (acc, item) => acc + Number(item.valor || 0),
+      0,
+    );
+
+    const aReceber = entradasPendentes.reduce(
+      (acc, item) => acc + Number(item.valor || 0),
+      0,
+    );
+
     const saidaFinanceira = saidasFinanceiro.reduce(
       (acc, item) => acc + Number(item.valor || 0),
-      0
+      0,
     );
     const totalDespesas = despesasValidas.reduce(
       (acc, item) => acc + Number(item.valor || 0),
-      0
+      0,
     );
 
     const despesaTotal = saidaFinanceira + totalDespesas;
     const resultado = receita - despesaTotal;
 
-    const ticketMedio = entradas.length > 0 ? receita / entradas.length : 0;
+    const ticketMedio =
+      entradasPagas.length > 0 ? receita / entradasPagas.length : 0;
 
-    const online = entradas
+    const online = entradasPagas
       .filter((item) => {
         const forma = (item.forma_pagamento || "").toLowerCase();
         return (
@@ -367,6 +405,7 @@ export default function Dashboard() {
     return {
       faturamento: resultado,
       receita,
+      aReceber,
       despesa: despesaTotal,
       agendamentos: agendamentosValidos.length,
       agendamentosFinalizados: agendamentosFinalizados.length,
@@ -376,17 +415,19 @@ export default function Dashboard() {
   }, [financeiro, despesas, agendamentos]);
 
   const dadosPorData = useMemo(
-    () => agruparPorData(financeiro, despesas, agendamentos, dataInicio, dataFim),
-    [financeiro, despesas, agendamentos, dataInicio, dataFim]
+    () =>
+      agruparPorData(financeiro, despesas, agendamentos, dataInicio, dataFim),
+    [financeiro, despesas, agendamentos, dataInicio, dataFim],
   );
 
   const temDadosFinanceiros = useMemo(() => {
     return dadosPorData.some(
       (item) =>
         item.receita > 0 ||
+        item.aReceber > 0 ||
         item.despesa > 0 ||
         item.resultado !== 0 ||
-        item.agendamentos > 0
+        item.agendamentos > 0,
     );
   }, [dadosPorData]);
 
@@ -394,8 +435,7 @@ export default function Dashboard() {
     const mapa = new Map<string, number>();
 
     for (const item of financeiro) {
-      if (normalizarStatus(item.status) === "cancelado") continue;
-      if ((item.tipo || "").toLowerCase() !== "entrada") continue;
+      if (!entradaPaga(item)) continue;
 
       const categoria = item.servico || item.descricao || "Sem categoria";
       mapa.set(categoria, (mapa.get(categoria) || 0) + Number(item.valor || 0));
@@ -441,7 +481,10 @@ export default function Dashboard() {
         description="Acompanhe o desempenho financeiro, atendimentos e indicadores do negócio por período."
       />
 
-      <SectionCard title="Período" description="Filtre os indicadores e gráficos por data.">
+      <SectionCard
+        title="Período"
+        description="Filtre os indicadores e gráficos por data."
+      >
         <div className="flex flex-wrap items-end gap-3">
           <BotaoPeriodo
             ativo={periodoRapido === "hoje"}
@@ -501,24 +544,57 @@ export default function Dashboard() {
             />
           </label>
 
-          <PrimaryButton type="button" onClick={() => void carregarDados()} disabled={loading}>
+          <PrimaryButton
+            type="button"
+            onClick={() => void carregarDados()}
+            disabled={loading}
+          >
             {loading ? "Atualizando..." : "Pesquisar"}
           </PrimaryButton>
         </div>
       </SectionCard>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Resultado" value={formatarMoeda(indicadores.faturamento)} variant="purple" />
-        <KpiCard title="Receita" value={formatarMoeda(indicadores.receita)} variant="green" />
-        <KpiCard title="Despesa" value={formatarMoeda(indicadores.despesa)} variant="red" />
-        <KpiCard title="Agendamentos" value={String(indicadores.agendamentos)} variant="blue" />
-        <KpiCard title="Online" value={formatarMoeda(indicadores.online)} variant="indigo" />
-        <KpiCard title="Ticket médio" value={formatarMoeda(indicadores.ticketMedio)} variant="slate" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
+        <KpiCard
+          title="Resultado"
+          value={formatarMoeda(indicadores.faturamento)}
+          variant="purple"
+        />
+        <KpiCard
+          title="Receita"
+          value={formatarMoeda(indicadores.receita)}
+          variant="green"
+        />
+        <KpiCard
+          title="A receber"
+          value={formatarMoeda(indicadores.aReceber)}
+          variant="amber"
+        />
+        <KpiCard
+          title="Despesa"
+          value={formatarMoeda(indicadores.despesa)}
+          variant="red"
+        />
+        <KpiCard
+          title="Agendamentos"
+          value={String(indicadores.agendamentos)}
+          variant="blue"
+        />
+        <KpiCard
+          title="Online"
+          value={formatarMoeda(indicadores.online)}
+          variant="indigo"
+        />
+        <KpiCard
+          title="Ticket médio"
+          value={formatarMoeda(indicadores.ticketMedio)}
+          variant="slate"
+        />
       </div>
 
       <SectionCard
         title="Resultado por dia"
-        description="Receita, despesa e resultado líquido no período selecionado."
+        description="Receita paga, valores a receber, despesa e resultado líquido no período selecionado."
       >
         {loading ? (
           <ChartSkeleton />
@@ -540,9 +616,34 @@ export default function Dashboard() {
                   labelFormatter={(label) => formatarData(String(label))}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="receita" name="Receita" stroke="var(--color-primary)" strokeWidth={3} />
-                <Line type="monotone" dataKey="despesa" name="Despesa" stroke="#ef4444" strokeWidth={3} />
-                <Line type="monotone" dataKey="resultado" name="Resultado" stroke="var(--color-secondary)" strokeWidth={3} />
+                <Line
+                  type="monotone"
+                  dataKey="receita"
+                  name="Receita paga"
+                  stroke="var(--color-primary)"
+                  strokeWidth={3}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="aReceber"
+                  name="A receber"
+                  stroke="#f59e0b"
+                  strokeWidth={3}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="despesa"
+                  name="Despesa"
+                  stroke="#ef4444"
+                  strokeWidth={3}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="resultado"
+                  name="Resultado"
+                  stroke="var(--color-secondary)"
+                  strokeWidth={3}
+                />
               </LineChart>
             </ResponsiveContainer>
           </ChartFrame>
@@ -571,7 +672,12 @@ export default function Dashboard() {
                     labelFormatter={(label) => formatarData(String(label))}
                   />
                   <Legend />
-                  <Bar dataKey="receita" name="Receita" fill="var(--color-primary)" />
+                  <Bar
+                    dataKey="receita"
+                    name="Receita paga"
+                    fill="var(--color-primary)"
+                  />
+                  <Bar dataKey="aReceber" name="A receber" fill="#f59e0b" />
                   <Bar dataKey="despesa" name="Despesa" fill="#ef4444" />
                 </BarChart>
               </ResponsiveContainer>
@@ -595,15 +701,21 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="data" tickFormatter={formatarData} />
                   <YAxis allowDecimals={false} />
-                  <Tooltip labelFormatter={(label) => formatarData(String(label))} />
-                  <Bar dataKey="agendamentos" name="Agendamentos" fill="var(--color-primary)" />
+                  <Tooltip
+                    labelFormatter={(label) => formatarData(String(label))}
+                  />
+                  <Bar
+                    dataKey="agendamentos"
+                    name="Agendamentos"
+                    fill="var(--color-primary)"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartFrame>
           )}
         </SectionCard>
 
-        <SectionCard title="Representatividade por serviço em R$">
+        <SectionCard title="Representatividade por serviço em R$ pagos">
           {loading ? (
             <ChartSkeleton />
           ) : dadosPorCategoria.length === 0 ? (
@@ -617,10 +729,19 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={dadosPorCategoria} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tickFormatter={(value) => formatarMoeda(Number(value))} />
+                  <XAxis
+                    type="number"
+                    tickFormatter={(value) => formatarMoeda(Number(value))}
+                  />
                   <YAxis type="category" dataKey="name" width={120} />
-                  <Tooltip formatter={(value) => formatarMoeda(Number(value))} />
-                  <Bar dataKey="value" name="Receita" fill="var(--color-primary)" />
+                  <Tooltip
+                    formatter={(value) => formatarMoeda(Number(value))}
+                  />
+                  <Bar
+                    dataKey="value"
+                    name="Receita"
+                    fill="var(--color-primary)"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartFrame>
@@ -650,7 +771,11 @@ export default function Dashboard() {
                     {quantidadePorServico.map((_, index) => (
                       <Cell
                         key={`cell-${index}`}
-                        fill={index % 2 === 0 ? "var(--color-primary)" : "var(--color-secondary)"}
+                        fill={
+                          index % 2 === 0
+                            ? "var(--color-primary)"
+                            : "var(--color-secondary)"
+                        }
                       />
                     ))}
                   </Pie>
@@ -690,7 +815,10 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {ultimosLancamentos.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 odd:bg-white even:bg-slate-50">
+                  <tr
+                    key={item.id}
+                    className="border-b border-slate-100 odd:bg-white even:bg-slate-50"
+                  >
                     <td className="px-4 py-3 text-sm text-slate-700">
                       {formatarData(dataFinanceiro(item))}
                     </td>
@@ -713,7 +841,9 @@ export default function Dashboard() {
                           : "text-red-600"
                       }`}
                     >
-                      {(item.tipo || "").toLowerCase() === "entrada" ? "+" : "-"}{" "}
+                      {(item.tipo || "").toLowerCase() === "entrada"
+                        ? "+"
+                        : "-"}{" "}
                       {formatarMoeda(Number(item.valor || 0))}
                     </td>
                   </tr>
@@ -810,10 +940,11 @@ function KpiCard({
 }: {
   title: string;
   value: string;
-  variant: "green" | "red" | "blue" | "purple" | "indigo" | "slate";
+  variant: "green" | "amber" | "red" | "blue" | "purple" | "indigo" | "slate";
 }) {
   const variantClass = {
     green: "text-emerald-600 bg-emerald-50",
+    amber: "text-amber-600 bg-amber-50",
     red: "text-red-600 bg-red-50",
     blue: "text-sky-600 bg-sky-50",
     purple: "text-purple-700 bg-purple-50",
@@ -823,7 +954,9 @@ function KpiCard({
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
-      <div className={`mb-3 inline-flex rounded-2xl px-3 py-1 text-xs font-extrabold ${variantClass}`}>
+      <div
+        className={`mb-3 inline-flex rounded-2xl px-3 py-1 text-xs font-extrabold ${variantClass}`}
+      >
         {title}
       </div>
       <p className="text-2xl font-extrabold text-slate-900">{value}</p>

@@ -16,10 +16,33 @@ export function respostaEhCritica(tipo: string, valor?: string | null) {
   }
 
   if (tipo === "checkbox") {
-    return texto === "true";
+    return texto === "true" || texto === "sim";
   }
 
   return texto !== "não" && texto !== "nao" && texto !== "false";
+}
+
+function limparLabel(valor?: string | null) {
+  const texto = String(valor || "").trim();
+
+  if (!texto) return "";
+
+  return texto
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (letra) => letra.toUpperCase());
+}
+
+function montarLabelAlerta(item: any) {
+  return (
+    limparLabel(item.label) ||
+    limparLabel(item.pergunta) ||
+    limparLabel(item.nome_campo) ||
+    limparLabel(item.campo) ||
+    limparLabel(item.titulo) ||
+    limparLabel(item.nome) ||
+    "Informação importante"
+  );
 }
 
 export async function buscarAlertasAnamneseCliente(cliente: {
@@ -48,8 +71,8 @@ export async function buscarAlertasAnamneseCliente(cliente: {
   return lista
     .filter((item) => respostaEhCritica(item.tipo, item.resposta))
     .map((item) => ({
-      label: item.label || item.pergunta || "Alerta",
-      resposta: item.resposta,
+      label: montarLabelAlerta(item),
+      resposta: item.resposta || "-",
       preenchido_em: item.preenchido_em || null,
     }));
 }

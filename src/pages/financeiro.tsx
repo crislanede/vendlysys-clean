@@ -377,14 +377,54 @@ export default function FinanceiroPage() {
     await carregarDados();
   }
 
-  async function marcarComoPago(id: string) {
+  async function calcularComissaoLancamento(item: Lancamento) {
+    const valorBruto = Number(item.valor_bruto ?? item.valor ?? 0);
+
+    if (!item.profissional_id || !item.servico_id || valorBruto <= 0) {
+      return {
+        comissao_percentual: Number(item.comissao_percentual || 0),
+        comissao_valor: Number(item.comissao_valor || 0),
+        valor_liquido:
+          item.valor_liquido ?? valorBruto - Number(item.comissao_valor || 0),
+      };
+    }
+
+    const { data, error } = await supabase
+      .from("profissional_servicos")
+      .select("comissao_percentual")
+      .eq("profissional_id", item.profissional_id)
+      .eq("servico_id", item.servico_id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Não foi possível calcular comissão:", error.message);
+    }
+
+    const percentual = Number(
+      data?.comissao_percentual ?? item.comissao_percentual ?? 0,
+    );
+    const comissaoValor = Number(((valorBruto * percentual) / 100).toFixed(2));
+    const valorLiquido = Number((valorBruto - comissaoValor).toFixed(2));
+
+    return {
+      comissao_percentual: percentual,
+      comissao_valor: comissaoValor,
+      valor_liquido: valorLiquido,
+    };
+  }
+
+  async function marcarComoPago(item: Lancamento) {
+    const comissao = await calcularComissaoLancamento(item);
+
     const { error } = await supabase
       .from("financeiro")
       .update({
         status: "pago",
         data_pagamento: new Date().toISOString(),
+        valor_bruto: Number(item.valor_bruto ?? item.valor ?? 0),
+        ...comissao,
       })
-      .eq("id", id)
+      .eq("id", item.id)
       .eq("empresa_id", empresaId);
 
     if (error) {
@@ -448,9 +488,23 @@ export default function FinanceiroPage() {
   const quantidadeVendaNumero = normalizarNumero(quantidadeVenda) || 0;
   const valorVendaProduto = Number(produtoVendaSelecionado?.preco || 0) * quantidadeVendaNumero;
 
-  const totalReceitas = lancamentosFiltrados
-    .filter((item) => item.tipo === "entrada" && item.status !== "cancelado")
-    .reduce((acc, item) => acc + Number(item.valor || 0), 0);
+  const lancamentosPagos = lancamentosFiltrados.filter(
+    (item) => item.tipo === "entrada" && item.status === "pago",
+  );
+
+  const lancamentosPendentes = lancamentosFiltrados.filter(
+    (item) => item.tipo === "entrada" && item.status === "pendente",
+  );
+
+  const totalReceitas = lancamentosPagos.reduce(
+    (acc, item) => acc + Number(item.valor_bruto ?? item.valor ?? 0),
+    0,
+  );
+
+  const totalAReceber = lancamentosPendentes.reduce(
+    (acc, item) => acc + Number(item.valor_bruto ?? item.valor ?? 0),
+    0,
+  );
 
   const totalSaidasFinanceiro = lancamentosFiltrados
     .filter((item) => item.tipo === "saida" && item.status !== "cancelado")
@@ -460,11 +514,21 @@ export default function FinanceiroPage() {
     .filter((item) => item.status !== "cancelado")
     .reduce((acc, item) => acc + Number(item.valor || 0), 0);
 
-  const totalComissoes = lancamentosFiltrados
-    .filter((item) => item.tipo === "entrada" && item.status !== "cancelado")
-    .reduce((acc, item) => acc + Number(item.comissao_valor || 0), 0);
+  const totalComissoes = lancamentosPagos.reduce(
+    (acc, item) => acc + Number(item.comissao_valor || 0),
+    0,
+  );
 
-  const totalReceitasLiquidas = totalReceitas - totalComissoes;
+  const totalReceitasLiquidas = lancamentosPagos.reduce(
+    (acc, item) =>
+      acc +
+      Number(
+        item.valor_liquido ??
+          Number(item.valor_bruto ?? item.valor ?? 0) -
+            Number(item.comissao_valor || 0),
+      ),
+    0,
+  );
 
   const lucroLiquido = totalReceitasLiquidas - totalSaidasFinanceiro - totalDespesas;
 
@@ -483,6 +547,7 @@ export default function FinanceiroPage() {
   function exportarExcelFinanceiro() {
     const resumo = [
       { Indicador: "Receita bruta", Valor: totalReceitas },
+      { Indicador: "A receber", Valor: totalAReceber },
       { Indicador: "Comissões", Valor: totalComissoes },
       { Indicador: "Receita líquida", Valor: totalReceitasLiquidas },
       { Indicador: "Despesas/saídas", Valor: totalSaidasFinanceiro + totalDespesas },
@@ -582,8 +647,9 @@ export default function FinanceiroPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <ResumoCard title="Receita bruta" value={formatarMoeda(totalReceitas)} valueClassName="text-emerald-600" />
+        <ResumoCard title="A receber" value={formatarMoeda(totalAReceber)} valueClassName="text-amber-600" />
         <ResumoCard title="Comissões" value={formatarMoeda(totalComissoes)} valueClassName="text-violet-600" />
         <ResumoCard title="Receita líquida" value={formatarMoeda(totalReceitasLiquidas)} valueClassName="text-blue-700" />
         <ResumoCard title="Despesas/saídas" value={formatarMoeda(totalSaidasFinanceiro + totalDespesas)} valueClassName="text-red-600" />
@@ -654,11 +720,11 @@ export default function FinanceiroPage() {
       {filtroProfissionalId && (
         <SectionCard
           title={`Resumo do profissional${profissionalSelecionado?.nome ? `: ${profissionalSelecionado.nome}` : ""}`}
-          description="Use este bloco para saber quanto precisa pagar de comissão ao profissional no período filtrado."
+          description="Use este bloco para saber quanto precisa pagar de comissão ao profissional no período filtrado. Somente lançamentos pagos entram neste resumo."
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <ResumoCard
-              title="Faturado pelo profissional"
+              title="Recebido pelo profissional"
               value={formatarMoeda(totalReceitas)}
               valueClassName="text-emerald-600"
             />
@@ -819,7 +885,7 @@ export default function FinanceiroPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
                         {item.status !== "pago" && item.status !== "cancelado" && (
-                          <button type="button" onClick={() => marcarComoPago(item.id)} className="text-sm font-bold text-emerald-600 hover:underline">
+                          <button type="button" onClick={() => marcarComoPago(item)} className="text-sm font-bold text-emerald-600 hover:underline">
                             Pago
                           </button>
                         )}
