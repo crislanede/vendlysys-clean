@@ -82,7 +82,7 @@ function App() {
 
         {/* SISTEMA INTERNO */}
         <Route path="/" element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/login" replace />} />
 
           {/* PRINCIPAL */}
           <Route path="dashboard" element={<Dashboard />} />
@@ -148,7 +148,7 @@ function App() {
         </Route>
 
         {/* FALLBACK */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+       <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
