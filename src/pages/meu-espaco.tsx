@@ -562,34 +562,38 @@ export default function MeuEspaco() {
     setCadastrando(false);
   }
 
- async function carregarConfiguracoes(empresaId: string | null) {
-  if (!empresaId) {
-    setConfiguracoes(null);
-    return;
+  async function carregarConfiguracoes(empresaId: string | null) {
+    if (!empresaId) {
+      setConfiguracoes(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("empresas")
+      .select(`
+        banner_cliente_ativo,
+        banner_cliente_categoria,
+        banner_cliente_titulo,
+        banner_cliente_texto,
+        banner_cliente_botao_texto,
+        banner_cliente_botao_link,
+        banner_cliente_imagem_url,
+        banner_cliente_pos_x,
+        banner_cliente_pos_y,
+        banner_cliente_zoom
+      `)
+      .eq("id", empresaId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Não foi possível carregar banner:", error);
+      setConfiguracoes(null);
+      return;
+    }
+
+    setConfiguracoes(data);
   }
 
-  const { data, error } = await supabase
-    .from("empresas")
-    .select(`
-      banner_cliente_ativo,
-      banner_cliente_categoria,
-      banner_cliente_titulo,
-      banner_cliente_texto,
-      banner_cliente_botao_texto,
-      banner_cliente_botao_link,
-      banner_cliente_imagem_url
-    `)
-    .eq("id", empresaId)
-    .maybeSingle();
-
-  if (error) {
-    console.warn("Não foi possível carregar banner:", error);
-    setConfiguracoes(null);
-    return;
-  }
-
-  setConfiguracoes(data);
-}
   async function carregarCliente(clienteId: string) {
     const { data } = await supabase
       .from("clientes")
@@ -2878,6 +2882,15 @@ const botaoAba = (valor: string, label: string) => {
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
+                  objectPosition: `${configuracoes?.banner_cliente_pos_x ?? 50}% ${
+                    configuracoes?.banner_cliente_pos_y ?? 50
+                  }%`,
+                  transform: `scale(${
+                    Number(configuracoes?.banner_cliente_zoom ?? 100) / 100
+                  })`,
+                  transformOrigin: `${configuracoes?.banner_cliente_pos_x ?? 50}% ${
+                    configuracoes?.banner_cliente_pos_y ?? 50
+                  }%`,
                 }}
               />
 
@@ -2998,9 +3011,10 @@ const botaoAba = (valor: string, label: string) => {
             }}
           >
             {botaoAba("agenda", "Agendamentos")}
-            {botaoAba("dados", "Dados pessoais")}
-            {botaoAba("anamnese", "Anamnese")}
-            {botaoAba("historico", "Histórico")}
+{botaoAba("dados", "Dados pessoais")}
+{botaoAba("anamnese", "Anamnese")}
+{botaoAba("historico", "Histórico")}
+{botaoAba("pacotes", "Pacotes")}
           </div>
         )}
 

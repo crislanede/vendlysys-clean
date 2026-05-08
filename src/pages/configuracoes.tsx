@@ -10,7 +10,6 @@ export default function Configuracoes() {
   const [nomeFantasia, setNomeFantasia] = useState("");
   const [telefone, setTelefone] = useState("");
   const [endereco, setEndereco] = useState("");
-
   const [logoUrl, setLogoUrl] = useState("");
 
   const [corPrimaria, setCorPrimaria] = useState("#4f46e5");
@@ -25,14 +24,16 @@ export default function Configuracoes() {
   const [bannerBotaoLink, setBannerBotaoLink] = useState("");
   const [bannerImagem, setBannerImagem] = useState("");
 
+  const [bannerPosX, setBannerPosX] = useState(50);
+  const [bannerPosY, setBannerPosY] = useState(50);
+  const [bannerZoom, setBannerZoom] = useState(100);
+
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [enviandoBanner, setEnviandoBanner] = useState(false);
 
   useEffect(() => {
-    if (empresaId) {
-      carregarConfiguracoes();
-    }
+    if (empresaId) carregarConfiguracoes();
   }, [empresaId]);
 
   useEffect(() => {
@@ -43,7 +44,6 @@ export default function Configuracoes() {
     document.documentElement.style.setProperty("--cor-primaria", corPrimaria);
     document.documentElement.style.setProperty("--cor-secundaria", corSecundaria);
     document.documentElement.style.setProperty("--cor-fundo", corFundo);
-
     document.documentElement.style.setProperty("--color-primary", corPrimaria);
     document.documentElement.style.setProperty("--color-secondary", corSecundaria);
     document.documentElement.style.setProperty("--color-background", corFundo);
@@ -54,8 +54,7 @@ export default function Configuracoes() {
 
     const { data, error } = await supabase
       .from("empresas")
-      .select(
-        `
+      .select(`
         nome,
         nome_fantasia,
         telefone,
@@ -70,9 +69,11 @@ export default function Configuracoes() {
         banner_cliente_texto,
         banner_cliente_botao_texto,
         banner_cliente_botao_link,
-        banner_cliente_imagem_url
-        `,
-      )
+        banner_cliente_imagem_url,
+        banner_cliente_pos_x,
+        banner_cliente_pos_y,
+        banner_cliente_zoom
+      `)
       .eq("id", empresaId)
       .maybeSingle();
 
@@ -101,6 +102,10 @@ export default function Configuracoes() {
     setBannerBotaoTexto(data.banner_cliente_botao_texto || "");
     setBannerBotaoLink(data.banner_cliente_botao_link || "");
     setBannerImagem(data.banner_cliente_imagem_url || "");
+
+    setBannerPosX(Number(data.banner_cliente_pos_x ?? 50));
+    setBannerPosY(Number(data.banner_cliente_pos_y ?? 50));
+    setBannerZoom(Number(data.banner_cliente_zoom ?? 100));
   }
 
   async function salvarConfiguracoes() {
@@ -118,7 +123,6 @@ export default function Configuracoes() {
         nome_fantasia: nomeFantasia || null,
         telefone: telefone || null,
         endereco: endereco || null,
-
         logo_url: logoUrl || null,
 
         cor_primaria: corPrimaria || null,
@@ -132,6 +136,9 @@ export default function Configuracoes() {
         banner_cliente_botao_texto: bannerBotaoTexto || null,
         banner_cliente_botao_link: bannerBotaoLink || null,
         banner_cliente_imagem_url: bannerImagem || null,
+        banner_cliente_pos_x: bannerPosX,
+        banner_cliente_pos_y: bannerPosY,
+        banner_cliente_zoom: bannerZoom,
       })
       .eq("id", empresaId);
 
@@ -144,34 +151,16 @@ export default function Configuracoes() {
     }
 
     aplicarTema();
-
-    if (typeof recarregarEmpresa === "function") {
-      await recarregarEmpresa();
-    }
-
+    await recarregarEmpresa?.();
     alert("Configurações salvas com sucesso!");
   }
 
   async function enviarLogo(event: ChangeEvent<HTMLInputElement>) {
     const arquivo = event.target.files?.[0];
-
     if (!arquivo) return;
 
     if (!empresaId) {
       alert("Empresa não encontrada para enviar o logo.");
-      return;
-    }
-
-    const tiposPermitidos = [
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "image/webp",
-      "image/svg+xml",
-    ];
-
-    if (!tiposPermitidos.includes(arquivo.type)) {
-      alert("Envie uma imagem PNG, JPG, WEBP ou SVG.");
       return;
     }
 
@@ -199,10 +188,7 @@ export default function Configuracoes() {
       }
 
       const { data } = supabase.storage.from("logos").getPublicUrl(caminho);
-
-      if (data?.publicUrl) {
-        setLogoUrl(data.publicUrl);
-      }
+      if (data?.publicUrl) setLogoUrl(data.publicUrl);
     } catch (error) {
       console.error(error);
       alert("Erro inesperado ao enviar logo.");
@@ -213,7 +199,6 @@ export default function Configuracoes() {
 
   async function handleUploadBanner(event: ChangeEvent<HTMLInputElement>) {
     const arquivo = event.target.files?.[0];
-
     if (!arquivo) return;
 
     if (!empresaId) {
@@ -250,6 +235,9 @@ export default function Configuracoes() {
 
       if (data?.publicUrl) {
         setBannerImagem(data.publicUrl);
+        setBannerPosX(50);
+        setBannerPosY(50);
+        setBannerZoom(100);
       }
     } catch (error) {
       console.error(error);
@@ -290,7 +278,7 @@ export default function Configuracoes() {
             placeholder="Nome da empresa"
             value={nomeEmpresa}
             onChange={(e) => setNomeEmpresa(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -298,7 +286,7 @@ export default function Configuracoes() {
             placeholder="Nome fantasia / nome que aparece para o cliente"
             value={nomeFantasia}
             onChange={(e) => setNomeFantasia(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -306,7 +294,7 @@ export default function Configuracoes() {
             placeholder="Telefone / WhatsApp"
             value={telefone}
             onChange={(e) => setTelefone(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -314,7 +302,7 @@ export default function Configuracoes() {
             placeholder="Endereço"
             value={endereco}
             onChange={(e) => setEndereco(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
         </div>
       </div>
@@ -345,7 +333,7 @@ export default function Configuracoes() {
               value={logoUrl}
               onChange={(e) => setLogoUrl(e.target.value)}
               placeholder="URL do logo, se preferir colar um link"
-              className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3"
             />
 
             <input
@@ -435,7 +423,7 @@ export default function Configuracoes() {
             placeholder="Categoria (ex: Promoção especial)"
             value={bannerCategoria}
             onChange={(e) => setBannerCategoria(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -443,7 +431,7 @@ export default function Configuracoes() {
             placeholder="Título do banner"
             value={bannerTitulo}
             onChange={(e) => setBannerTitulo(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -451,7 +439,7 @@ export default function Configuracoes() {
             placeholder="Texto do botão"
             value={bannerBotaoTexto}
             onChange={(e) => setBannerBotaoTexto(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
 
           <input
@@ -459,7 +447,7 @@ export default function Configuracoes() {
             placeholder="Link do botão"
             value={bannerBotaoLink}
             onChange={(e) => setBannerBotaoLink(e.target.value)}
-            className="rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+            className="rounded-2xl border border-slate-300 px-4 py-3"
           />
         </div>
 
@@ -467,7 +455,7 @@ export default function Configuracoes() {
           placeholder="Texto do banner"
           value={bannerTexto}
           onChange={(e) => setBannerTexto(e.target.value)}
-          className="mt-4 min-h-[140px] w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          className="mt-4 min-h-[140px] w-full rounded-2xl border border-slate-300 px-4 py-3"
         />
 
         <div className="mt-4">
@@ -490,40 +478,100 @@ export default function Configuracoes() {
           placeholder="URL da imagem"
           value={bannerImagem}
           onChange={(e) => setBannerImagem(e.target.value)}
-          className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-violet-400"
+          className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3"
         />
 
-        <div
-          className="mt-6 overflow-hidden rounded-3xl bg-cover bg-center p-8 text-white md:p-10"
-          style={{
-            backgroundImage: bannerImagem
-              ? `linear-gradient(rgba(15,23,42,.75), rgba(15,23,42,.35)), url(${bannerImagem})`
-              : "linear-gradient(90deg,#020617,#334155,#94a3b8)",
-          }}
-        >
-          <p className="text-xs font-black uppercase tracking-widest">
-            {bannerCategoria || "Novidade"}
-          </p>
+        <div className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+          <label className="space-y-2">
+            <div className="flex justify-between text-sm font-bold text-slate-700">
+              <span>Horizontal</span>
+              <span>{bannerPosX}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={bannerPosX}
+              onChange={(e) => setBannerPosX(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
 
-          <h3 className="mt-3 text-3xl font-black md:text-5xl">
-            {bannerTitulo || "Bem-vinda ao Meu Espaço"}
-          </h3>
+          <label className="space-y-2">
+            <div className="flex justify-between text-sm font-bold text-slate-700">
+              <span>Vertical</span>
+              <span>{bannerPosY}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={bannerPosY}
+              onChange={(e) => setBannerPosY(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
 
-          <p className="mt-4 max-w-2xl text-sm text-slate-200 md:text-lg">
-            {bannerTexto ||
-              "Acompanhe novidades, promoções e dicas exclusivas."}
-          </p>
+          <label className="space-y-2">
+            <div className="flex justify-between text-sm font-bold text-slate-700">
+              <span>Zoom</span>
+              <span>{bannerZoom}%</span>
+            </div>
+            <input
+              type="range"
+              min="100"
+              max="200"
+              value={bannerZoom}
+              onChange={(e) => setBannerZoom(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
+        </div>
 
-          {bannerBotaoTexto && (
-            <a
-              href={bannerBotaoLink || "#"}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-flex rounded-2xl bg-white px-6 py-3 font-bold text-slate-900"
-            >
-              {bannerBotaoTexto}
-            </a>
+        <div className="relative mt-6 min-h-[220px] overflow-hidden rounded-3xl bg-slate-900 text-white">
+          {bannerImagem ? (
+            <img
+              src={bannerImagem}
+              alt="Preview do banner"
+              className="absolute inset-0 h-full w-full"
+              style={{
+                objectFit: "cover",
+                objectPosition: `${bannerPosX}% ${bannerPosY}%`,
+                transform: `scale(${bannerZoom / 100})`,
+                transition: "all .2s ease",
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950 to-slate-500" />
           )}
+
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 to-slate-950/25" />
+
+          <div className="relative z-10 max-w-2xl p-8 md:p-10">
+            <p className="text-xs font-black uppercase tracking-widest">
+              {bannerCategoria || "Novidade"}
+            </p>
+
+            <h3 className="mt-3 text-3xl font-black md:text-5xl">
+              {bannerTitulo || "Bem-vinda ao Meu Espaço"}
+            </h3>
+
+            <p className="mt-4 max-w-2xl text-sm text-slate-200 md:text-lg">
+              {bannerTexto ||
+                "Acompanhe novidades, promoções e dicas exclusivas."}
+            </p>
+
+            {bannerBotaoTexto && (
+              <a
+                href={bannerBotaoLink || "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-6 inline-flex rounded-2xl bg-white px-6 py-3 font-bold text-slate-900"
+              >
+                {bannerBotaoTexto}
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
