@@ -21,22 +21,7 @@ export default function Login() {
       return;
     }
 
-    // 🔥 REDIRECIONAMENTO POR PERFIL
-    const { data: userData } = await supabase.auth.getUser();
-
-    const userEmail = userData.user?.email;
-
-    const { data: usuario } = await supabase
-      .from("usuarios")
-      .select("perfil")
-      .eq("email", userEmail)
-      .single();
-
-    if (["super_admin", "admin_saas"].includes(usuario?.perfil)) {
-      window.location.href = "/admin/empresas";
-    } else {
-      window.location.href = "/dashboard";
-    }
+    window.location.href = "/dashboard";
   }
 
   async function handleResetPassword() {
@@ -77,6 +62,7 @@ export default function Login() {
         }}
       >
         <h1 style={{ marginBottom: 10 }}>Entrar no VendlySys</h1>
+
         <p style={{ marginBottom: 20, color: "#6b7280" }}>
           Acesse sua agenda, clientes e financeiro.
         </p>
@@ -101,7 +87,6 @@ export default function Login() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
 
-        {/* 🔐 RESET SENHA */}
         <div style={{ marginTop: 12, textAlign: "center" }}>
           <button
             type="button"

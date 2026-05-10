@@ -1800,7 +1800,62 @@ ${linkMeuEspaco}`;
 
   const topNowLine =
     currentMinutes !== null ? ((currentMinutes - 8 * 60) / 60) * 88 : null;
+  
+const agendamentosDoDiaComLayout = useMemo(() => {
+  const itens = agendamentosDoDia
+    .map((item) => {
+      const inicio = parseTimeToMinutes(item.horario);
+      const duracao = Number(item.duracao_minutos || 30);
+      const fim = inicio + duracao;
 
+      return {
+        item,
+        inicio,
+        fim,
+        duracao,
+        top: ((inicio - 8 * 60) / 60) * 88 + 8,
+        alturaCard: Math.max((duracao / 30) * 88 - 10, 78),
+        horarioFim: somarMinutos(item.horario, duracao),
+        coluna: 0,
+      };
+    })
+    .filter((item) => item.inicio >= 8 * 60 && item.inicio <= 20 * 60 + 59)
+    .sort((a, b) => a.inicio - b.inicio || a.fim - b.fim);
+
+  const fimPorColuna: number[] = [];
+
+  const posicionados = itens.map((item) => {
+    let coluna = fimPorColuna.findIndex((fim) => fim <= item.inicio);
+
+    if (coluna === -1) {
+      coluna = fimPorColuna.length;
+      fimPorColuna.push(item.fim);
+    } else {
+      fimPorColuna[coluna] = item.fim;
+    }
+
+    return {
+      ...item,
+      coluna,
+    };
+  });
+
+  return posicionados.map((item) => {
+    const concorrentes = posicionados.filter(
+      (outro) => item.inicio < outro.fim && item.fim > outro.inicio,
+    );
+
+    const totalColunas = Math.max(
+      1,
+      ...concorrentes.map((concorrente) => concorrente.coluna + 1),
+    );
+
+    return {
+      ...item,
+      totalColunas,
+    };
+  });
+}, [agendamentosDoDia]);
   if (carregandoEmpresa) {
     return <div className="p-6">Carregando empresa...</div>;
   }
@@ -2068,27 +2123,22 @@ ${linkMeuEspaco}`;
                     </div>
                   )}
 
-                {agendamentosDoDia.map((item) => {
-                  const mins = parseTimeToMinutes(item.horario);
-                  const top = ((mins - 8 * 60) / 60) * 88 + 8;
-                  const visual = classByStatus(item.status);
-                  const duracao = Number(item.duracao_minutos || 30);
-                  const alturaCard = Math.max((duracao / 30) * 88 - 10, 78);
-                  const horarioFim = somarMinutos(item.horario, duracao);
-
-                  if (mins < 8 * 60 || mins > 20 * 60 + 59) return null;
+               {agendamentosDoDiaComLayout.map(
+  ({ item, top, alturaCard, horarioFim, coluna, totalColunas }) => {
+    const visual = classByStatus(item.status);
 
                   return (
                     <div
-                      key={item.id}
-                      className="absolute left-3 right-3 rounded-2xl border px-4 py-3 shadow-sm"
-                      style={{
-                        top: `${top}px`,
-                        minHeight: `${alturaCard}px`,
-                        backgroundColor: visual.bg,
-                        borderColor: visual.border,
-                        color: visual.text,
-                      }}
+                    className="absolute rounded-2xl border px-4 py-3 shadow-sm"
+style={{
+  top: `${top}px`,
+  left: `calc(${(coluna / totalColunas) * 100}% + 12px)`,
+  width: `calc(${100 / totalColunas}% - 18px)`,
+  minHeight: `${alturaCard}px`,
+  backgroundColor: visual.bg,
+  borderColor: visual.border,
+  color: visual.text,
+}}
                     >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -2825,8 +2875,9 @@ ${linkMeuEspaco}`;
       )}
 
       {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[9999] bg-slate-950/45">
+          <div className="fixed inset-0 overflow-y-scroll overscroll-contain px-3 py-4 md:px-4 md:py-8">
+            <div className="mx-auto min-h-fit w-full max-w-xl rounded-[28px] bg-white p-5 pb-32 shadow-2xl md:p-6">
             <div className="mb-5">
               <h2 className="text-2xl font-bold text-slate-900">
                 Finalizar atendimento
@@ -3123,6 +3174,7 @@ ${linkMeuEspaco}`;
               <PrimaryButton onClick={() => void finalizarComPagamento()}>
                 {loadingFinalizar ? "Salvando..." : "Confirmar finalização"}
               </PrimaryButton>
+            </div>
             </div>
           </div>
         </div>

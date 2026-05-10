@@ -274,7 +274,8 @@ function agruparPorData(
 }
 
 export default function Dashboard() {
-  const [periodoRapido, setPeriodoRapido] = useState<PeriodoRapido>("mes");
+
+   const [periodoRapido, setPeriodoRapido] = useState<PeriodoRapido>("mes");
   const [dataInicio, setDataInicio] = useState(inicioDoMesISO());
   const [dataFim, setDataFim] = useState(hojeISO());
 
@@ -535,11 +536,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Visão geral"
-        title="Dashboard"
-        description="Acompanhe o desempenho financeiro, atendimentos e indicadores do negócio por período."
-      />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <PageHeader
+          eyebrow="Visão geral"
+          title="Dashboard"
+          description="Acompanhe o desempenho financeiro, atendimentos e indicadores do negócio por período."
+        />
+     
+      </div>
 
       <SectionCard
         title="Período"
