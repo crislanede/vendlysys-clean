@@ -76,6 +76,7 @@ export default function ClientesPage() {
   const [precosEspeciais, setPrecosEspeciais] = useState<Record<string, string>>({});
   const [salvandoPrecoEspecial, setSalvandoPrecoEspecial] = useState(false);
   const [pacotesDoCliente, setPacotesDoCliente] = useState<any[]>([]);
+  const [historicoUsoPacotes, setHistoricoUsoPacotes] = useState<any[]>([]);
   const [carregandoPacotesDoCliente, setCarregandoPacotesDoCliente] = useState(false);
   const [pacotesDisponiveis, setPacotesDisponiveis] = useState<any[]>([]);
   const [pacoteParaVincularId, setPacoteParaVincularId] = useState("");
@@ -225,7 +226,81 @@ export default function ClientesPage() {
 
     setPrecosEspeciais(mapa);
   }
+async function carregarHistoricoUsoPacotes(clienteId: string) {
+  const { data, error } = await supabase
+    .from("cliente_pacote_usos")
+    .select(`
+      id,
+      cliente_pacote_id,
+      agendamento_id,
+      servico_id,
+      quantidade_usada,
+      created_at
+    `)
+    .order("created_at", { ascending: false });
 
+  if (error) {
+    console.error("Erro ao carregar histórico de uso dos pacotes:", error);
+    setHistoricoUsoPacotes([]);
+    return;
+  }
+
+  const usos = data || [];
+
+  if (usos.length === 0) {
+    setHistoricoUsoPacotes([]);
+    return;
+  }
+
+  const agendamentoIds = usos
+    .map((item: any) => item.agendamento_id)
+    .filter(Boolean);
+
+  const servicoIds = usos
+    .map((item: any) => item.servico_id)
+    .filter(Boolean);
+
+  const { data: agendamentosBanco } = agendamentoIds.length
+    ? await supabase
+        .from("agendamentos")
+        .select("id, cliente_id, data, horario, cliente, servico, profissional")
+        .in("id", agendamentoIds)
+        .eq("cliente_id", clienteId)
+    : { data: [] as any[] };
+
+  const { data: servicosBanco } = servicoIds.length
+    ? await supabase
+        .from("servicos")
+        .select("id, nome")
+        .in("id", servicoIds)
+    : { data: [] as any[] };
+
+  const mapaAgendamentos = new Map(
+    (agendamentosBanco || []).map((item: any) => [item.id, item]),
+  );
+
+  const mapaServicos = new Map(
+    (servicosBanco || []).map((item: any) => [item.id, item]),
+  );
+
+  const historico = usos
+    .map((uso: any) => {
+      const agendamento = mapaAgendamentos.get(uso.agendamento_id);
+      if (!agendamento) return null;
+
+      return {
+        ...uso,
+        agendamento,
+        servico_nome:
+          mapaServicos.get(uso.servico_id)?.nome ||
+          agendamento.servico ||
+          "Serviço",
+      };
+    })
+    .filter(Boolean);
+
+  setHistoricoUsoPacotes(historico);
+}
 
   async function carregarPacotesDoCliente(clienteId: string) {
     setCarregandoPacotesDoCliente(true);
@@ -647,9 +722,10 @@ export default function ClientesPage() {
       cidade: cliente.cidade || "",
       estado: cliente.estado || "",
     });
-    setModalAberto(true);
-    carregarPrecosEspeciais(cliente.id);
-    carregarPacotesDoCliente(cliente.id);
+setModalAberto(true);
+carregarPrecosEspeciais(cliente.id);
+carregarPacotesDoCliente(cliente.id);
+carregarHistoricoUsoPacotes(cliente.id);
   }
 
   function fecharModal() {
@@ -895,8 +971,8 @@ export default function ClientesPage() {
       </div>
 
       {modalAberto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/40 px-4 py-6">
+  <div className="relative z-[10000] mx-auto my-6 w-full max-w-5xl rounded-3xl bg-white shadow-2xl">
             <div className="sticky top-0 bg-white border-b px-6 py-5 rounded-t-3xl flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">
@@ -1229,7 +1305,41 @@ export default function ClientesPage() {
                                 ))}
                               </div>
                             )}
+{historicoUsoPacotes.filter((uso) => uso.cliente_pacote_id === vinculo.id).length > 0 && (
+  <div className="mt-4 rounded-2xl border bg-slate-50 p-4">
+    <p className="mb-3 text-sm font-black text-slate-900">
+      Histórico de uso
+    </p>
 
+    <div className="space-y-2">
+      {historicoUsoPacotes
+        .filter((uso) => uso.cliente_pacote_id === vinculo.id)
+        .map((uso) => (
+          <div
+            key={uso.id}
+            className="rounded-xl border bg-white px-4 py-3 text-sm"
+          >
+            <p className="font-bold text-slate-900">
+              {uso.servico_nome}
+            </p>
+
+            <p className="text-xs text-slate-500">
+              Usado em{" "}
+              {uso.agendamento?.data
+                ? formatarDataPacote(uso.agendamento.data)
+                : "-"}{" "}
+              às {uso.agendamento?.horario || "-"}
+            </p>
+
+            <p className="text-xs text-slate-500">
+              Profissional: {uso.agendamento?.profissional || "-"} · Quantidade:{" "}
+              {uso.quantidade_usada || 1}
+            </p>
+          </div>
+        ))}
+    </div>
+  </div>
+)}
                             <div className="mt-4 flex flex-wrap gap-2">
                               {!estaEditando ? (
                                 <>

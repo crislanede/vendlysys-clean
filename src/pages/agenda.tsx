@@ -149,14 +149,18 @@ function hojeISO() {
 }
 
 function usuarioEhAdmin() {
-  const tipoUsuario =
-    localStorage.getItem("tipo_usuario") ||
-    localStorage.getItem("perfil") ||
-    localStorage.getItem("role") ||
-    "";
+  const perfis = [
+    localStorage.getItem("tipo_usuario"),
+    localStorage.getItem("perfil"),
+    localStorage.getItem("role"),
+  ]
+    .filter(Boolean)
+    .map((item) => String(item).trim().toLowerCase());
 
-  return ["admin", "administrador", "owner"].includes(
-    tipoUsuario.toLowerCase()
+  return perfis.some((perfil) =>
+    ["admin", "administrador", "owner", "super_admin", "admin_saas"].includes(
+      perfil
+    )
   );
 }
 
@@ -580,16 +584,8 @@ export default function AgendaPage() {
   }
 
   async function salvarAgendamento() {
-    if (!podeEditarData(data)) {
-      if (!podeEditarData(dataReagendamento)) {
-  alert(
-    "Somente administradores podem reagendar para datas anteriores."
-  );
-  return;
-}
-  alert(
-    "Datas anteriores só podem ser alteradas por administradores."
-  );
+   if (!podeEditarData(data)) {
+  alert("Datas anteriores só podem ser alteradas por administradores.");
   return;
 }
     if (!cliente || !servico || !profissional || !data || !hora) {
@@ -775,7 +771,10 @@ export default function AgendaPage() {
       alert("Informe a nova data e o novo horário.");
       return;
     }
-
+if (!podeEditarData(dataReagendamento)) {
+  alert("Somente administradores podem reagendar para datas anteriores.");
+  return;
+}
     const duracaoTotal = Number(agendamentoReagendar.duracao_minutos || 60);
     const horarioFim = somarMinutos(horaReagendamento, duracaoTotal);
 
@@ -1125,7 +1124,11 @@ ${linkFoto}` : "As fotos do atendimento já estão registradas no sistema."}
 Obrigada pela preferência! 💜`;
 
     const numero = normalizarTelefoneWhatsapp(telefone);
-    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`, "_blank");
+    window.open(
+  `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`,
+  "_blank",
+  "noopener,noreferrer"
+);
   }
 
   async function buscarPacotesDisponiveis(
@@ -1286,7 +1289,11 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+  `https://wa.me/${numero}?text=${texto}`,
+  "_blank",
+  "noopener,noreferrer"
+);
   }
 
   async function enviarCancelamentoWhatsapp(agendamento: Agendamento) {
@@ -1311,7 +1318,11 @@ Caso queira remarcar, entre em contato conosco.`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+  `https://wa.me/${numero}?text=${texto}`,
+  "_blank",
+  "noopener,noreferrer"
+);
   }
 
   async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
@@ -1342,7 +1353,11 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+  `https://wa.me/${numero}?text=${texto}`,
+  "_blank",
+  "noopener,noreferrer"
+);
   }
 
   async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
@@ -1372,7 +1387,11 @@ ${linkMeuEspaco}`;
     const texto = encodeURIComponent(mensagem);
 
     // Usar href evita bloqueio de pop-up depois que a finalização salva no banco.
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+  `https://wa.me/${numero}?text=${texto}`,
+  "_blank",
+  "noopener,noreferrer"
+);
   }
 
   async function finalizarComPagamento() {

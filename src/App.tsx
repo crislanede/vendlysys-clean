@@ -80,9 +80,14 @@ function App() {
           <Route path="licencas" element={<Licencas />} />
         </Route>
 
-        {/* SISTEMA INTERNO */}
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<Navigate to="/login" replace />} />
+        {/* RAIZ */}
+<Route path="/" element={<Navigate to="/login" replace />} />
+
+{/* SISTEMA INTERNO */}
+{/* SISTEMA INTERNO */}
+<Route path="/" element={<AppLayout />}>
+  <Route path="dashboard" element={<Dashboard />} />
+  <Route path="agenda" element={<Agenda />} />
 
           {/* PRINCIPAL */}
           <Route path="dashboard" element={<Dashboard />} />

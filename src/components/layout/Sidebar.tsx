@@ -84,7 +84,7 @@ export default function Sidebar() {
             position: "fixed",
             top: 12,
             left: 12,
-            zIndex: 1000,
+            zIndex: 40,
             width: 44,
             height: 44,
             borderRadius: 12,
@@ -108,7 +108,7 @@ export default function Sidebar() {
             position: "fixed",
             inset: 0,
             background: "rgba(15, 23, 42, .55)",
-            zIndex: 998,
+           zIndex: 30,
           }}
         />
       )}
@@ -124,7 +124,7 @@ export default function Sidebar() {
           position: isMobile ? "fixed" : "sticky",
           top: 0,
           left: isMobile ? (menuAberto ? 0 : -260) : 0,
-          zIndex: 999,
+         zIndex: 40,
           transition: "left .25s ease",
           overflowY: "auto",
           boxShadow:
