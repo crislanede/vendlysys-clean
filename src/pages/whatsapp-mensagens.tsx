@@ -165,96 +165,102 @@ export default function WhatsappMensagens() {
     setAtivo(salva?.ativo !== false);
   }
 
-  async function salvar() {
-    if (!empresaId) {
-      alert("Empresa não encontrada.");
-      return;
-    }
+ async function salvar() {
+  if (!empresaId) {
+    alert("Empresa não encontrada.");
+    return;
+  }
 
-    if (!mensagem.trim()) {
-      alert("Informe a mensagem.");
-      return;
-    }
+  if (!mensagem.trim()) {
+    alert("Informe a mensagem.");
+    return;
+  }
 
-    setSalvando(true);
+  setSalvando(true);
 
-    const existente = mensagens[tipoSelecionado];
+  const existente = mensagens[tipoSelecionado];
+
+  const payload = {
+    empresa_id: empresaId,
+    tipo: tipoSelecionado,
+    titulo: titulo.trim() || tipoSelecionado,
+    mensagem: mensagem.trim(),
+    ativo,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("whatsapp_mensagens")
+    .upsert(
+      {
+        ...payload,
+        criado_em:
+          existente?.criado_em || new Date().toISOString(),
+      },
+      {
+        onConflict: "tipo",
+      }
+    );
+
+  setSalvando(false);
+
+  if (error) {
+    alert("Erro ao salvar mensagem: " + error.message);
+    return;
+  }
+
+  await carregarMensagens();
+
+  alert("Mensagem salva com sucesso!");
+}
+
+  async function criarTodasPadrao() {
+  if (!empresaId) {
+    alert("Empresa não encontrada.");
+    return;
+  }
+
+  const confirmar = window.confirm(
+    "Deseja criar ou atualizar todas as mensagens com os modelos padrão?"
+  );
+
+  if (!confirmar) return;
+
+  setSalvando(true);
+
+  for (const item of tiposMensagem) {
+    const existente = mensagens[item.tipo];
 
     const payload = {
       empresa_id: empresaId,
-      tipo: tipoSelecionado,
-      titulo: titulo.trim() || tipoSelecionado,
-      mensagem: mensagem.trim(),
-      ativo,
+      tipo: item.tipo,
+      titulo: item.nome,
+      mensagem: mensagensPadrao[item.tipo],
+      ativo: true,
       atualizado_em: new Date().toISOString(),
     };
 
-    const { error } = existente?.id
-      ? await supabase
-          .from("whatsapp_mensagens")
-          .update(payload)
-          .eq("id", existente.id)
-          .eq("empresa_id", empresaId)
-      : await supabase.from("whatsapp_mensagens").insert({
+    await supabase
+      .from("whatsapp_mensagens")
+      .upsert(
+        {
           ...payload,
-          criado_em: new Date().toISOString(),
-        });
-
-    setSalvando(false);
-
-    if (error) {
-      alert("Erro ao salvar mensagem: " + error.message);
-      return;
-    }
-
-    await carregarMensagens();
-    alert("Mensagem salva com sucesso!");
+          criado_em:
+            existente?.criado_em ||
+            new Date().toISOString(),
+        },
+        {
+          onConflict: "empresa_id,tipo",
+        }
+      );
   }
 
-  async function criarTodasPadrao() {
-    if (!empresaId) {
-      alert("Empresa não encontrada.");
-      return;
-    }
+  setSalvando(false);
 
-    const confirmar = window.confirm(
-      "Deseja criar ou atualizar todas as mensagens com os modelos padrão?"
-    );
+  await carregarMensagens();
 
-    if (!confirmar) return;
-
-    setSalvando(true);
-
-    for (const item of tiposMensagem) {
-      const existente = mensagens[item.tipo];
-
-      const payload = {
-        empresa_id: empresaId,
-        tipo: item.tipo,
-        titulo: item.nome,
-        mensagem: mensagensPadrao[item.tipo],
-        ativo: true,
-        atualizado_em: new Date().toISOString(),
-      };
-
-      if (existente?.id) {
-        await supabase
-          .from("whatsapp_mensagens")
-          .update(payload)
-          .eq("id", existente.id)
-          .eq("empresa_id", empresaId);
-      } else {
-        await supabase.from("whatsapp_mensagens").insert({
-          ...payload,
-          criado_em: new Date().toISOString(),
-        });
-      }
-    }
-
-    setSalvando(false);
-    await carregarMensagens();
-    alert("Mensagens padrão criadas/atualizadas com sucesso!");
-  }
+  alert("Mensagens padrão criadas/atualizadas com sucesso!");
+}
 
   function restaurarPadrao() {
     const confirmar = window.confirm(

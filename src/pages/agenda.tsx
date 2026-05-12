@@ -158,19 +158,16 @@ function usuarioEhAdmin() {
     .map((item) => String(item).trim().toLowerCase());
 
   return perfis.some((perfil) =>
-    ["admin", "administrador", "owner", "super_admin", "admin_saas"].includes(
-      perfil
-    )
+    ["admin", "super_admin", "admin_saas"].includes(perfil)
   );
 }
-
 function dataPassada(data?: string | null) {
   if (!data) return false;
   return data < hojeISO();
 }
 
 function podeEditarData(data?: string | null) {
-  return !dataPassada(data) || usuarioEhAdmin();
+  return true;
 }
 
 function getTodayString() {
@@ -404,6 +401,7 @@ export default function AgendaPage() {
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [servicosExtras, setServicosExtras] = useState<string[]>([]);
 
   const [selectedDate, setSelectedDate] = useState(getTodayString());
   const [search, setSearch] = useState("");
@@ -580,7 +578,7 @@ export default function AgendaPage() {
     setAplicarPromocao(false);
     setValorAgendamentoManual("");
     setAlertas([]);
-    setConfirmou(false);
+    setConfirmou(false);setServicosExtras([]);
   }
 
   async function salvarAgendamento() {
@@ -1280,7 +1278,12 @@ Obrigada pela preferência! 💜`;
 
 Serviço: ${agendamento.servico || "não informado"}
 Data: ${formatarData(agendamento.data)}
-Horário: ${agendamento.horario || "não informado"}
+Início: ${agendamento.horario || "não informado"}
+Término previsto: ${
+  agendamento.horario
+    ? somarMinutos(agendamento.horario, Number(agendamento.duracao_minutos || 60))
+    : "não informado"
+}
 Profissional: ${agendamento.profissional || "não informado"}
 
 Para confirmar ou acompanhar seu agendamento, acesse:
@@ -2325,7 +2328,34 @@ style={{
                   </option>
                 ))}
               </select>
+{servicosExtras.map((servicoExtra, index) => (
+  <select
+    key={index}
+    value={servicoExtra}
+    onChange={(e) => {
+      const novos = [...servicosExtras];
+      novos[index] = e.target.value;
+      setServicosExtras(novos);
+    }}
+    className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+  >
+    <option value="">Selecione outro serviço</option>
 
+    {servicos.map((item) => (
+      <option key={item.id} value={item.nome}>
+        {item.nome}
+      </option>
+    ))}
+  </select>
+))}
+
+<button
+  type="button"
+  onClick={() => setServicosExtras((atual) => [...atual, ""])}
+  className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700"
+>
+  + Adicionar outro serviço
+</button>
               {servico && (
                 <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
                   Valor do serviço: {Number(
@@ -2395,10 +2425,9 @@ style={{
                 ))}
               </select>
 
-           <input
+          <input
   type="date"
   value={data}
-  min={usuarioEhAdmin() ? undefined : hojeISO()}
   onChange={(e) => setData(e.target.value)}
   className="h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
 />
@@ -2509,7 +2538,7 @@ style={{
                 <input
   type="date"
   value={dataReagendamento}
-  min={usuarioEhAdmin() ? undefined : getTodayString()}
+ min={usuarioEhAdmin() ? "" : getTodayString()}
   onChange={(e) => setDataReagendamento(e.target.value)}
   className="mt-2 h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
 />

@@ -911,11 +911,6 @@ export default function ServicosPage() {
               + Serviço
             </PrimaryButton>
             <PrimaryButton onClick={abrirNovaCategoria}>+ Categoria</PrimaryButton>
-            {mostrarFormulario && (
-              <PrimaryButton onClick={() => setMostrarFormulario(false)}>
-                Fechar
-              </PrimaryButton>
-            )}
             <SecondaryButton onClick={exportarServicos}>Exportar</SecondaryButton>
             <SecondaryButton onClick={baixarModelo}>Baixar modelo</SecondaryButton>
             <label className="cursor-pointer rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">
@@ -991,16 +986,32 @@ export default function ServicosPage() {
       )}
 
       {mostrarFormulario && (
-        <SectionCard>
-          <form onSubmit={salvarServico}>
-            <div className="mb-5">
-              <h2 className="text-xl font-black text-slate-900">
-                {editandoId ? "Editar serviço" : "Novo serviço"}
-              </h2>
-              <p className="mt-1 text-slate-500">
-                Cadastre ou ajuste as informações do serviço
-              </p>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/50 p-3 md:p-6">
+          <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 md:px-6 md:py-5">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-wide text-purple-700">
+                  {editandoId ? "Edição" : "Novo cadastro"}
+                </p>
+                <h2 className="text-2xl font-black text-slate-900">
+                  {editandoId ? "Editar serviço" : "Novo serviço"}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Cadastre ou ajuste as informações do serviço sem sair da lista.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={limparFormulario}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
             </div>
+
+            <div className="overflow-y-auto px-5 py-5 md:px-6 md:py-6">
+              <form onSubmit={salvarServico}>
 
             <div className="grid gap-4 md:grid-cols-2">
               <input
@@ -1146,16 +1157,18 @@ export default function ServicosPage() {
               )}
             </div>
 
-            <div className="mt-6 flex gap-3">
-              <PrimaryButton type="submit">
-                {editandoId ? "Salvar alterações" : "Cadastrar serviço"}
-              </PrimaryButton>
-              <SecondaryButton type="button" onClick={limparFormulario}>
-                Cancelar
-              </SecondaryButton>
+                <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-5">
+                  <SecondaryButton type="button" onClick={limparFormulario}>
+                    Cancelar
+                  </SecondaryButton>
+                  <PrimaryButton type="submit">
+                    {editandoId ? "Salvar alterações" : "Cadastrar serviço"}
+                  </PrimaryButton>
+                </div>
+              </form>
             </div>
-          </form>
-        </SectionCard>
+          </div>
+        </div>
       )}
 
       <div className="space-y-4">

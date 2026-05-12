@@ -9,6 +9,8 @@ import AppLayout from "./components/layout/AppLayout";
 import AdminSaasLayout from "./components/AdminSaasLayout";
 import AdminRoute from "./components/AdminRoute";
 import ThemeLoader from "./components/theme/ThemeLoader";
+import Whatsapp from "./pages/whatsapp";
+import WhatsappFila from "./pages/whatsapp-fila";
 
 import Login from "./pages/login";
 import ResetarSenha from "./pages/resetar-senha";
@@ -80,16 +82,10 @@ function App() {
           <Route path="licencas" element={<Licencas />} />
         </Route>
 
-        {/* RAIZ */}
-<Route path="/" element={<Navigate to="/login" replace />} />
+        {/* SISTEMA INTERNO */}
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
 
-{/* SISTEMA INTERNO */}
-{/* SISTEMA INTERNO */}
-<Route path="/" element={<AppLayout />}>
-  <Route path="dashboard" element={<Dashboard />} />
-  <Route path="agenda" element={<Agenda />} />
-
-          {/* PRINCIPAL */}
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agenda" element={<Agenda />} />
           <Route
@@ -97,24 +93,14 @@ function App() {
             element={<ConsultaAgendamentos />}
           />
 
-          {/* CADASTROS */}
           <Route path="clientes" element={<Clientes />} />
           <Route path="profissionais" element={<Profissionais />} />
           <Route path="servicos" element={<Servicos />} />
           <Route path="produtos" element={<Produtos />} />
 
-          {/* PACOTES */}
-          <Route
-            path="marketing-pacotes"
-            element={<MarketingPacotes />}
-          />
+          <Route path="marketing-pacotes" element={<MarketingPacotes />} />
+          <Route path="pacotes-clientes" element={<PacotesClientesPage />} />
 
-          <Route
-            path="pacotes-clientes"
-            element={<PacotesClientesPage />}
-          />
-
-          {/* FINANCEIRO */}
           <Route path="financeiro" element={<Financeiro />} />
           <Route path="caixa" element={<Caixa />} />
           <Route path="comissoes" element={<Comissoes />} />
@@ -122,38 +108,25 @@ function App() {
           <Route path="despesas" element={<Despesas />} />
           <Route path="pagamentos" element={<Pagamentos />} />
 
-          {/* RELATÓRIOS */}
           <Route path="relatorios" element={<Relatorios />} />
-          <Route
-            path="relatorios-retorno"
-            element={<RelatoriosRetorno />}
-          />
+          <Route path="relatorios-retorno" element={<RelatoriosRetorno />} />
 
-          {/* CONFIGURAÇÕES */}
           <Route
             path="anamnese-configuracao"
             element={<AnamneseConfiguracao />}
           />
-
-          <Route
-            path="whatsapp-mensagens"
-            element={<WhatsappMensagens />}
-          />
-
+          <Route path="whatsapp" element={<Whatsapp />} />
+<Route path="whatsapp-fila" element={<WhatsappFila />} />
+          <Route path="whatsapp-mensagens" element={<WhatsappMensagens />} />
           <Route path="campanhas" element={<Campanhas />} />
           <Route path="bloqueios" element={<Bloqueios />} />
+          <Route path="configuracoes" element={<Configuracoes />} />
 
-          <Route
-            path="configuracoes"
-            element={<Configuracoes />}
-          />
-
-          {/* MANUAL */}
           <Route path="manual" element={<Manual tipo="admin" />} />
         </Route>
 
         {/* FALLBACK */}
-       <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
