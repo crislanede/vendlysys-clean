@@ -40,6 +40,7 @@ type Servico = {
   descricao?: string | null;
   duracao?: number | null;
   duracao_padrao_minutos?: number | null;
+  percentual_residencial?: number | null;
 };
 
 type Profissional = {
@@ -70,6 +71,8 @@ type Agendamento = {
   token_cliente?: string | null;
   alertasAnamnese?: AlertaAnamneseItem[];
   duracao_minutos?: number | null;
+  atendimento_residencial?: boolean | null;
+  percentual_residencial?: number | null;
   created_at?: string | null;
 };
 
@@ -144,6 +147,9 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "long",
   year: "numeric",
 });
+function hojeISO() {
+  return new Date().toISOString().split("T")[0];
+}
 
 function usuarioEhAdmin() {
   const perfis = [
@@ -155,12 +161,17 @@ function usuarioEhAdmin() {
     .map((item) => String(item).trim().toLowerCase());
 
   return perfis.some((perfil) =>
-    ["admin", "super_admin", "admin_saas"].includes(perfil)
+    ["admin", "administrador", "owner", "super_admin", "admin_saas"].includes(perfil),
   );
 }
 
-function podeEditarData() {
-  return usuarioEhAdmin();
+function dataPassada(data?: string | null) {
+  if (!data) return false;
+  return data < hojeISO();
+}
+
+function podeEditarData(data?: string | null) {
+  return !dataPassada(data) || usuarioEhAdmin();
 }
 
 function getTodayString() {
@@ -306,8 +317,8 @@ function filtrarAniversariantesDoMes(clientes: Cliente[]) {
   return clientes
     .filter((cliente) => !!cliente.data_nascimento)
     .filter((cliente) => {
-      const nascimento = new Date(`${cliente.data_nascimento}T00:00:00`);
-      return nascimento.getMonth() + 1 === mesAtual;
+      const data = new Date(`${cliente.data_nascimento}T00:00:00`);
+      return data.getMonth() + 1 === mesAtual;
     })
     .sort((a, b) => {
       const diaA = Number((a.data_nascimento || "").split("-")[2] || 0);
@@ -409,6 +420,8 @@ export default function AgendaPage() {
   const [observacoes, setObservacoes] = useState("");
   const [aplicarPromocao, setAplicarPromocao] = useState(false);
   const [valorAgendamentoManual, setValorAgendamentoManual] = useState("");
+  const [atendimentoResidencial, setAtendimentoResidencial] = useState(false);
+  const [percentualResidencial, setPercentualResidencial] = useState(0);
 
   const [alertas, setAlertas] = useState<AlertaAnamneseItem[]>([]);
   const [confirmou, setConfirmou] = useState(false);
@@ -468,30 +481,48 @@ export default function AgendaPage() {
     console.time("carregarTudo agenda");
 
     try {
-      const [clientesRes, servicosRes, profissionaisRes, agendamentosRes] =
-        await Promise.all([
-          supabase
-            .from("clientes")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("nome"),
-          supabase
-            .from("servicos")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("nome"),
-          supabase
-            .from("profissionais")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("nome"),
-          supabase
-            .from("agendamentos")
-            .select("*")
-            .eq("empresa_id", empresaId)
-            .order("data", { ascending: true })
-            .order("horario", { ascending: true }),
-        ]);
+      const [
+        empresaConfigRes,
+        clientesRes,
+        servicosRes,
+        profissionaisRes,
+        agendamentosRes,
+      ] = await Promise.all([
+        supabase
+          .from("empresas")
+          .select("percentual_residencial")
+          .eq("id", empresaId)
+          .maybeSingle(),
+        supabase
+          .from("clientes")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
+        supabase
+          .from("servicos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
+        supabase
+          .from("profissionais")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("nome"),
+        supabase
+          .from("agendamentos")
+          .select("*")
+          .eq("empresa_id", empresaId)
+          .order("data", { ascending: true })
+          .order("horario", { ascending: true }),
+      ]);
+
+      if (empresaConfigRes.error) {
+        console.error("Erro ao carregar configuração residencial:", empresaConfigRes.error);
+      } else {
+        setPercentualResidencial(
+          Number((empresaConfigRes.data as any)?.percentual_residencial ?? 0),
+        );
+      }
 
       if (clientesRes.error) {
         console.error("Erro ao carregar clientes:", clientesRes.error);
@@ -564,21 +595,24 @@ export default function AgendaPage() {
   function limparFormulario() {
     setCliente("");
     setServico("");
+    setServicosExtras([]);
     setProfissional("");
     setData(selectedDate);
     setHora("09:00");
     setObservacoes("");
     setAplicarPromocao(false);
     setValorAgendamentoManual("");
+    setAtendimentoResidencial(false);
     setAlertas([]);
-    setConfirmou(false);setServicosExtras([]);
+    setConfirmou(false);
   }
 
-  async function salvarAgendamento() {
-  if (!podeEditarData()) {
-  alert("Datas anteriores só podem ser alteradas por administradores.");
-  return;
-}
+    async function salvarAgendamento() {
+    if (!podeEditarData(data)) {
+      alert("Datas anteriores só podem ser alteradas por administradores.");
+      return;
+    }
+
     if (!cliente || !servico || !profissional || !data || !hora) {
       alert("Preencha cliente, serviço, profissional, data e horário.");
       return;
@@ -590,7 +624,12 @@ export default function AgendaPage() {
     }
 
     const clienteItem = clientes.find((item) => item.nome === cliente);
-    const servicoItem = servicos.find((item) => item.nome === servico);
+    const servicosSelecionadosNomes = [servico, ...servicosExtras]
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+    const servicosSelecionados = servicosSelecionadosNomes
+      .map((nome) => servicos.find((item) => item.nome === nome))
+      .filter(Boolean) as Servico[];
     const profissionalItem = profissionais.find(
       (item) => item.nome === profissional,
     );
@@ -600,15 +639,18 @@ export default function AgendaPage() {
       return;
     }
 
-    if (!servicoItem) {
-      alert("Selecione um serviço válido.");
+    if (servicosSelecionados.length !== servicosSelecionadosNomes.length) {
+      alert("Selecione serviços válidos.");
       return;
     }
 
-    const duracaoBase =
-      servicoItem.duracao_padrao_minutos || servicoItem.duracao || 60;
+    const servicoPrincipal = servicosSelecionados[0];
 
-    const duracaoTotal = duracaoBase + 10;
+    const duracaoServicos = servicosSelecionados.reduce((total, item) => {
+      return total + Number(item.duracao_padrao_minutos || item.duracao || 60);
+    }, 0);
+
+    const duracaoTotal = duracaoServicos + 10;
     const horarioFim = somarMinutos(hora, duracaoTotal);
 
     const conflito = agendamentos.some((item) => {
@@ -632,22 +674,43 @@ export default function AgendaPage() {
       return;
     }
 
+    const valorCalculadoServicos = servicosSelecionados.reduce(
+      (total, item) => total + obterValorServico(item),
+      0,
+    );
+    const valorManual = Number(valorAgendamentoManual || 0);
+    const valorBase =
+      servicosSelecionados.length > 1 || valorManual <= 0
+        ? valorCalculadoServicos
+        : valorManual;
+    const percentualResidencialAplicado = atendimentoResidencial
+      ? obterPercentualResidencial(servicosSelecionados)
+      : 0;
+    const valorFinal = atendimentoResidencial
+      ? Number(
+          (valorBase + (valorBase * percentualResidencialAplicado) / 100).toFixed(2),
+        )
+      : Number(valorBase.toFixed(2));
+    const nomeServicos = servicosSelecionados.map((item) => item.nome).join(" + ");
+
     setLoadingSalvar(true);
 
     const { error } = await supabase.from("agendamentos").insert([
       {
         empresa_id: empresaId,
         cliente,
-        servico,
+        servico: nomeServicos,
         profissional,
         cliente_id: clienteItem?.id || null,
-        servico_id: servicoItem.id,
+        servico_id: servicoPrincipal.id,
         profissional_id: profissionalItem.id,
         data,
         horario: hora,
         observacoes: observacoes || null,
         duracao_minutos: duracaoTotal,
-        valor: Number(valorAgendamentoManual || 0),
+        valor: valorFinal,
+        atendimento_residencial: atendimentoResidencial,
+        percentual_residencial: percentualResidencialAplicado,
         status: "agendado",
         no_show: false,
       },
@@ -762,10 +825,12 @@ export default function AgendaPage() {
       alert("Informe a nova data e o novo horário.");
       return;
     }
-if (!podeEditarData()) {
-  alert("Somente administradores podem reagendar para datas anteriores.");
-  return;
-}
+
+    if (!podeEditarData(dataReagendamento)) {
+      alert("Somente administradores podem reagendar para datas anteriores.");
+      return;
+    }
+
     const duracaoTotal = Number(agendamentoReagendar.duracao_minutos || 60);
     const horarioFim = somarMinutos(horaReagendamento, duracaoTotal);
 
@@ -859,6 +924,14 @@ if (!podeEditarData()) {
 
   return Number.isNaN(valorNormal) ? 0 : valorNormal;
 }
+  function obterPercentualResidencial(servicosSelecionados: Servico[]) {
+    const percentualDoServico = servicosSelecionados
+      .map((item) => Number(item.percentual_residencial || 0))
+      .find((percentual) => percentual > 0);
+
+    return Number(percentualDoServico ?? percentualResidencial ?? 0);
+  }
+
   function valorPadraoDoAgendamento(agendamento: Agendamento) {
     if (agendamento.valor !== null && agendamento.valor !== undefined) {
       return String(agendamento.valor);
@@ -1115,11 +1188,7 @@ ${linkFoto}` : "As fotos do atendimento já estão registradas no sistema."}
 Obrigada pela preferência! 💜`;
 
     const numero = normalizarTelefoneWhatsapp(telefone);
-    window.open(
-  `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`,
-  "_blank",
-  "noopener,noreferrer"
-);
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`, "_blank");
   }
 
   async function buscarPacotesDisponiveis(
@@ -1271,12 +1340,7 @@ Obrigada pela preferência! 💜`;
 
 Serviço: ${agendamento.servico || "não informado"}
 Data: ${formatarData(agendamento.data)}
-Início: ${agendamento.horario || "não informado"}
-Término previsto: ${
-  agendamento.horario
-    ? somarMinutos(agendamento.horario, Number(agendamento.duracao_minutos || 60))
-    : "não informado"
-}
+Horário: ${agendamento.horario || "não informado"}
 Profissional: ${agendamento.profissional || "não informado"}
 
 Para confirmar ou acompanhar seu agendamento, acesse:
@@ -1285,11 +1349,7 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.open(
-  `https://wa.me/${numero}?text=${texto}`,
-  "_blank",
-  "noopener,noreferrer"
-);
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
   }
 
   async function enviarCancelamentoWhatsapp(agendamento: Agendamento) {
@@ -1314,11 +1374,7 @@ Caso queira remarcar, entre em contato conosco.`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.open(
-  `https://wa.me/${numero}?text=${texto}`,
-  "_blank",
-  "noopener,noreferrer"
-);
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
   }
 
   async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
@@ -1349,11 +1405,7 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.open(
-  `https://wa.me/${numero}?text=${texto}`,
-  "_blank",
-  "noopener,noreferrer"
-);
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
   }
 
   async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
@@ -1383,11 +1435,7 @@ ${linkMeuEspaco}`;
     const texto = encodeURIComponent(mensagem);
 
     // Usar href evita bloqueio de pop-up depois que a finalização salva no banco.
-    window.open(
-  `https://wa.me/${numero}?text=${texto}`,
-  "_blank",
-  "noopener,noreferrer"
-);
+    window.location.href = `https://wa.me/${numero}?text=${texto}`;
   }
 
   async function finalizarComPagamento() {
@@ -1736,6 +1784,43 @@ ${linkMeuEspaco}`;
     }
   }
 
+  const servicosSelecionadosFormulario = useMemo(() => {
+    const nomes = [servico, ...servicosExtras]
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+
+    return nomes
+      .map((nome) => servicos.find((item) => item.nome === nome))
+      .filter(Boolean) as Servico[];
+  }, [servico, servicosExtras, servicos]);
+
+  const valorBaseFormulario = useMemo(() => {
+    const valorCalculado = servicosSelecionadosFormulario.reduce(
+      (total, item) => total + obterValorServico(item),
+      0,
+    );
+    const valorManual = Number(valorAgendamentoManual || 0);
+
+    if (servicosSelecionadosFormulario.length > 1 || valorManual <= 0) {
+      return valorCalculado;
+    }
+
+    return valorManual;
+  }, [servicosSelecionadosFormulario, valorAgendamentoManual]);
+
+  const percentualResidencialFormulario = atendimentoResidencial
+    ? obterPercentualResidencial(servicosSelecionadosFormulario)
+    : 0;
+
+  const valorFinalFormulario = atendimentoResidencial
+    ? Number(
+        (
+          valorBaseFormulario +
+          (valorBaseFormulario * percentualResidencialFormulario) / 100
+        ).toFixed(2),
+      )
+    : Number(valorBaseFormulario.toFixed(2));
+
   const agendamentosDoDia = useMemo(() => {
     return agendamentos
       .filter((item) => item.data === selectedDate)
@@ -1815,62 +1900,7 @@ ${linkMeuEspaco}`;
 
   const topNowLine =
     currentMinutes !== null ? ((currentMinutes - 8 * 60) / 60) * 88 : null;
-  
-const agendamentosDoDiaComLayout = useMemo(() => {
-  const itens = agendamentosDoDia
-    .map((item) => {
-      const inicio = parseTimeToMinutes(item.horario);
-      const duracao = Number(item.duracao_minutos || 30);
-      const fim = inicio + duracao;
 
-      return {
-        item,
-        inicio,
-        fim,
-        duracao,
-        top: ((inicio - 8 * 60) / 60) * 88 + 8,
-        alturaCard: Math.max((duracao / 30) * 88 - 10, 78),
-        horarioFim: somarMinutos(item.horario, duracao),
-        coluna: 0,
-      };
-    })
-    .filter((item) => item.inicio >= 8 * 60 && item.inicio <= 20 * 60 + 59)
-    .sort((a, b) => a.inicio - b.inicio || a.fim - b.fim);
-
-  const fimPorColuna: number[] = [];
-
-  const posicionados = itens.map((item) => {
-    let coluna = fimPorColuna.findIndex((fim) => fim <= item.inicio);
-
-    if (coluna === -1) {
-      coluna = fimPorColuna.length;
-      fimPorColuna.push(item.fim);
-    } else {
-      fimPorColuna[coluna] = item.fim;
-    }
-
-    return {
-      ...item,
-      coluna,
-    };
-  });
-
-  return posicionados.map((item) => {
-    const concorrentes = posicionados.filter(
-      (outro) => item.inicio < outro.fim && item.fim > outro.inicio,
-    );
-
-    const totalColunas = Math.max(
-      1,
-      ...concorrentes.map((concorrente) => concorrente.coluna + 1),
-    );
-
-    return {
-      ...item,
-      totalColunas,
-    };
-  });
-}, [agendamentosDoDia]);
   if (carregandoEmpresa) {
     return <div className="p-6">Carregando empresa...</div>;
   }
@@ -2138,22 +2168,27 @@ const agendamentosDoDiaComLayout = useMemo(() => {
                     </div>
                   )}
 
-               {agendamentosDoDiaComLayout.map(
-  ({ item, top, alturaCard, horarioFim, coluna, totalColunas }) => {
-    const visual = classByStatus(item.status);
+                {agendamentosDoDia.map((item) => {
+                  const mins = parseTimeToMinutes(item.horario);
+                  const top = ((mins - 8 * 60) / 60) * 88 + 8;
+                  const visual = classByStatus(item.status);
+                  const duracao = Number(item.duracao_minutos || 30);
+                  const alturaCard = Math.max((duracao / 30) * 88 - 10, 78);
+                  const horarioFim = somarMinutos(item.horario, duracao);
+
+                  if (mins < 8 * 60 || mins > 20 * 60 + 59) return null;
 
                   return (
                     <div
-                    className="absolute rounded-2xl border px-4 py-3 shadow-sm"
-style={{
-  top: `${top}px`,
-  left: `calc(${(coluna / totalColunas) * 100}% + 12px)`,
-  width: `calc(${100 / totalColunas}% - 18px)`,
-  minHeight: `${alturaCard}px`,
-  backgroundColor: visual.bg,
-  borderColor: visual.border,
-  color: visual.text,
-}}
+                      key={item.id}
+                      className="absolute left-3 right-3 rounded-2xl border px-4 py-3 shadow-sm"
+                      style={{
+                        top: `${top}px`,
+                        minHeight: `${alturaCard}px`,
+                        backgroundColor: visual.bg,
+                        borderColor: visual.border,
+                        color: visual.text,
+                      }}
                     >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -2321,44 +2356,62 @@ style={{
                   </option>
                 ))}
               </select>
-{servicosExtras.map((servicoExtra, index) => (
-  <select
-    key={index}
-    value={servicoExtra}
-    onChange={(e) => {
-      const novos = [...servicosExtras];
-      novos[index] = e.target.value;
-      setServicosExtras(novos);
-    }}
-    className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
-  >
-    <option value="">Selecione outro serviço</option>
 
-    {servicos.map((item) => (
-      <option key={item.id} value={item.nome}>
-        {item.nome}
-      </option>
-    ))}
-  </select>
-))}
+              {servicosExtras.map((servicoExtra, index) => (
+                <div key={`servico-extra-${index}`} className="flex gap-2">
+                  <select
+                    value={servicoExtra}
+                    onChange={(e) => {
+                      const novos = [...servicosExtras];
+                      novos[index] = e.target.value;
+                      setServicosExtras(novos);
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+                  >
+                    <option value="">Selecione outro serviço</option>
+                    {servicos.map((item) => (
+                      <option key={item.id} value={item.nome}>
+                        {item.nome}
+                      </option>
+                    ))}
+                  </select>
 
-<button
-  type="button"
-  onClick={() => setServicosExtras((atual) => [...atual, ""])}
-  className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700"
->
-  + Adicionar outro serviço
-</button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setServicosExtras((atuais) =>
+                        atuais.filter((_, itemIndex) => itemIndex !== index),
+                      )
+                    }
+                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600"
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setServicosExtras((atual) => [...atual, ""])}
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                + Adicionar outro serviço
+              </button>
+
               {servico && (
                 <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
-                  Valor do serviço: {Number(
-                    obterValorServico(
-                      servicos.find((item) => item.nome === servico),
-                    ),
-                  ).toLocaleString("pt-BR", {
+                  Valor dos serviços: {valorBaseFormulario.toLocaleString("pt-BR", {
                     style: "currency",
                     currency: "BRL",
                   })}
+                  {atendimentoResidencial && (
+                    <span className="ml-2 text-emerald-700">
+                      • Residencial: {valorFinalFormulario.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -2405,6 +2458,22 @@ style={{
                 className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-orange-300"
               />
 
+              <label className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                <input
+                  type="checkbox"
+                  checked={atendimentoResidencial}
+                  onChange={(e) => setAtendimentoResidencial(e.target.checked)}
+                />
+                Atendimento residencial (+{percentualResidencialFormulario}%)
+              </label>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
+                Total final: {valorFinalFormulario.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
+              </div>
+
               <select
                 value={profissional}
                 onChange={(e) => setProfissional(e.target.value)}
@@ -2418,9 +2487,10 @@ style={{
                 ))}
               </select>
 
-          <input
+           <input
   type="date"
   value={data}
+  min={usuarioEhAdmin() ? undefined : hojeISO()}
   onChange={(e) => setData(e.target.value)}
   className="h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
 />
@@ -2531,7 +2601,7 @@ style={{
                 <input
   type="date"
   value={dataReagendamento}
- min={usuarioEhAdmin() ? "" : getTodayString()}
+  min={usuarioEhAdmin() ? undefined : getTodayString()}
   onChange={(e) => setDataReagendamento(e.target.value)}
   className="mt-2 h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
 />
@@ -2916,9 +2986,8 @@ style={{
       )}
 
       {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/45">
-          <div className="fixed inset-0 overflow-y-scroll overscroll-contain px-3 py-4 md:px-4 md:py-8">
-            <div className="mx-auto min-h-fit w-full max-w-xl rounded-[28px] bg-white p-5 pb-32 shadow-2xl md:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5">
               <h2 className="text-2xl font-bold text-slate-900">
                 Finalizar atendimento
@@ -3215,7 +3284,6 @@ style={{
               <PrimaryButton onClick={() => void finalizarComPagamento()}>
                 {loadingFinalizar ? "Salvando..." : "Confirmar finalização"}
               </PrimaryButton>
-            </div>
             </div>
           </div>
         </div>

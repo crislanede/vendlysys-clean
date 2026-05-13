@@ -29,6 +29,7 @@ type Servico = {
   duracao_padrao_minutos: number | null;
   atendimento_residencial?: boolean | null;
   preco_residencial?: number | null;
+  percentual_residencial?: number | null;
   ativo: boolean;
   descricao?: string | null;
   retorno_automatico?: boolean | null;
@@ -46,6 +47,7 @@ type LinhaImportacao = {
   preco_promocional?: string | number;
   promocao_ativa?: string | boolean;
   preco_residencial?: string | number;
+  percentual_residencial?: string | number;
   duracao_minutos?: string | number;
   duracao_padrao_minutos?: string | number;
   atendimento_residencial?: string | boolean;
@@ -88,6 +90,7 @@ export default function ServicosPage() {
   const [precoPromocional, setPrecoPromocional] = useState("");
   const [promocaoAtiva, setPromocaoAtiva] = useState(false);
   const [precoResidencial, setPrecoResidencial] = useState("");
+  const [percentualResidencial, setPercentualResidencial] = useState("0");
   const [precoDescricao, setPrecoDescricao] = useState("");
   const [descricao, setDescricao] = useState("");
   const [duracao, setDuracao] = useState("60");
@@ -167,6 +170,7 @@ export default function ServicosPage() {
     setPrecoPromocional("");
     setPromocaoAtiva(false);
     setPrecoResidencial("");
+    setPercentualResidencial("0");
     setPrecoDescricao("");
     setDescricao("");
     setDuracao("60");
@@ -325,6 +329,7 @@ export default function ServicosPage() {
     const precoNormalizado = normalizarNumero(preco);
     const precoPromocionalNormalizado = normalizarNumero(precoPromocional);
     const precoResidencialNormalizado = normalizarNumero(precoResidencial);
+    const percentualResidencialNormalizado = normalizarNumero(percentualResidencial);
     const duracaoNormalizada = normalizarNumero(duracao);
     const retornoDiasNormalizado = normalizarNumero(retornoDias);
     const retornoAlertaNormalizado = normalizarNumero(retornoAlertaDias);
@@ -386,11 +391,19 @@ export default function ServicosPage() {
 
     if (
       atendimentoResidencial &&
-      (precoResidencialNormalizado === null || precoResidencialNormalizado < 0)
+      precoResidencialNormalizado !== null &&
+      precoResidencialNormalizado < 0
     ) {
-      alert(
-        "Informe o preço residencial ou desmarque atendimento residencial.",
-      );
+      alert("O preço residencial não pode ser negativo.");
+      return;
+    }
+
+    if (
+      atendimentoResidencial &&
+      percentualResidencialNormalizado !== null &&
+      percentualResidencialNormalizado < 0
+    ) {
+      alert("O percentual residencial não pode ser negativo.");
       return;
     }
 
@@ -408,6 +421,10 @@ export default function ServicosPage() {
           ? precoResidencialNormalizado
           : null,
       atendimento_residencial: atendimentoResidencial,
+      percentual_residencial:
+        atendimentoResidencial && percentualResidencialNormalizado !== null
+          ? percentualResidencialNormalizado
+          : 0,
       preco_descricao: precoDescricao.trim() || null,
       descricao: descricao.trim() || null,
       duracao_padrao_minutos:
@@ -457,6 +474,11 @@ export default function ServicosPage() {
         : "60",
     );
     setAtendimentoResidencial(!!item.atendimento_residencial);
+    setPercentualResidencial(
+      item.percentual_residencial != null
+        ? String(item.percentual_residencial)
+        : "0",
+    );
     setAtivo(item.ativo ?? true);
     setRetornoAutomatico(!!item.retorno_automatico);
     setRetornoDias(item.retorno_dias != null ? String(item.retorno_dias) : "");
@@ -519,7 +541,8 @@ export default function ServicosPage() {
         preco_promocional: "",
         promocao_ativa: "NÃO",
         atendimento_residencial: "SIM",
-        preco_residencial: 80,
+        percentual_residencial: 30,
+        preco_residencial: "",
         duracao_minutos: 60,
         preco_descricao: "",
         descricao: "Manicure com base gel",
@@ -532,6 +555,7 @@ export default function ServicosPage() {
         preco_promocional: 25,
         promocao_ativa: "SIM",
         atendimento_residencial: "NÃO",
+        percentual_residencial: "",
         preco_residencial: "",
         duracao_minutos: 60,
         preco_descricao: "",
@@ -555,6 +579,7 @@ export default function ServicosPage() {
       preco_promocional: item.preco_promocional || "",
       promocao_ativa: item.promocao_ativa ? "SIM" : "NÃO",
       atendimento_residencial: item.atendimento_residencial ? "SIM" : "NÃO",
+      percentual_residencial: item.percentual_residencial || "",
       preco_residencial: item.preco_residencial || "",
       duracao_minutos: item.duracao_padrao_minutos || 0,
       preco_descricao: item.preco_descricao || "",
@@ -631,6 +656,7 @@ export default function ServicosPage() {
         preco_promocional: number | null;
         promocao_ativa: boolean;
         preco_residencial: number | null;
+        percentual_residencial: number | null;
         atendimento_residencial: boolean;
         preco_descricao: string | null;
         descricao: string | null;
@@ -665,6 +691,9 @@ export default function ServicosPage() {
           linha.promocao_ativa,
         );
         const valorResidencial = normalizarNumero(linha.preco_residencial);
+        const percentualResidencialLinha = normalizarNumero(
+          linha.percentual_residencial,
+        );
         const duracaoServico = normalizarNumero(
           linha.duracao_minutos ?? linha.duracao_padrao_minutos,
         );
@@ -756,12 +785,24 @@ export default function ServicosPage() {
 
         if (
           residencialNormalizado &&
-          (valorResidencial === null || valorResidencial < 0)
+          valorResidencial !== null &&
+          valorResidencial < 0
         ) {
           erros.push({
             linha: numeroLinha,
-            motivo:
-              "Preço residencial obrigatório quando atendimento residencial = SIM.",
+            motivo: "Preço residencial não pode ser negativo.",
+          });
+          return;
+        }
+
+        if (
+          residencialNormalizado &&
+          percentualResidencialLinha !== null &&
+          percentualResidencialLinha < 0
+        ) {
+          erros.push({
+            linha: numeroLinha,
+            motivo: "Percentual residencial não pode ser negativo.",
           });
           return;
         }
@@ -806,6 +847,10 @@ export default function ServicosPage() {
               ? valorResidencial
               : null,
           atendimento_residencial: residencialNormalizado,
+          percentual_residencial:
+            residencialNormalizado && percentualResidencialLinha !== null
+              ? percentualResidencialLinha
+              : 0,
           preco_descricao: descricaoPreco || null,
           descricao: descricaoServico || null,
           duracao_padrao_minutos:
@@ -1067,24 +1112,56 @@ export default function ServicosPage() {
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 p-3 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={atendimentoResidencial}
-                  onChange={(e) => setAtendimentoResidencial(e.target.checked)}
-                />
-                Permite atendimento residencial
-              </label>
+              <div className="rounded-2xl border border-slate-200 p-4 md:col-span-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={atendimentoResidencial}
+                    onChange={(e) => setAtendimentoResidencial(e.target.checked)}
+                  />
+                  Permite atendimento residencial
+                </label>
 
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Preço residencial"
-                value={precoResidencial}
-                onChange={(e) => setPrecoResidencial(e.target.value)}
-                disabled={!atendimentoResidencial}
-                className="rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
-              />
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Percentual residencial (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Ex: 30"
+                      value={percentualResidencial}
+                      onChange={(e) => setPercentualResidencial(e.target.value)}
+                      disabled={!atendimentoResidencial}
+                      className="w-full rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Exemplo: 30 acrescenta 30% ao preço do serviço. Se ficar 0, a agenda pode usar o percentual padrão da empresa.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Preço residencial fixo opcional
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Opcional"
+                      value={precoResidencial}
+                      onChange={(e) => setPrecoResidencial(e.target.value)}
+                      disabled={!atendimentoResidencial}
+                      className="w-full rounded-2xl border border-slate-200 p-3 disabled:bg-slate-100"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Use apenas se quiser um valor fixo específico para este serviço.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               <input
                 placeholder="Descrição do preço (ex: a partir de R$20)"
@@ -1269,9 +1346,22 @@ export default function ServicosPage() {
                             </td>
 
                             <td className="px-4 py-4 text-right text-slate-700">
-                              {item.atendimento_residencial
-                                ? formatarMoeda(item.preco_residencial)
-                                : "--"}
+                              {item.atendimento_residencial ? (
+                                <div>
+                                  <div className="font-bold text-slate-900">
+                                    {Number(item.percentual_residencial || 0) > 0
+                                      ? `+${Number(item.percentual_residencial || 0)}%`
+                                      : "Padrão da empresa"}
+                                  </div>
+                                  {item.preco_residencial != null && (
+                                    <div className="mt-1 text-xs text-slate-500">
+                                      Fixo: {formatarMoeda(item.preco_residencial)}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                "--"
+                              )}
                             </td>
 
                             <td className="px-4 py-4 text-right font-bold text-slate-900">

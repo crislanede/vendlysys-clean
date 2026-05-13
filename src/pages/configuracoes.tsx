@@ -16,6 +16,8 @@ export default function Configuracoes() {
   const [corSecundaria, setCorSecundaria] = useState("#111827");
   const [corFundo, setCorFundo] = useState("#f8fafc");
 
+  const [percentualResidencial, setPercentualResidencial] = useState("30");
+
   const [bannerAtivo, setBannerAtivo] = useState(true);
   const [bannerCategoria, setBannerCategoria] = useState("");
   const [bannerTitulo, setBannerTitulo] = useState("");
@@ -33,7 +35,7 @@ export default function Configuracoes() {
   const [enviandoBanner, setEnviandoBanner] = useState(false);
 
   useEffect(() => {
-    if (empresaId) carregarConfiguracoes();
+    if (empresaId) void carregarConfiguracoes();
   }, [empresaId]);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function Configuracoes() {
         cor_primaria,
         cor_secundaria,
         cor_fundo,
+        percentual_residencial,
         banner_cliente_ativo,
         banner_cliente_categoria,
         banner_cliente_titulo,
@@ -94,6 +97,7 @@ export default function Configuracoes() {
     setCorPrimaria(data.cor_primaria || "#4f46e5");
     setCorSecundaria(data.cor_secundaria || "#111827");
     setCorFundo(data.cor_fundo || "#f8fafc");
+    setPercentualResidencial(String(data.percentual_residencial ?? 30));
 
     setBannerAtivo(data.banner_cliente_ativo ?? true);
     setBannerCategoria(data.banner_cliente_categoria || "");
@@ -114,6 +118,13 @@ export default function Configuracoes() {
       return;
     }
 
+    const percentualNormalizado = Number(percentualResidencial || 0);
+
+    if (Number.isNaN(percentualNormalizado) || percentualNormalizado < 0) {
+      alert("Informe um percentual residencial válido.");
+      return;
+    }
+
     setSalvando(true);
 
     const { error } = await supabase
@@ -128,6 +139,8 @@ export default function Configuracoes() {
         cor_primaria: corPrimaria || null,
         cor_secundaria: corSecundaria || null,
         cor_fundo: corFundo || null,
+
+        percentual_residencial: percentualNormalizado,
 
         banner_cliente_ativo: bannerAtivo,
         banner_cliente_categoria: bannerCategoria || null,
@@ -257,9 +270,7 @@ export default function Configuracoes() {
           Sistema
         </p>
 
-        <h1 className="text-4xl font-black text-slate-900">
-          Configurações
-        </h1>
+        <h1 className="text-4xl font-black text-slate-900">Configurações</h1>
 
         <p className="mt-2 text-slate-500">
           Configure os dados, a identidade visual da empresa e o banner exibido
@@ -302,6 +313,33 @@ export default function Configuracoes() {
             placeholder="Endereço"
             value={endereco}
             onChange={(e) => setEndereco(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">
+          Atendimento residencial
+        </h2>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Defina o percentual de acréscimo aplicado quando o atendimento for residencial.
+          Exemplo: 30 acrescenta 30% ao valor do serviço.
+        </p>
+
+        <div className="mt-6 grid gap-2">
+          <label className="text-sm font-bold text-slate-700">
+            Percentual residencial (%)
+          </label>
+
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={percentualResidencial}
+            onChange={(e) => setPercentualResidencial(e.target.value)}
+            placeholder="30"
             className="rounded-2xl border border-slate-300 px-4 py-3"
           />
         </div>
@@ -357,9 +395,7 @@ export default function Configuracoes() {
 
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <label className="space-y-2">
-            <span className="text-sm font-bold text-slate-700">
-              Cor primária
-            </span>
+            <span className="text-sm font-bold text-slate-700">Cor primária</span>
             <input
               type="color"
               value={corPrimaria}
@@ -369,9 +405,7 @@ export default function Configuracoes() {
           </label>
 
           <label className="space-y-2">
-            <span className="text-sm font-bold text-slate-700">
-              Cor secundária
-            </span>
+            <span className="text-sm font-bold text-slate-700">Cor secundária</span>
             <input
               type="color"
               value={corSecundaria}
@@ -381,9 +415,7 @@ export default function Configuracoes() {
           </label>
 
           <label className="space-y-2">
-            <span className="text-sm font-bold text-slate-700">
-              Cor de fundo
-            </span>
+            <span className="text-sm font-bold text-slate-700">Cor de fundo</span>
             <input
               type="color"
               value={corFundo}
@@ -397,13 +429,10 @@ export default function Configuracoes() {
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">
-              Banner do Meu Espaço
-            </h2>
+            <h2 className="text-xl font-bold text-slate-900">Banner do Meu Espaço</h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Edite a campanha, dica ou aviso que aparece para a cliente no Meu
-              Espaço.
+              Edite a campanha, dica ou aviso que aparece para a cliente no Meu Espaço.
             </p>
           </div>
 
@@ -557,8 +586,7 @@ export default function Configuracoes() {
             </h3>
 
             <p className="mt-4 max-w-2xl text-sm text-slate-200 md:text-lg">
-              {bannerTexto ||
-                "Acompanhe novidades, promoções e dicas exclusivas."}
+              {bannerTexto || "Acompanhe novidades, promoções e dicas exclusivas."}
             </p>
 
             {bannerBotaoTexto && (
