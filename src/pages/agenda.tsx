@@ -144,9 +144,6 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "long",
   year: "numeric",
 });
-function hojeISO() {
-  return new Date().toISOString().split("T")[0];
-}
 
 function usuarioEhAdmin() {
   const perfis = [
@@ -161,13 +158,9 @@ function usuarioEhAdmin() {
     ["admin", "super_admin", "admin_saas"].includes(perfil)
   );
 }
-function dataPassada(data?: string | null) {
-  if (!data) return false;
-  return data < hojeISO();
-}
 
-function podeEditarData(data?: string | null) {
-  return true;
+function podeEditarData() {
+  return usuarioEhAdmin();
 }
 
 function getTodayString() {
@@ -313,8 +306,8 @@ function filtrarAniversariantesDoMes(clientes: Cliente[]) {
   return clientes
     .filter((cliente) => !!cliente.data_nascimento)
     .filter((cliente) => {
-      const data = new Date(`${cliente.data_nascimento}T00:00:00`);
-      return data.getMonth() + 1 === mesAtual;
+      const nascimento = new Date(`${cliente.data_nascimento}T00:00:00`);
+      return nascimento.getMonth() + 1 === mesAtual;
     })
     .sort((a, b) => {
       const diaA = Number((a.data_nascimento || "").split("-")[2] || 0);
@@ -582,7 +575,7 @@ export default function AgendaPage() {
   }
 
   async function salvarAgendamento() {
-   if (!podeEditarData(data)) {
+  if (!podeEditarData()) {
   alert("Datas anteriores só podem ser alteradas por administradores.");
   return;
 }
@@ -769,7 +762,7 @@ export default function AgendaPage() {
       alert("Informe a nova data e o novo horário.");
       return;
     }
-if (!podeEditarData(dataReagendamento)) {
+if (!podeEditarData()) {
   alert("Somente administradores podem reagendar para datas anteriores.");
   return;
 }
