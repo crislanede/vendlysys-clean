@@ -100,6 +100,32 @@ function obterChaveCampoAnamnese(campo: any) {
   );
 }
 
+
+const calcularHorarioFim = (
+  inicio: string,
+  duracao: number,
+) => {
+  if (!inicio) return "";
+
+  const [hora, minuto] = inicio
+    .split(":")
+    .map(Number);
+
+  const totalMinutos =
+    hora * 60 + minuto + duracao;
+
+  const horaFim =
+    Math.floor(totalMinutos / 60) % 24;
+
+  const minutoFim =
+    totalMinutos % 60;
+
+  return `${String(horaFim).padStart(2, "0")}:${String(
+    minutoFim,
+  ).padStart(2, "0")}`;
+};
+
+
 export default function MeuEspaco() {
   const [aba, setAba] = useState("agenda");
   const [telefone, setTelefone] = useState("");
@@ -3769,14 +3795,7 @@ const botaoAba = (valor: string, label: string) => {
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                {formatarMoeda(
-  Number(
-    servico.valor ||
-    servico.preco ||
-    servico.valor_servico ||
-    0
-  )
-)}
+                                {formatarMoeda(Number(servico.valor || 0))}
                               </div>
                             </div>
                           ))}
@@ -3845,10 +3864,30 @@ const botaoAba = (valor: string, label: string) => {
                             }}
                           >
                             <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>
-                              Horário
+                              Início
                             </div>
                             <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 900 }}>
                               {horarioAgendamento || "Selecione"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              borderRadius: 16,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>
+                              Fim
+                            </div>
+                            <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 900 }}>
+                              {horarioAgendamento
+                                ? calcularHorarioFim(
+                                    horarioAgendamento,
+                                    duracaoTotalServicos(pegarServicosSelecionados()),
+                                  )
+                                : "Selecione"}
                             </div>
                           </div>
                         </div>
