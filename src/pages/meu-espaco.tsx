@@ -193,6 +193,7 @@ export default function MeuEspaco() {
   const [novoAgendamentoAberto, setNovoAgendamentoAberto] = useState(false);
   const [agendamentoReagendandoId, setAgendamentoReagendandoId] = useState<string | null>(null);
   const [servicoAgendamentoId, setServicoAgendamentoId] = useState("");
+  const [servicosAgendamentoIds, setServicosAgendamentoIds] = useState<string[]>([]);
   const [profissionalAgendamentoId, setProfissionalAgendamentoId] =
     useState("");
   const [dataAgendamento, setDataAgendamento] = useState(hojeISO());
@@ -215,7 +216,7 @@ export default function MeuEspaco() {
   useEffect(() => {
     if (
       cliente &&
-      servicoAgendamentoId &&
+      servicosAgendamentoIds.length > 0 &&
       profissionalAgendamentoId &&
       dataAgendamento
     ) {
@@ -227,19 +228,20 @@ export default function MeuEspaco() {
   }, [
     cliente,
     servicoAgendamentoId,
+    servicosAgendamentoIds,
     profissionalAgendamentoId,
     dataAgendamento,
     agendamentoReagendandoId,
   ]);
 
   useEffect(() => {
-    if (cliente && servicoAgendamentoId) {
+    if (cliente && servicosAgendamentoIds.length > 0) {
       void atualizarValorAgendamento();
     } else {
       setValorAgendamentoFinal(null);
       setPrecoEspecialAplicado(false);
     }
-  }, [cliente, servicoAgendamentoId]);
+  }, [cliente, servicoAgendamentoId, servicosAgendamentoIds]);
 
   async function carregarPorToken(token: string) {
     setCarregando(true);
@@ -923,8 +925,23 @@ export default function MeuEspaco() {
     }
   }
 
-  function pegarServicoSelecionado() {
-    return servicos.find((item) => item.id === servicoAgendamentoId) || null;
+  function pegarServicosSelecionados() {
+    return servicosAgendamentoIds
+      .map((id) => servicos.find((item) => item.id === id) || null)
+      .filter(Boolean) as ServicoCliente[];
+  }
+
+  function alternarServicoAgendamento(servicoId: string) {
+    setServicosAgendamentoIds((atuais) => {
+      const jaSelecionado = atuais.includes(servicoId);
+      const proximos = jaSelecionado
+        ? atuais.filter((id) => id !== servicoId)
+        : [...atuais, servicoId];
+
+      setServicoAgendamentoId(proximos[0] || "");
+      setHorarioAgendamento("");
+      return proximos;
+    });
   }
 
   function pegarProfissionalSelecionado() {
@@ -989,18 +1006,21 @@ export default function MeuEspaco() {
   }
 
   async function atualizarValorAgendamento() {
-    const servicoSelecionado = pegarServicoSelecionado();
+    const servicosSelecionados = pegarServicosSelecionados();
 
-    if (!servicoSelecionado) {
+    if (servicosSelecionados.length === 0) {
       setValorAgendamentoFinal(null);
       setPrecoEspecialAplicado(false);
       return;
     }
 
     setCarregandoValorAgendamento(true);
-    const resultado = await calcularValorServicoCliente(servicoSelecionado);
-    setValorAgendamentoFinal(resultado.valor);
-    setPrecoEspecialAplicado(resultado.especial);
+    const resultados = await Promise.all(
+      servicosSelecionados.map((servico) => calcularValorServicoCliente(servico)),
+    );
+    const valorTotal = resultados.reduce((total, item) => total + item.valor, 0);
+    setValorAgendamentoFinal(valorTotal);
+    setPrecoEspecialAplicado(resultados.some((item) => item.especial));
     setCarregandoValorAgendamento(false);
   }
 
@@ -1042,10 +1062,13 @@ export default function MeuEspaco() {
     }
   }
 
-  function duracaoTotalServico(servico: ServicoCliente | null) {
-    const duracaoBase = Number(
-      servico?.duracao_padrao_minutos || servico?.duracao || 60,
-    );
+  function duracaoTotalServicos(servicosSelecionados: ServicoCliente[]) {
+    if (servicosSelecionados.length === 0) return 0;
+
+    const duracaoBase = servicosSelecionados.reduce((total, servico) => {
+      return total + Number(servico?.duracao_padrao_minutos || servico?.duracao || 60);
+    }, 0);
+
     return duracaoBase + 10;
   }
 
@@ -1072,11 +1095,11 @@ export default function MeuEspaco() {
   }
 
   async function carregarHorariosLivres() {
-    const servicoSelecionado = pegarServicoSelecionado();
+    const servicosSelecionados = pegarServicosSelecionados();
 
     if (
       !cliente?.empresa_id ||
-      !servicoSelecionado ||
+      servicosSelecionados.length === 0 ||
       !profissionalAgendamentoId ||
       !dataAgendamento
     ) {
@@ -1087,7 +1110,7 @@ export default function MeuEspaco() {
     setCarregandoHorarios(true);
     setHorarioAgendamento("");
 
-    const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+    const duracaoTotal = duracaoTotalServicos(servicosSelecionados);
     const profissionalSelecionado = pegarProfissionalSelecionado();
 
     if (!profissionalSelecionado) {
@@ -1165,6 +1188,7 @@ export default function MeuEspaco() {
     setPacotesCliente([]);
     setAgendamentoReagendandoId(null);
     setServicoAgendamentoId("");
+    setServicosAgendamentoIds([]);
     setProfissionalAgendamentoId("");
     setDataAgendamento(hojeISO());
     setHorarioAgendamento("");
@@ -1223,6 +1247,7 @@ export default function MeuEspaco() {
     setAgendamentoReagendandoId(agendamento.id);
     setNovoAgendamentoAberto(true);
     setServicoAgendamentoId(agendamento.servico_id || "");
+    setServicosAgendamentoIds(agendamento.servico_id ? [agendamento.servico_id] : []);
     setProfissionalAgendamentoId(agendamento.profissional_id || "");
     setDataAgendamento(agendamento.data || hojeISO());
     setHorarioAgendamento(agendamento.horario || "");
@@ -1245,20 +1270,22 @@ export default function MeuEspaco() {
       return;
     }
 
-    const servicoSelecionado = pegarServicoSelecionado();
+    const servicosSelecionados = pegarServicosSelecionados();
+    const servicoSelecionado = servicosSelecionados[0] || null;
     const profissionalSelecionado = pegarProfissionalSelecionado();
 
     if (
+      servicosSelecionados.length === 0 ||
       !servicoSelecionado ||
       !profissionalSelecionado ||
       !dataAgendamento ||
       !horarioAgendamento
     ) {
-      alert("Escolha serviço, profissional, data e horário.");
+      alert("Escolha pelo menos um serviço, profissional, data e horário.");
       return;
     }
 
-    const duracaoTotal = duracaoTotalServico(servicoSelecionado);
+    const duracaoTotal = duracaoTotalServicos(servicosSelecionados);
 
     const inicioExpediente = normalizarHorario(
       profissionalSelecionado.inicio_expediente,
@@ -1319,8 +1346,14 @@ export default function MeuEspaco() {
 
     setSalvandoAgendamento(true);
 
-    const valorCalculado =
-      await calcularValorServicoCliente(servicoSelecionado);
+    const valoresCalculados = await Promise.all(
+      servicosSelecionados.map((servico) => calcularValorServicoCliente(servico)),
+    );
+    const valorCalculado = {
+      valor: valoresCalculados.reduce((total, item) => total + item.valor, 0),
+      especial: valoresCalculados.some((item) => item.especial),
+    };
+    const nomesServicos = servicosSelecionados.map((servico) => servico.nome).join(" + ");
 
     let agendamentoCriado: any = null;
     let error: any = null;
@@ -1329,7 +1362,7 @@ export default function MeuEspaco() {
       empresa_id: cliente.empresa_id,
       cliente: cliente.nome,
       cliente_id: cliente.id,
-      servico: servicoSelecionado.nome,
+      servico: nomesServicos,
       servico_id: servicoSelecionado.id,
       profissional: profissionalSelecionado.nome,
       profissional_id: profissionalSelecionado.id,
@@ -1339,8 +1372,8 @@ export default function MeuEspaco() {
       status: "agendado",
       no_show: false,
       observacoes: valorCalculado.especial
-        ? `Agendamento realizado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
-        : "Agendamento realizado pelo Meu Espaço",
+        ? `Agendamento realizado pelo Meu Espaço. Serviços: ${nomesServicos}. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
+        : `Agendamento realizado pelo Meu Espaço. Serviços: ${nomesServicos}`,
     };
 
     if (agendamentoReagendandoId) {
@@ -1349,8 +1382,8 @@ export default function MeuEspaco() {
         .update({
           ...payloadAgendamento,
           observacoes: valorCalculado.especial
-            ? `Agendamento reagendado pelo Meu Espaço. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
-            : "Agendamento reagendado pelo Meu Espaço",
+            ? `Agendamento reagendado pelo Meu Espaço. Serviços: ${nomesServicos}. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
+            : `Agendamento reagendado pelo Meu Espaço. Serviços: ${nomesServicos}`,
         })
         .eq("id", agendamentoReagendandoId)
         .eq("cliente_id", cliente.id)
@@ -1389,7 +1422,7 @@ export default function MeuEspaco() {
     if (!agendamentoReagendandoId) {
       await criarLancamentoFinanceiroAgendamento(
         agendamentoCriado?.id || null,
-        servicoSelecionado,
+        { ...servicoSelecionado, nome: nomesServicos },
         profissionalSelecionado,
         valorCalculado.valor,
         valorCalculado.especial,
@@ -3352,34 +3385,146 @@ const botaoAba = (valor: string, label: string) => {
                         gap: isMobile ? 10 : 14,
                       }}
                     >
-                      <div>
-                        <label style={{ fontWeight: 800 }}>Serviço *</label>
-                        <select
-                          value={servicoAgendamentoId}
-                          onChange={(e) => {
-                            setServicoAgendamentoId(e.target.value);
-                            setHorarioAgendamento("");
-                          }}
+                      <div style={{ gridColumn: isMobile ? undefined : "1 / -1" }}>
+                        <div
                           style={{
-                            width: "100%",
-                            padding: isMobile ? 9 : 14,
-                            borderRadius: isMobile ? 12 : 14,
-                            border: "1px solid #cbd5e1",
-                            marginTop: isMobile ? 5 : 8,
+                            display: "flex",
+                            alignItems: isMobile ? "flex-start" : "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            flexDirection: isMobile ? "column" : "row",
                           }}
                         >
-                          <option value="">Selecione</option>
-                          {servicos.map((servico) => (
-                            <option key={servico.id} value={servico.id}>
-                              {servico.nome} -{" "}
-                              {formatarMoeda(precoBaseServico(servico))} -{" "}
-                              {servico.duracao_padrao_minutos ||
-                                servico.duracao ||
-                                60}{" "}
-                              min
-                            </option>
-                          ))}
-                        </select>
+                          <div>
+                            <label style={{ fontWeight: 900 }}>Serviços *</label>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                color: "#64748b",
+                                fontSize: isMobile ? 12 : 13,
+                                fontWeight: 700,
+                              }}
+                            >
+                              Selecione um ou mais serviços para o mesmo horário.
+                            </div>
+                          </div>
+
+                          {servicosAgendamentoIds.length > 0 && (
+                            <div
+                              style={{
+                                background: precoEspecialAplicado ? "#dcfce7" : "#eef2ff",
+                                border: precoEspecialAplicado ? "1px solid #bbf7d0" : "1px solid #c7d2fe",
+                                color: precoEspecialAplicado ? "#166534" : "#282663",
+                                borderRadius: 999,
+                                padding: "8px 12px",
+                                fontWeight: 900,
+                                fontSize: isMobile ? 12 : 13,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {carregandoValorAgendamento
+                                ? "Calculando..."
+                                : `${servicosAgendamentoIds.length} serviço(s) • ${formatarMoeda(valorAgendamentoFinal)}`}
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(250px, 1fr))",
+                            gap: 10,
+                            marginTop: 12,
+                            maxHeight: isMobile ? 260 : 230,
+                            overflowY: "auto",
+                            paddingRight: 6,
+                          }}
+                        >
+                          {servicos.map((servico) => {
+                            const selecionado = servicosAgendamentoIds.includes(servico.id);
+                            const duracao = servico.duracao_padrao_minutos || servico.duracao || 60;
+
+                            return (
+                              <button
+                                key={servico.id}
+                                type="button"
+                                onClick={() => alternarServicoAgendamento(servico.id)}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 12,
+                                  width: "100%",
+                                  textAlign: "left",
+                                  padding: isMobile ? "10px 12px" : "12px 14px",
+                                  borderRadius: 16,
+                                  border: selecionado ? "2px solid #282663" : "1px solid #dbe3ee",
+                                  background: selecionado ? "#eef2ff" : "#fff",
+                                  boxShadow: selecionado ? "0 8px 18px rgba(40,38,99,0.10)" : "0 4px 12px rgba(15,23,42,0.04)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                  <span
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 6,
+                                      border: selecionado ? "2px solid #282663" : "1px solid #94a3b8",
+                                      background: selecionado ? "#282663" : "#fff",
+                                      color: "#fff",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                      flex: "0 0 auto",
+                                    }}
+                                  >
+                                    {selecionado ? "✓" : ""}
+                                  </span>
+                                  <span style={{ minWidth: 0 }}>
+                                    <span
+                                      style={{
+                                        display: "block",
+                                        color: "#0f172a",
+                                        fontWeight: 900,
+                                        fontSize: isMobile ? 13 : 14,
+                                        lineHeight: 1.25,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                      }}
+                                    >
+                                      {servico.nome}
+                                    </span>
+                                    <span
+                                      style={{
+                                        display: "block",
+                                        color: "#64748b",
+                                        fontWeight: 800,
+                                        fontSize: isMobile ? 11 : 12,
+                                        marginTop: 4,
+                                      }}
+                                    >
+                                      {duracao} min
+                                    </span>
+                                  </span>
+                                </span>
+
+                                <span
+                                  style={{
+                                    color: selecionado ? "#282663" : "#0f766e",
+                                    fontWeight: 950,
+                                    fontSize: isMobile ? 12 : 13,
+                                    flex: "0 0 auto",
+                                  }}
+                                >
+                                  {formatarMoeda(precoBaseServico(servico))}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
 
                         {servicos.length === 0 && (
                           <p
@@ -3395,32 +3540,16 @@ const botaoAba = (valor: string, label: string) => {
                           </p>
                         )}
 
-                        {servicoAgendamentoId && (
+                        {servicosAgendamentoIds.length > 0 && precoEspecialAplicado && (
                           <div
                             style={{
                               marginTop: 10,
-                              background: precoEspecialAplicado
-                                ? "#dcfce7"
-                                : "#fff",
-                              border: precoEspecialAplicado
-                                ? "1px solid #bbf7d0"
-                                : "1px solid #e2e8f0",
-                              color: precoEspecialAplicado
-                                ? "#166534"
-                                : "#0f172a",
-                              borderRadius: isMobile ? 12 : 14,
-                              padding: isMobile ? 10 : 12,
-                              fontWeight: 900,
+                              color: "#166534",
+                              fontWeight: 800,
+                              fontSize: isMobile ? 11 : 12,
                             }}
                           >
-                            {carregandoValorAgendamento
-                              ? "Calculando valor..."
-                              : `Valor: ${formatarMoeda(valorAgendamentoFinal)}`}
-                            {precoEspecialAplicado && (
-                              <span style={{ display: "block", fontSize: isMobile ? 11 : 12 }}>
-                                Preço especial deste cliente aplicado.
-                              </span>
-                            )}
+                            Preço especial deste cliente aplicado.
                           </div>
                         )}
                       </div>
@@ -3485,7 +3614,7 @@ const botaoAba = (valor: string, label: string) => {
                       )}
 
                       {!carregandoHorarios &&
-                        servicoAgendamentoId &&
+                        servicosAgendamentoIds.length > 0 &&
                         profissionalAgendamentoId &&
                         dataAgendamento &&
                         horariosLivres.length === 0 && (
@@ -3543,27 +3672,203 @@ const botaoAba = (valor: string, label: string) => {
                       </div>
                     </div>
 
-                    {servicoAgendamentoId && horarioAgendamento && (
+                    {servicosAgendamentoIds.length > 0 && (
                       <div
                         style={{
-                          marginTop: 18,
-                          background: "#f0f9ff",
-                          border: "1px solid #bae6fd",
-                          color: "#075985",
-                          borderRadius: 16,
-                          padding: 14,
-                          fontWeight: 800,
+                          marginTop: 20,
+                          background: "#ffffff",
+                          border: "1px solid #dbeafe",
+                          borderRadius: 22,
+                          padding: isMobile ? 14 : 18,
+                          boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
                         }}
                       >
-                        Resumo: {pegarServicoSelecionado()?.nome} em{" "}
-                        {formatarData(dataAgendamento)} às {horarioAgendamento}.
-                        <br />
-                        Valor do lançamento financeiro:{" "}
-                        {formatarMoeda(valorAgendamentoFinal)}
-                        {precoEspecialAplicado
-                          ? " (preço especial aplicado)"
-                          : ""}
-                        .
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            alignItems: isMobile ? "flex-start" : "center",
+                            flexDirection: isMobile ? "column" : "row",
+                            marginBottom: 14,
+                          }}
+                        >
+                          <div>
+                            <h4
+                              style={{
+                                margin: 0,
+                                color: "#0f172a",
+                                fontSize: 16,
+                                fontWeight: 900,
+                              }}
+                            >
+                              Resumo do agendamento
+                            </h4>
+                            <p
+                              style={{
+                                margin: "4px 0 0",
+                                color: "#64748b",
+                                fontSize: 13,
+                                fontWeight: 700,
+                              }}
+                            >
+                              Confira os detalhes antes de confirmar.
+                            </p>
+                          </div>
+
+                          <span
+                            style={{
+                              background: "#eef2ff",
+                              color: "#282663",
+                              border: "1px solid #c7d2fe",
+                              borderRadius: 999,
+                              padding: "8px 12px",
+                              fontSize: 13,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {servicosAgendamentoIds.length} serviço(s)
+                          </span>
+                        </div>
+
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {pegarServicosSelecionados().map((servico) => (
+                            <div
+                              key={servico.id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 12,
+                                alignItems: "center",
+                                background: "#f8fafc",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 14,
+                                padding: "10px 12px",
+                              }}
+                            >
+                              <div>
+                                <div style={{ color: "#0f172a", fontWeight: 900 }}>
+                                  {servico.nome}
+                                </div>
+                                <div
+                                  style={{
+                                    color: "#64748b",
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {Number(servico.duracao_padrao_minutos || servico.duracao || 60)} min
+                                </div>
+                              </div>
+
+                              <div
+                                style={{
+                                  color: "#047857",
+                                  fontWeight: 900,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {formatarMoeda(
+  Number(
+    servico.valor ||
+    servico.preco ||
+    servico.valor_servico ||
+    0
+  )
+)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: isMobile
+                              ? "1fr 1fr"
+                              : "repeat(4, minmax(0, 1fr))",
+                            gap: 10,
+                            marginTop: 14,
+                          }}
+                        >
+                          <div
+                            style={{
+                              background: "#eef2ff",
+                              borderRadius: 16,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ color: "#6366f1", fontSize: 12, fontWeight: 900 }}>
+                              Valor total
+                            </div>
+                            <div style={{ color: "#282663", fontSize: 18, fontWeight: 900 }}>
+                              {formatarMoeda(valorAgendamentoFinal)}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              borderRadius: 16,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>
+                              Duração
+                            </div>
+                            <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 900 }}>
+                              {duracaoTotalServicos(pegarServicosSelecionados())} min
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              borderRadius: 16,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>
+                              Data
+                            </div>
+                            <div style={{ color: "#0f172a", fontSize: 15, fontWeight: 900 }}>
+                              {formatarData(dataAgendamento)}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              borderRadius: 16,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>
+                              Horário
+                            </div>
+                            <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 900 }}>
+                              {horarioAgendamento || "Selecione"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {precoEspecialAplicado && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              color: "#047857",
+                              background: "#ecfdf5",
+                              border: "1px solid #bbf7d0",
+                              borderRadius: 14,
+                              padding: "10px 12px",
+                              fontSize: 13,
+                              fontWeight: 900,
+                            }}
+                          >
+                            Preço especial aplicado para este cliente.
+                          </div>
+                        )}
                       </div>
                     )}
 

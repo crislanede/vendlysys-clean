@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { abrirWhatsapp, aplicarVariaveisWhatsapp } from "../lib/whatsapp";
+import { abrirWhatsapp, aplicarVariaveisWhatsapp, montarLinkMeuEspaco } from "../lib/whatsapp";
 import { useEmpresa } from "../hooks/useEmpresa";
 
 type ItemFila = {
@@ -15,6 +15,7 @@ type ItemFila = {
 
 type Agendamento = {
   id: string;
+  cliente_id?: string | null;
   cliente: string | null;
   telefone: string | null;
   servico: string | null;
@@ -25,6 +26,17 @@ type Agendamento = {
   status: string | null;
   status_atendimento?: string | null;
   empresa_id: string | null;
+};
+
+type ClientePacote = {
+  id: string;
+  empresa_id: string | null;
+  cliente_id: string | null;
+  pacote_id: string | null;
+  data_inicio?: string | null;
+  data_fim?: string | null;
+  status?: string | null;
+  created_at?: string | null;
 };
 
 export default function WhatsappFila() {
@@ -99,6 +111,190 @@ export default function WhatsappFila() {
       .maybeSingle();
 
     return !!data;
+  }
+
+  async function jaExisteComboNaFila(clienteId: string, tipo: string) {
+    const { data } = await supabase
+      .from("whatsapp_fila")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("cliente_id", clienteId)
+      .eq("tipo", tipo)
+      .neq("status", "enviado")
+      .limit(1);
+
+    return !!data?.length;
+  }
+
+  async function buscarTokenMeuEspaco(clienteId: string) {
+    const { data, error } = await supabase
+      .from("agendamentos")
+      .select("token_cliente, token, created_at")
+      .eq("empresa_id", empresaId)
+      .eq("cliente_id", clienteId)
+      .not("token_cliente", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Não foi possível buscar token do Meu Espaço:", error);
+      return "";
+    }
+
+    return data?.token_cliente || data?.token || "";
+  }
+
+  async function gerarLembretesCombo(empresaNome: string, hoje: string) {
+    const tipo = "lembrete_combo";
+
+    const modeloCombo =
+      (await buscarModelo(tipo)) ||
+      `Olá, {{cliente}}!
+
+Percebemos que você ainda não agendou o uso do seu combo desta semana.
+
+Para não perder nenhuma sessão do seu pacote, recomendamos que realize o agendamento o quanto antes 😊
+
+Para aproveitar suas sessões dentro do prazo, clique abaixo e escolha seu horário:
+
+{{link_meu_espaco}}`;
+
+    const { data: vinculos, error: erroVinculos } = await supabase
+      .from("cliente_pacotes")
+      .select("id, empresa_id, cliente_id, pacote_id, data_inicio, data_fim, status, created_at")
+      .eq("empresa_id", empresaId)
+      .eq("status", "ativo");
+
+    if (erroVinculos) {
+      console.error("Erro ao buscar combos ativos:", erroVinculos);
+      return 0;
+    }
+
+    const listaVinculos = ((vinculos || []) as ClientePacote[]).filter((vinculo) => {
+      if (!vinculo.cliente_id) return false;
+      if (vinculo.data_fim && vinculo.data_fim < hoje) return false;
+      return true;
+    });
+
+    if (listaVinculos.length === 0) return 0;
+
+    const idsVinculos = listaVinculos.map((item) => item.id).filter(Boolean);
+    const idsClientes = Array.from(
+      new Set(listaVinculos.map((item) => item.cliente_id).filter(Boolean)),
+    ) as string[];
+    const idsPacotes = Array.from(
+      new Set(listaVinculos.map((item) => item.pacote_id).filter(Boolean)),
+    ) as string[];
+
+    const { data: clientesBanco } = idsClientes.length
+      ? await supabase
+          .from("clientes")
+          .select("id, nome, telefone")
+          .in("id", idsClientes)
+      : { data: [] as any[] };
+
+    const { data: pacotesBanco } = idsPacotes.length
+      ? await supabase
+          .from("marketing_pacotes")
+          .select("id, nome")
+          .in("id", idsPacotes)
+      : { data: [] as any[] };
+
+    const { data: saldosBanco, error: erroSaldos } = idsVinculos.length
+      ? await supabase
+          .from("cliente_pacote_saldos")
+          .select("cliente_pacote_id, quantidade_total, quantidade_usada")
+          .in("cliente_pacote_id", idsVinculos)
+      : { data: [] as any[], error: null };
+
+    if (erroSaldos) {
+      console.error("Erro ao buscar saldos dos combos:", erroSaldos);
+      return 0;
+    }
+
+    const { data: agendamentosFuturos } = idsClientes.length
+      ? await supabase
+          .from("agendamentos")
+          .select("id, cliente_id, data, status, status_atendimento")
+          .eq("empresa_id", empresaId)
+          .gte("data", hoje)
+          .in("cliente_id", idsClientes)
+      : { data: [] as any[] };
+
+    const mapaClientes = new Map<string, any>(
+      (clientesBanco || []).map((item: any) => [item.id, item]),
+    );
+    const mapaPacotes = new Map<string, any>(
+      (pacotesBanco || []).map((item: any) => [item.id, item]),
+    );
+
+    let criadas = 0;
+
+    for (const vinculo of listaVinculos) {
+      const clienteId = vinculo.cliente_id || "";
+      const cliente = mapaClientes.get(clienteId);
+      const pacote = mapaPacotes.get(vinculo.pacote_id || "");
+
+      if (!cliente?.telefone) continue;
+
+      const saldos = (saldosBanco || []).filter(
+        (saldo: any) => saldo.cliente_pacote_id === vinculo.id,
+      );
+
+      const totalSessoes = saldos.reduce(
+        (total: number, saldo: any) => total + Number(saldo.quantidade_total || 0),
+        0,
+      );
+      const totalUsado = saldos.reduce(
+        (total: number, saldo: any) => total + Number(saldo.quantidade_usada || 0),
+        0,
+      );
+      const totalRestante = Math.max(totalSessoes - totalUsado, 0);
+
+      if (totalRestante <= 0) continue;
+
+      const temAgendamentoFuturo = (agendamentosFuturos || []).some((ag: any) => {
+        const status = String(ag.status || ag.status_atendimento || "").toLowerCase();
+        return ag.cliente_id === clienteId && !["cancelado", "cancelada"].includes(status);
+      });
+
+      if (temAgendamentoFuturo) continue;
+
+      const existe = await jaExisteComboNaFila(clienteId, tipo);
+      if (existe) continue;
+
+      const token = await buscarTokenMeuEspaco(clienteId);
+      const linkMeuEspaco = montarLinkMeuEspaco(token);
+
+      const mensagem = aplicarVariaveisWhatsapp(modeloCombo, {
+        cliente: cliente.nome,
+        empresa: empresaNome,
+        servico: pacote?.nome || "combo",
+        titulo: pacote?.nome || "Combo",
+        mensagem: pacote?.nome || "Combo",
+        link_meu_espaco: linkMeuEspaco,
+      });
+
+      const { error: insertError } = await supabase.from("whatsapp_fila").insert({
+        empresa_id: empresaId,
+        cliente_id: clienteId,
+        cliente: cliente.nome,
+        telefone: cliente.telefone,
+        tipo,
+        mensagem,
+        status: "pendente",
+      });
+
+      if (insertError) {
+        console.error("Erro ao inserir lembrete de combo:", insertError);
+        continue;
+      }
+
+      criadas++;
+    }
+
+    return criadas;
   }
 
   async function gerarFilaAutomatica() {
@@ -204,10 +400,13 @@ export default function WhatsappFila() {
       }
     }
 
+    const combosCriados = await gerarLembretesCombo(empresaNome, hoje);
+    criadas += combosCriados;
+
     setGerando(false);
     await carregarFila();
 
-    alert(`${criadas} mensagem(ns) adicionada(s) à fila.`);
+    alert(`${criadas} mensagem(ns) adicionada(s) à fila. (${combosCriados} de combo)`);
   }
 
   async function marcarEnviado(item: ItemFila) {
@@ -278,8 +477,7 @@ export default function WhatsappFila() {
           </h1>
 
           <p className="text-slate-500">
-            Gere lembretes de amanhã e agradecimentos dos atendimentos
-            finalizados hoje.
+            Gere lembretes de amanhã, agradecimentos e lembretes de uso de combos.
           </p>
         </div>
 

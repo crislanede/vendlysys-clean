@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { abrirWhatsapp, montarMensagemCampanha } from "../lib/whatsapp";
+import { abrirWhatsapp } from "../lib/whatsapp";
 
 type Cliente = {
   id: string;
@@ -16,23 +16,51 @@ type Configuracao = {
 type ModeloMensagem = {
   id: string;
   nome: string;
-  titulo: string;
-  conteudo: string;
+  titulo?: string | null;
+  conteudo?: string | null;
+  mensagem?: string | null;
+  texto?: string | null;
+  corpo?: string | null;
   ativo?: boolean;
   criado_em?: string;
   atualizado_em?: string;
 };
 
+function obterConteudoModelo(modelo?: ModeloMensagem | null) {
+  return (
+    modelo?.conteudo ||
+    modelo?.mensagem ||
+    modelo?.texto ||
+    modelo?.corpo ||
+    ""
+  );
+}
+
+function montarLinkMeuEspaco(token?: string | null) {
+  if (!token) {
+    return `${window.location.origin}/meu-espaco`;
+  }
+
+  return `${window.location.origin}/meu-espaco?token=${token}`;
+}
+
 function substituirVariaveis(
-  texto: string,
+  texto?: string | null,
   dados: {
     cliente?: string;
     empresa?: string;
-  }
+    link_meu_espaco?: string;
+  } = {},
 ) {
-  return texto
+  const mensagem = texto ?? "";
+
+  return mensagem
+    .replaceAll("{{cliente}}", dados.cliente || "")
     .replaceAll("{cliente}", dados.cliente || "")
-    .replaceAll("{empresa}", dados.empresa || "");
+    .replaceAll("{{empresa}}", dados.empresa || "")
+    .replaceAll("{empresa}", dados.empresa || "")
+    .replaceAll("{{link_meu_espaco}}", dados.link_meu_espaco || "")
+    .replaceAll("{link_meu_espaco}", dados.link_meu_espaco || "");
 }
 
 export default function WhatsappCampanhaPage() {
@@ -115,7 +143,13 @@ export default function WhatsappCampanhaPage() {
       return;
     }
 
-    setModelos((data || []) as ModeloMensagem[]);
+    const modelosNormalizados = ((data || []) as ModeloMensagem[]).map((modelo) => ({
+      ...modelo,
+      titulo: modelo.titulo || modelo.nome || "",
+      conteudo: obterConteudoModelo(modelo),
+    }));
+
+    setModelos(modelosNormalizados);
     setCarregandoModelos(false);
   }
 
@@ -125,9 +159,27 @@ export default function WhatsappCampanhaPage() {
     const modelo = modelos.find((m) => m.id === modeloId);
     if (!modelo) return;
 
-    setNovoModeloNome(modelo.nome);
-    setTitulo(modelo.titulo);
-    setConteudo(modelo.conteudo);
+    setNovoModeloNome(modelo.nome || "");
+    setTitulo(modelo.titulo || modelo.nome || "");
+    setConteudo(obterConteudoModelo(modelo));
+  }
+
+  async function buscarTokenMeuEspaco(clienteId: string) {
+    const { data, error } = await supabase
+      .from("agendamentos")
+      .select("token_cliente, token, created_at")
+      .eq("cliente_id", clienteId)
+      .not("token_cliente", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Não foi possível buscar token do Meu Espaço:", error);
+      return "";
+    }
+
+    return data?.token_cliente || data?.token || "";
   }
 
   async function salvarNovoModelo() {
@@ -158,15 +210,15 @@ export default function WhatsappCampanhaPage() {
 
     if (error) {
       console.error("Erro ao salvar modelo:", error);
-      alert("Erro ao salvar modelo.");
+      alert(`Erro ao salvar modelo: ${error.message}`);
       setSalvandoModelo(false);
       return;
     }
 
     setModelos((atual) =>
       [...atual, data as ModeloMensagem].sort((a, b) =>
-        a.nome.localeCompare(b.nome)
-      )
+        a.nome.localeCompare(b.nome),
+      ),
     );
     setModeloSelecionadoId(data.id);
     alert("Modelo salvo com sucesso.");
@@ -200,7 +252,7 @@ export default function WhatsappCampanhaPage() {
 
     if (error) {
       console.error("Erro ao atualizar modelo:", error);
-      alert("Erro ao atualizar modelo.");
+      alert(`Erro ao atualizar modelo: ${error.message}`);
       return;
     }
 
@@ -224,7 +276,7 @@ export default function WhatsappCampanhaPage() {
 
     if (error) {
       console.error("Erro ao inativar modelo:", error);
-      alert("Erro ao inativar modelo.");
+      alert(`Erro ao inativar modelo: ${error.message}`);
       return;
     }
 
@@ -247,40 +299,42 @@ export default function WhatsappCampanhaPage() {
       return;
     }
 
-    if (!titulo.trim() || !conteudo.trim()) {
+    const modeloSelecionado = modelos.find((m) => m.id === modeloSelecionadoId);
+    const tituloEfetivo = titulo || modeloSelecionado?.titulo || modeloSelecionado?.nome || "";
+    const conteudoEfetivo = conteudo || obterConteudoModelo(modeloSelecionado);
+
+    if (!tituloEfetivo.trim() || !conteudoEfetivo.trim()) {
       alert("Preencha título e conteúdo.");
       return;
     }
 
-    const descricaoFinal = substituirVariaveis(conteudo, {
+    const token = await buscarTokenMeuEspaco(clienteSelecionado.id);
+    const linkMeuEspaco = montarLinkMeuEspaco(token);
+
+    const mensagemFinal = substituirVariaveis(conteudoEfetivo, {
       cliente: clienteSelecionado.nome,
       empresa: nomeEmpresa,
+      link_meu_espaco: linkMeuEspaco,
     });
 
-    const mensagem = montarMensagemCampanha({
-      cliente: clienteSelecionado.nome,
-      titulo: titulo.trim(),
-      descricao: descricaoFinal,
-      empresa: nomeEmpresa,
-    });
-
-    abrirWhatsapp(clienteSelecionado.telefone, mensagem);
+    abrirWhatsapp(clienteSelecionado.telefone, mensagemFinal);
 
     await supabase.from("whatsapp_logs").insert([
       {
         cliente_id: clienteSelecionado.id,
         cliente: clienteSelecionado.nome,
         telefone: clienteSelecionado.telefone,
-        mensagem,
+        mensagem: mensagemFinal,
         tipo: "campanha",
         status: "enviado",
       },
     ]);
   }
 
-  const preview = substituirVariaveis(conteudo, {
+  const preview = substituirVariaveis(conteudo || obterConteudoModelo(modelos.find((m) => m.id === modeloSelecionadoId)), {
     cliente: clienteSelecionado?.nome || "Cliente",
     empresa: nomeEmpresa,
+    link_meu_espaco: montarLinkMeuEspaco("token-do-cliente"),
   });
 
   return (
@@ -366,10 +420,11 @@ export default function WhatsappCampanhaPage() {
             value={conteudo}
             onChange={(e) => setConteudo(e.target.value)}
             className="min-h-[180px] w-full rounded-lg border p-3"
-            placeholder="Use variáveis como {cliente} e {empresa}"
+            placeholder="Use variáveis como {cliente}, {empresa} e {link_meu_espaco}"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Variáveis disponíveis: {"{cliente}"} e {"{empresa}"}
+            Variáveis disponíveis: {"{cliente}"}, {"{empresa}"} e{" "}
+            {"{link_meu_espaco}"}
           </p>
         </div>
 

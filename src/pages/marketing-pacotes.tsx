@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
 
@@ -77,6 +77,8 @@ export default function MarketingPacotes() {
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [pacotes, setPacotes] = useState<Pacote[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [pacotesCliente, setPacotesCliente] = useState<any[]>([]);
+  const [carregandoPacotesCliente, setCarregandoPacotesCliente] = useState(false);
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -92,6 +94,14 @@ export default function MarketingPacotes() {
   const [vinculoDataFim, setVinculoDataFim] = useState(dataAposDiasISO(30));
   const [vinculoQuantidadePacotes, setVinculoQuantidadePacotes] = useState("1");
   const [vinculoValidadeDias, setVinculoValidadeDias] = useState("30");
+
+  const [modalEditarVinculoAberto, setModalEditarVinculoAberto] = useState(false);
+  const [vinculoEditando, setVinculoEditando] = useState<any>(null);
+  const [editVinculoQuantidadePacotes, setEditVinculoQuantidadePacotes] = useState("1");
+  const [editVinculoDataInicio, setEditVinculoDataInicio] = useState(hojeISO());
+  const [editVinculoDataFim, setEditVinculoDataFim] = useState("");
+  const [editVinculoStatus, setEditVinculoStatus] = useState("ativo");
+  const [salvandoVinculoCliente, setSalvandoVinculoCliente] = useState(false);
 
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -126,6 +136,7 @@ export default function MarketingPacotes() {
       carregarServicos(),
       carregarPacotes(),
       carregarClientes(),
+      carregarPacotesCliente(),
     ]);
   }
 
@@ -182,6 +193,168 @@ export default function MarketingPacotes() {
     }
 
     setPacotes(data || []);
+  }
+
+
+  async function carregarPacotesCliente() {
+    if (!empresaId) return;
+
+    setCarregandoPacotesCliente(true);
+
+    const { data: vinculos, error: erroVinculos } = await supabase
+      .from("cliente_pacotes")
+      .select(
+        "id, empresa_id, cliente_id, pacote_id, data_inicio, data_fim, validade_dias, quantidade_pacotes, status, created_at",
+      )
+      .eq("empresa_id", empresaId)
+      .order("created_at", { ascending: false });
+
+    if (erroVinculos) {
+      console.error("Erro ao carregar pacotes atribuídos:", erroVinculos);
+      setPacotesCliente([]);
+      setCarregandoPacotesCliente(false);
+      return;
+    }
+
+    const listaVinculos = vinculos || [];
+
+    if (listaVinculos.length === 0) {
+      setPacotesCliente([]);
+      setCarregandoPacotesCliente(false);
+      return;
+    }
+
+    const idsVinculos = listaVinculos.map((item: any) => item.id).filter(Boolean);
+    const idsClientes = Array.from(
+      new Set(listaVinculos.map((item: any) => item.cliente_id).filter(Boolean)),
+    );
+    const idsPacotes = Array.from(
+      new Set(listaVinculos.map((item: any) => item.pacote_id).filter(Boolean)),
+    );
+
+    const { data: clientesBanco } = idsClientes.length
+      ? await supabase
+          .from("clientes")
+          .select("id, nome, telefone")
+          .in("id", idsClientes)
+      : { data: [] as any[] };
+
+    const { data: pacotesBanco } = idsPacotes.length
+      ? await supabase
+          .from("marketing_pacotes")
+          .select("id, nome, valor_final, valor_original, status")
+          .in("id", idsPacotes)
+      : { data: [] as any[] };
+
+    const { data: saldosBanco, error: erroSaldos } = idsVinculos.length
+      ? await supabase
+          .from("cliente_pacote_saldos")
+          .select("id, cliente_pacote_id, servico_id, quantidade_total, quantidade_usada")
+          .in("cliente_pacote_id", idsVinculos)
+      : { data: [] as any[], error: null };
+
+    if (erroSaldos) {
+      console.error("Erro ao carregar saldos dos pacotes atribuídos:", erroSaldos);
+    }
+
+    const mapaClientes = new Map<string, any>((clientesBanco || []).map((item: any) => [item.id, item]));
+    const mapaPacotes = new Map<string, any>((pacotesBanco || []).map((item: any) => [item.id, item]));
+
+    const montados = listaVinculos.map((vinculo: any) => {
+      const saldos = (saldosBanco || []).filter(
+        (saldo: any) => saldo.cliente_pacote_id === vinculo.id,
+      );
+
+      const totalSessoes = saldos.reduce(
+        (total: number, saldo: any) => total + Number(saldo.quantidade_total || 0),
+        0,
+      );
+      const totalUsado = saldos.reduce(
+        (total: number, saldo: any) => total + Number(saldo.quantidade_usada || 0),
+        0,
+      );
+      const totalRestante = Math.max(totalSessoes - totalUsado, 0);
+      const cliente = mapaClientes.get(vinculo.cliente_id) || null;
+      const pacote = mapaPacotes.get(vinculo.pacote_id) || null;
+
+      return {
+        ...vinculo,
+        cliente,
+        pacote,
+        cliente_nome: cliente?.nome || "Cliente",
+        cliente_telefone: cliente?.telefone || "",
+        total_sessoes: totalSessoes,
+        total_usado: totalUsado,
+        total_restante: totalRestante,
+      };
+    });
+
+    setPacotesCliente(montados);
+    setCarregandoPacotesCliente(false);
+  }
+
+  function abrirEditarPacoteCliente(vinculo: any) {
+    setVinculoEditando(vinculo);
+    setEditVinculoQuantidadePacotes(String(vinculo.quantidade_pacotes || 1));
+    setEditVinculoDataInicio(vinculo.data_inicio || hojeISO());
+    setEditVinculoDataFim(vinculo.data_fim || "");
+    setEditVinculoStatus(String(vinculo.status || "ativo"));
+    setModalEditarVinculoAberto(true);
+  }
+
+  async function salvarEdicaoPacoteCliente() {
+    if (!vinculoEditando?.id) return;
+
+    const quantidadePacotes = Number(editVinculoQuantidadePacotes || 1);
+
+    if (!quantidadePacotes || quantidadePacotes < 1) {
+      alert("Informe uma quantidade de pacotes válida.");
+      return;
+    }
+
+    setSalvandoVinculoCliente(true);
+
+    const { error } = await supabase
+      .from("cliente_pacotes")
+      .update({
+        quantidade_pacotes: quantidadePacotes,
+        data_inicio: editVinculoDataInicio || null,
+        data_fim: editVinculoDataFim || null,
+        status: editVinculoStatus || "ativo",
+      })
+      .eq("id", vinculoEditando.id);
+
+    setSalvandoVinculoCliente(false);
+
+    if (error) {
+      alert("Erro ao editar pacote atribuído: " + error.message);
+      return;
+    }
+
+    setModalEditarVinculoAberto(false);
+    setVinculoEditando(null);
+    await carregarPacotesCliente();
+  }
+
+  async function cancelarPacoteCliente(vinculo: any) {
+    const confirmar = window.confirm(
+      `Cancelar o pacote "${vinculo.pacote?.nome || "Pacote"}" de ${vinculo.cliente_nome || "cliente"}?`,
+    );
+
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("cliente_pacotes")
+      .update({ status: "cancelado" })
+      .eq("id", vinculo.id);
+
+    if (error) {
+      alert("Erro ao cancelar pacote: " + error.message);
+      return;
+    }
+
+    alert("Pacote cancelado com sucesso.");
+    await carregarPacotesCliente();
   }
 
   function valorServico(servico?: Servico | null) {
@@ -569,8 +742,9 @@ export default function MarketingPacotes() {
       return;
     }
 
-    alert("Pacote vinculado ao cliente com sucesso!");
+    alert("Pacote atribuído ao cliente com sucesso!");
     setModalVinculoAberto(false);
+    void carregarPacotesCliente();
   }
 
   const pacotesFiltrados = pacotes.filter((pacote) => {
@@ -579,7 +753,7 @@ export default function MarketingPacotes() {
     return texto.includes(busca.toLowerCase());
   });
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: isMobile ? 12 : 14,
@@ -589,7 +763,7 @@ export default function MarketingPacotes() {
     boxSizing: "border-box",
   };
 
-  const cardStyle: React.CSSProperties = {
+  const cardStyle: CSSProperties = {
     background: "#fff",
     border: "1px solid #d8def0",
     borderRadius: isMobile ? 18 : 22,
@@ -597,7 +771,7 @@ export default function MarketingPacotes() {
     boxShadow: "0 8px 20px rgba(15, 23, 42, 0.06)",
   };
 
-  const primaryButton: React.CSSProperties = {
+  const primaryButton: CSSProperties = {
     background: "var(--cor-primaria, #27245f)",
     color: "#fff",
     border: "none",
@@ -608,7 +782,7 @@ export default function MarketingPacotes() {
     width: isMobile ? "100%" : undefined,
   };
 
-  const secondaryButton: React.CSSProperties = {
+  const secondaryButton: CSSProperties = {
     background: "#fff",
     color: "#172554",
     border: "1px solid #cbd5e1",
@@ -618,7 +792,7 @@ export default function MarketingPacotes() {
     cursor: "pointer",
   };
 
-  const dangerButton: React.CSSProperties = {
+  const dangerButton: CSSProperties = {
     background: "#fee2e2",
     color: "#dc2626",
     border: "none",
@@ -800,7 +974,7 @@ export default function MarketingPacotes() {
             onClick={() => abrirVincularPacote()}
             style={{ ...secondaryButton, width: isMobile ? "100%" : undefined }}
           >
-            + Vincular ao cliente
+            + Atribuir pacote
           </button>
 
           <button type="button" onClick={abrirNovoPacote} style={primaryButton}>
@@ -1056,6 +1230,452 @@ export default function MarketingPacotes() {
         )}
       </div>
 
+
+      <div style={{ ...cardStyle, marginTop: isMobile ? 18 : 24 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: "space-between",
+            gap: 14,
+            alignItems: isMobile ? "stretch" : "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 22 }}>
+              Pacotes atribuídos
+            </h2>
+            <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+              Clientes que já possuem pacotes vinculados e saldo disponível.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void carregarPacotesCliente()}
+            style={{ ...secondaryButton, width: isMobile ? "100%" : undefined }}
+          >
+            Atualizar
+          </button>
+        </div>
+
+        {!isMobile && (
+          <div style={{ marginTop: 18, overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fafc", color: "#475569" }}>
+                  <th style={{ padding: 14, textAlign: "left" }}>Cliente</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Pacote</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Sessões</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Validade</th>
+                  <th style={{ padding: 14, textAlign: "left" }}>Status</th>
+                  <th style={{ padding: 14, textAlign: "right" }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {carregandoPacotesCliente ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      style={{
+                        padding: 24,
+                        textAlign: "center",
+                        color: "#64748b",
+                      }}
+                    >
+                      Carregando pacotes atribuídos...
+                    </td>
+                  </tr>
+                ) : pacotesCliente.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      style={{
+                        padding: 24,
+                        textAlign: "center",
+                        color: "#64748b",
+                      }}
+                    >
+                      Nenhum pacote atribuído a cliente ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  pacotesCliente.map((vinculo: any) => {
+                    const total = Number(vinculo.total_sessoes || 0);
+                    const usado = Number(vinculo.total_usado || 0);
+                    const restante = Number(vinculo.total_restante || 0);
+                    const statusAtual = String(vinculo.status || "ativo").toLowerCase();
+                    const ativo = statusAtual === "ativo" && restante > 0;
+
+                    return (
+                      <tr
+                        key={vinculo.id}
+                        style={{ borderTop: "1px solid #e2e8f0" }}
+                      >
+                        <td style={{ padding: 14 }}>
+                          <div style={{ fontWeight: 900 }}>
+                            {vinculo.cliente_nome || "Cliente"}
+                          </div>
+                          {vinculo.cliente_telefone && (
+                            <div style={{ color: "#64748b", fontSize: 12 }}>
+                              {vinculo.cliente_telefone}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: 14 }}>
+                          {vinculo.pacote?.nome || "Pacote"}
+                        </td>
+                        <td style={{ padding: 14 }}>
+                          <strong>{usado}/{total}</strong>
+                          <div style={{ color: "#64748b", fontSize: 12 }}>
+                            Restam {restante}
+                          </div>
+                        </td>
+                        <td style={{ padding: 14 }}>
+                          {vinculo.data_fim || "Sem validade"}
+                        </td>
+                        <td style={{ padding: 14 }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              padding: "5px 10px",
+                              borderRadius: 999,
+                              fontWeight: 800,
+                              fontSize: 12,
+                              background: ativo ? "#dcfce7" : "#fee2e2",
+                              color: ativo ? "#15803d" : "#b91c1c",
+                            }}
+                          >
+                            {ativo ? "Ativo" : restante <= 0 ? "Esgotado" : "Inativo"}
+                          </span>
+                        </td>
+                        <td style={{ padding: 14, textAlign: "right" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "flex-end",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => abrirEditarPacoteCliente(vinculo)}
+                              style={secondaryButton}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void cancelarPacoteCliente(vinculo)}
+                              style={dangerButton}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {isMobile && (
+          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+            {carregandoPacotesCliente ? (
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#64748b",
+                  textAlign: "center",
+                }}
+              >
+                Carregando pacotes atribuídos...
+              </div>
+            ) : pacotesCliente.length === 0 ? (
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#64748b",
+                  textAlign: "center",
+                }}
+              >
+                Nenhum pacote atribuído a cliente ainda.
+              </div>
+            ) : (
+              pacotesCliente.map((vinculo: any) => {
+                const total = Number(vinculo.total_sessoes || 0);
+                const usado = Number(vinculo.total_usado || 0);
+                const restante = Number(vinculo.total_restante || 0);
+                const statusAtual = String(vinculo.status || "ativo").toLowerCase();
+                const ativo = statusAtual === "ativo" && restante > 0;
+
+                return (
+                  <div
+                    key={vinculo.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 14,
+                      background: "#fff",
+                      boxShadow: "0 6px 16px rgba(15,23,42,.05)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: 16 }}>
+                          {vinculo.cliente_nome || "Cliente"}
+                        </h3>
+                        <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 12 }}>
+                          {vinculo.pacote?.nome || "Pacote"}
+                        </p>
+                      </div>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          padding: "5px 10px",
+                          borderRadius: 999,
+                          fontWeight: 800,
+                          fontSize: 12,
+                          background: ativo ? "#dcfce7" : "#fee2e2",
+                          color: ativo ? "#15803d" : "#b91c1c",
+                        }}
+                      >
+                        {ativo ? "Ativo" : restante <= 0 ? "Esgotado" : "Inativo"}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ borderRadius: 14, background: "#f8fafc", padding: 10 }}>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>Sessões</p>
+                        <strong>{usado}/{total}</strong>
+                      </div>
+                      <div style={{ borderRadius: 14, background: "#f8fafc", padding: 10 }}>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>Restam</p>
+                        <strong>{restante}</strong>
+                      </div>
+                      <div style={{ borderRadius: 14, background: "#f8fafc", padding: 10 }}>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>Validade</p>
+                        <strong>{vinculo.data_fim || "Sem validade"}</strong>
+                      </div>
+                      <div style={{ borderRadius: 14, background: "#f8fafc", padding: 10 }}>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>Pacotes</p>
+                        <strong>{vinculo.quantidade_pacotes || 1}</strong>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: isMobile ? "column" : "row",
+                        gap: 8,
+                        marginTop: 12,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => abrirEditarPacoteCliente(vinculo)}
+                        style={secondaryButton}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void cancelarPacoteCliente(vinculo)}
+                        style={dangerButton}
+                      >
+                        Cancelar pacote
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      {modalEditarVinculoAberto && vinculoEditando && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.55)",
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: isMobile ? 10 : 20,
+          }}
+        >
+          <div
+            style={{
+              width: isMobile ? "100%" : "min(760px, 94vw)",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: isMobile ? 20 : 22,
+              padding: isMobile ? 16 : 26,
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.30)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: isMobile ? "stretch" : "center",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Editar pacote atribuído</h2>
+                <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+                  {vinculoEditando.cliente_nome || "Cliente"} • {vinculoEditando.pacote?.nome || "Pacote"}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModalEditarVinculoAberto(false);
+                  setVinculoEditando(null);
+                }}
+                style={secondaryButton}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 22,
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                gap: 16,
+              }}
+            >
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>
+                  Quantidade de pacotes
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editVinculoQuantidadePacotes}
+                  onChange={(e) => setEditVinculoQuantidadePacotes(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Status</label>
+                <select
+                  value={editVinculoStatus}
+                  onChange={(e) => setEditVinculoStatus(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Data início</label>
+                <input
+                  type="date"
+                  value={editVinculoDataInicio}
+                  onChange={(e) => setEditVinculoDataInicio(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 900, fontSize: 13 }}>Válido até</label>
+                <input
+                  type="date"
+                  value={editVinculoDataFim}
+                  onChange={(e) => setEditVinculoDataFim(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                border: "1px solid #d8def0",
+                background: "#f8fafc",
+                borderRadius: 18,
+                padding: 16,
+                color: "#334155",
+                fontSize: 14,
+              }}
+            >
+              <strong>Importante:</strong> cancelar ou inativar não apaga o histórico.
+              O pacote deixa de aparecer como ativo para uso nos atendimentos.
+            </div>
+
+            <div
+              style={{
+                marginTop: 22,
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                gap: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setModalEditarVinculoAberto(false);
+                  setVinculoEditando(null);
+                }}
+                style={secondaryButton}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void salvarEdicaoPacoteCliente()}
+                disabled={salvandoVinculoCliente}
+                style={primaryButton}
+              >
+                {salvandoVinculoCliente ? "Salvando..." : "Salvar alterações"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalVinculoAberto && (
         <div
           style={{
@@ -1090,7 +1710,7 @@ export default function MarketingPacotes() {
               }}
             >
               <div>
-                <h2 style={{ margin: 0 }}>Vincular pacote ao cliente</h2>
+                <h2 style={{ margin: 0 }}>Atribuir pacote ao cliente</h2>
                 <p
                   style={{ margin: "6px 0 0", color: "#64748b", fontSize: 14 }}
                 >
@@ -1245,7 +1865,7 @@ export default function MarketingPacotes() {
                 disabled={vinculando}
                 style={primaryButton}
               >
-                {vinculando ? "Vinculando..." : "Vincular pacote"}
+                {vinculando ? "Atribuindo..." : "Atribuir pacote"}
               </button>
             </div>
           </div>

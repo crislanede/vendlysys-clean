@@ -72,6 +72,11 @@ export default function Sidebar() {
           icone: Scissors,
         },
         {
+  nome: "Combos",
+  rota: "/marketing-pacotes",
+  icone: Package,
+},
+        {
           nome: "Produtos",
           rota: "/produtos",
           icone: Package,
