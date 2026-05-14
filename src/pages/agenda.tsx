@@ -7,6 +7,7 @@ import MiniCalendar from "../components/MiniCalendar";
 import AgendaActions from "./agenda/components/AgendaActions";
 import AgendaHeader from "./agenda/components/AgendaHeader";
 import ResumoDia from "./agenda/components/ResumoDia";
+import ModalReagendamento from "./agenda/components/ModalReagendamento";
 import { classByStatus } from "./agenda/status";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 import {
@@ -2168,100 +2169,22 @@ ${linkMeuEspaco}`;
         </div>
       )}
 
-      {modalReagendarAberto && agendamentoReagendar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-orange-600">
-                  Reagendamento
-                </p>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  Reagendar atendimento
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Escolha uma nova data e horário para este agendamento.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setModalReagendarAberto(false);
-                  setAgendamentoReagendar(null);
-                }}
-                className="rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600"
-              >
-                Fechar
-              </button>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
-              <p>
-                <strong>Cliente:</strong> {agendamentoReagendar.cliente}
-              </p>
-              <p>
-                <strong>Serviço:</strong> {agendamentoReagendar.servico}
-              </p>
-              <p>
-                <strong>Profissional:</strong>{" "}
-                {agendamentoReagendar.profissional || "Não informado"}
-              </p>
-              <p>
-                <strong>Atual:</strong> {agendamentoReagendar.data} às{" "}
-                {agendamentoReagendar.horario}
-              </p>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Nova data
-                </label>
-                <input
-  type="date"
-  value={dataReagendamento}
-  min={usuarioEhAdmin() ? undefined : getTodayString()}
-  onChange={(e) => setDataReagendamento(e.target.value)}
-  className="mt-2 h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
-/>
-              </div>
-
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Novo horário
-                </label>
-                <select
-                  value={horaReagendamento}
-                  onChange={(e) => setHoraReagendamento(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
-                >
-                  <option value="">Selecione</option>
-                  {HORARIOS.map((horarioOpcao) => (
-                    <option key={horarioOpcao} value={horarioOpcao}>
-                      {horarioOpcao}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              <SecondaryButton
-                onClick={() => {
-                  setModalReagendarAberto(false);
-                  setAgendamentoReagendar(null);
-                }}
-              >
-                Cancelar
-              </SecondaryButton>
-              <PrimaryButton onClick={() => void salvarReagendamento()}>
-                {loadingReagendar ? "Salvando..." : "Salvar reagendamento"}
-              </PrimaryButton>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalReagendamento
+        aberto={modalReagendarAberto}
+        agendamento={agendamentoReagendar}
+        dataReagendamento={dataReagendamento}
+        horaReagendamento={horaReagendamento}
+        horarios={HORARIOS}
+        minData={usuarioEhAdmin() ? undefined : getTodayString()}
+        loading={loadingReagendar}
+        onChangeData={setDataReagendamento}
+        onChangeHora={setHoraReagendamento}
+        onFechar={() => {
+          setModalReagendarAberto(false);
+          setAgendamentoReagendar(null);
+        }}
+        onSalvar={() => void salvarReagendamento()}
+      />
 
       {modalFotosAberto && agendamentoFotos && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-6">
