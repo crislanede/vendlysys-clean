@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
+import PageHeader from "../components/ui/PageHeader";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
-import MiniCalendar from "../components/MiniCalendar";
-import AgendaActions from "./agenda/components/AgendaActions";
-import AgendaHeader from "./agenda/components/AgendaHeader";
-import ResumoDia from "./agenda/components/ResumoDia";
 import ModalReagendamento from "./agenda/components/ModalReagendamento";
-import ModalFinalizacao from "./agenda/components/ModalFinalizacao";
-import { classByStatus } from "./agenda/status";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 import {
   montarLinkMeuEspaco,
@@ -25,30 +20,87 @@ import {
   uploadFotoAtendimento,
 } from "../lib/storage/uploadFotoAtendimento";
 
-import type {
-  Cliente,
-  Servico,
-  Profissional,
-  Agendamento,
-  PacoteDisponivel,
-  FotoAtendimento,
-} from "./agenda/types";
+type Cliente = {
+  id: string;
+  nome: string;
+  telefone?: string | null;
+  email?: string | null;
+  data_nascimento?: string | null;
+};
 
-import {
-  hojeISO,
-  usuarioEhAdmin,
-  podeEditarData,
-  getTodayString,
-  parseTimeToMinutes,
-  somarMinutos,
-  formatDisplayDate,
-  filtrarAniversariantesDoMes,
-  formatarData,
-  formatarDataNascimento,
-  montarMensagemAniversario,
-  caminhoDaFoto,
-  rotuloAlertaAgenda,
-} from "./agenda/utils";
+type Servico = {
+  id: string;
+  nome: string;
+
+  valor?: number | null;
+  preco?: number | null;
+
+  promocao_ativa?: boolean | string | null;
+  preco_promocional?: number | string | null;
+
+  descricao?: string | null;
+  duracao?: number | null;
+  duracao_padrao_minutos?: number | null;
+  percentual_residencial?: number | null;
+};
+
+type Profissional = {
+  id: string;
+  nome: string;
+};
+
+type Agendamento = {
+  id: string;
+  cliente_id?: string | null;
+  profissional_id?: string | null;
+  servico_id?: string | null;
+  cliente?: string | null;
+  profissional?: string | null;
+  servico?: string | null;
+  data: string;
+  horario: string;
+  status?: string | null;
+  observacoes?: string | null;
+  no_show?: boolean | null;
+  valor?: number | null;
+  valor_pago?: number | null;
+  forma_pagamento?: string | null;
+  status_pagamento?: string | null;
+  finalizado_em?: string | null;
+  telefone?: string | null;
+  token?: string | null;
+  token_cliente?: string | null;
+  alertasAnamnese?: AlertaAnamneseItem[];
+  duracao_minutos?: number | null;
+  atendimento_residencial?: boolean | null;
+  percentual_residencial?: number | null;
+  created_at?: string | null;
+};
+
+type PacoteDisponivel = {
+  saldo_id: string;
+  cliente_pacote_id: string;
+  pacote_id: string | null;
+  pacote_nome: string;
+  servico_id: string;
+  quantidade_total: number;
+  quantidade_usada: number;
+  restante: number;
+  data_fim: string | null;
+};
+
+type FotoAtendimento = {
+  id: string;
+  agendamento_id: string;
+  empresa_id: string;
+  cliente_id?: string | null;
+  url_foto?: string | null;
+  caminho?: string | null;
+  tipo?: "geral" | "antes" | "depois" | string | null;
+  descricao?: string | null;
+  created_at?: string | null;
+  signedUrl?: string;
+};
 
 const HORARIOS = [
   "08:00",
@@ -82,6 +134,270 @@ const STATUS_OPTIONS = [
   { label: "Cancelado", value: "cancelado" },
 ];
 
+const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+});
+
+const headerDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
+  month: "long",
+  year: "numeric",
+});
+function hojeISO() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function usuarioEhAdmin() {
+  const perfis = [
+    localStorage.getItem("tipo_usuario"),
+    localStorage.getItem("perfil"),
+    localStorage.getItem("role"),
+  ]
+    .filter(Boolean)
+    .map((item) => String(item).trim().toLowerCase());
+
+  return perfis.some((perfil) =>
+    ["admin", "administrador", "owner", "super_admin", "admin_saas"].includes(perfil),
+  );
+}
+
+function dataPassada(data?: string | null) {
+  if (!data) return false;
+  return data < hojeISO();
+}
+
+function podeEditarData(data?: string | null) {
+  return !dataPassada(data) || usuarioEhAdmin();
+}
+
+function getTodayString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseTimeToMinutes(value?: string | null) {
+  if (!value || !value.includes(":")) return 0;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function somarMinutos(horario: string, minutos: number) {
+  const [hours, minutes] = horario.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes + minutos, 0, 0);
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+function formatDisplayDate(dateValue: string) {
+  if (!dateValue) return "";
+  const date = new Date(`${dateValue}T00:00:00`);
+  const weekday = weekdayFormatter.format(date);
+  const fullDate = headerDateFormatter.format(date);
+  return `${fullDate} · ${weekday.charAt(0).toUpperCase() + weekday.slice(1)}`;
+}
+
+function classByStatus(status?: string | null) {
+  switch ((status || "").toLowerCase()) {
+    case "finalizado":
+      return {
+        bg: "#dcfce7",
+        border: "#86efac",
+        text: "#166534",
+      };
+    case "cancelado":
+      return {
+        bg: "#fee2e2",
+        border: "#fca5a5",
+        text: "#991b1b",
+      };
+    case "confirmado":
+      return {
+        bg: "#dbeafe",
+        border: "#93c5fd",
+        text: "#1d4ed8",
+      };
+    default:
+      return {
+        bg: "#fef3c7",
+        border: "#fcd34d",
+        text: "#92400e",
+      };
+  }
+}
+
+function MiniCalendar({
+  selectedDate,
+  onSelect,
+}: {
+  selectedDate: string;
+  onSelect: (date: string) => void;
+}) {
+  const selected = new Date(`${selectedDate}T00:00:00`);
+  const year = selected.getFullYear();
+  const month = selected.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = lastDay.getDate();
+
+  const days: Array<number | null> = [];
+  for (let i = 0; i < startOffset; i += 1) days.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) days.push(day);
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold capitalize text-slate-800">
+          {monthFormatter.format(selected)}
+        </p>
+      </div>
+
+      <div className="mb-2 grid grid-cols-7 text-center text-[11px] uppercase tracking-wide text-slate-400">
+        {["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day, index) => {
+          if (!day) {
+            return <div key={`empty-${index}`} className="h-9" />;
+          }
+
+          const date = new Date(year, month, day);
+          const iso = `${date.getFullYear()}-${String(
+            date.getMonth() + 1,
+          ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+          const isSelected = iso === selectedDate;
+          const isToday = iso === getTodayString();
+
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => onSelect(iso)}
+              className="flex h-9 items-center justify-center rounded-xl text-sm transition"
+              style={{
+                backgroundColor: isSelected
+                  ? "var(--color-primary)"
+                  : isToday
+                    ? "rgba(249, 115, 22, 0.12)"
+                    : "transparent",
+                color: isSelected
+                  ? "#fff"
+                  : isToday
+                    ? "var(--color-primary)"
+                    : "#0f172a",
+                fontWeight: isSelected || isToday ? 700 : 500,
+              }}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function filtrarAniversariantesDoMes(clientes: Cliente[]) {
+  const mesAtual = new Date().getMonth() + 1;
+
+  return clientes
+    .filter((cliente) => !!cliente.data_nascimento)
+    .filter((cliente) => {
+      const data = new Date(`${cliente.data_nascimento}T00:00:00`);
+      return data.getMonth() + 1 === mesAtual;
+    })
+    .sort((a, b) => {
+      const diaA = Number((a.data_nascimento || "").split("-")[2] || 0);
+      const diaB = Number((b.data_nascimento || "").split("-")[2] || 0);
+      return diaA - diaB;
+    });
+}
+
+function formatarData(data?: string | null) {
+  if (!data) return "-";
+  return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+}
+
+function formatarDataNascimento(data?: string | null) {
+  if (!data) return "-";
+  const partes = data.split("-");
+  if (partes.length !== 3) return data;
+  return `${partes[2]}/${partes[1]}`;
+}
+
+function montarMensagemAniversario(nome: string) {
+  return `Olá, ${nome}! 🎉 Passando para te desejar um feliz aniversário! Temos uma condição especial para você este mês. 💝`;
+}
+
+function caminhoDaFoto(foto: FotoAtendimento) {
+  return foto.caminho || foto.url_foto || "";
+}
+
+const PALAVRAS_ALERTA_CUIDADO = [
+  "diabetes",
+  "diabete",
+  "diabético",
+  "diabetico",
+  "micose",
+  "fungo",
+  "fungos",
+  "unha encravada",
+  "encravada",
+  "ferida",
+  "inflamação",
+  "inflamacao",
+  "infecção",
+  "infeccao",
+];
+
+function textoDoAlerta(alerta: AlertaAnamneseItem) {
+  return Object.values(alerta as any)
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function filtrarAlertasDeCuidado(alertas: AlertaAnamneseItem[]) {
+  return alertas.filter((alerta) => {
+    const texto = textoDoAlerta(alerta);
+    return PALAVRAS_ALERTA_CUIDADO.some((palavra) => texto.includes(palavra));
+  });
+}
+
+function rotuloAlertaAgenda(alerta: AlertaAnamneseItem) {
+  const item = alerta as any;
+  const textoBase =
+    item.pergunta ||
+    item.campo ||
+    item.titulo ||
+    item.label ||
+    item.nome ||
+    textoDoAlerta(alerta);
+
+  return String(textoBase || "Alerta de anamnese")
+    .replace(/possui/gi, "")
+    .replace(/alguma/gi, "")
+    .replace(/algum/gi, "")
+    .replace(/\?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function AgendaPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
@@ -106,7 +422,6 @@ export default function AgendaPage() {
   const [aplicarPromocao, setAplicarPromocao] = useState(false);
   const [valorAgendamentoManual, setValorAgendamentoManual] = useState("");
   const [atendimentoResidencial, setAtendimentoResidencial] = useState(false);
-  const [percentualResidencial, setPercentualResidencial] = useState(0);
 
   const [alertas, setAlertas] = useState<AlertaAnamneseItem[]>([]);
   const [confirmou, setConfirmou] = useState(false);
@@ -146,6 +461,12 @@ export default function AgendaPage() {
     useState<Agendamento | null>(null);
   const [dataReagendamento, setDataReagendamento] = useState(getTodayString());
   const [horaReagendamento, setHoraReagendamento] = useState("09:00");
+  const [servicoReagendamento, setServicoReagendamento] = useState("");
+  const [servicosExtrasReagendamento, setServicosExtrasReagendamento] =
+    useState<string[]>([]);
+  const [valorReagendamentoManual, setValorReagendamentoManual] = useState("");
+  const [atendimentoResidencialReagendamento, setAtendimentoResidencialReagendamento] =
+    useState(false);
   const [loadingReagendar, setLoadingReagendar] = useState(false);
 
   const [pacotesDisponiveis, setPacotesDisponiveis] = useState<
@@ -203,10 +524,6 @@ export default function AgendaPage() {
 
       if (empresaConfigRes.error) {
         console.error("Erro ao carregar configuração residencial:", empresaConfigRes.error);
-      } else {
-        setPercentualResidencial(
-          Number((empresaConfigRes.data as any)?.percentual_residencial ?? 0),
-        );
       }
 
       if (clientesRes.error) {
@@ -255,7 +572,11 @@ export default function AgendaPage() {
     const mensagem = encodeURIComponent(
       montarMensagemAniversario(cliente.nome),
     );
-    window.open(`https://wa.me/${numero}?text=${mensagem}`, "_blank");
+    window.open(
+  `https://wa.me/${numero}?text=${mensagem}`,
+  "_blank",
+  "noopener,noreferrer",
+);
   }
 
   async function carregarAlertas(nomeCliente: string) {
@@ -359,15 +680,17 @@ export default function AgendaPage() {
       return;
     }
 
-    const valorCalculadoServicos = servicosSelecionados.reduce(
-      (total, item) => total + obterValorServico(item),
-      0,
-    );
     const valorManual = Number(valorAgendamentoManual || 0);
-    const valorBase =
-      servicosSelecionados.length > 1 || valorManual <= 0
-        ? valorCalculadoServicos
-        : valorManual;
+    const valorServicoPrincipal =
+      valorManual > 0
+        ? valorManual
+        : obterValorServico(servicosSelecionados[0]);
+
+    const valorServicosExtras = servicosSelecionados
+      .slice(1)
+      .reduce((total, item) => total + obterValorServico(item), 0);
+
+    const valorBase = valorServicoPrincipal + valorServicosExtras;
     const percentualResidencialAplicado = atendimentoResidencial
       ? obterPercentualResidencial(servicosSelecionados)
       : 0;
@@ -500,14 +823,35 @@ export default function AgendaPage() {
     setAgendamentoReagendar(agendamento);
     setDataReagendamento(agendamento.data || selectedDate);
     setHoraReagendamento(agendamento.horario || "09:00");
+
+    const nomesServicos = String(agendamento.servico || "")
+      .split(" + ")
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+
+    const servicoPrincipalNome =
+      nomesServicos[0] ||
+      servicos.find((item) => item.id === agendamento.servico_id)?.nome ||
+      "";
+
+    setServicoReagendamento(servicoPrincipalNome);
+    setServicosExtrasReagendamento(nomesServicos.slice(1));
+    setValorReagendamentoManual(
+      agendamento.valor !== null && agendamento.valor !== undefined
+        ? String(agendamento.valor)
+        : "",
+    );
+    setAtendimentoResidencialReagendamento(
+      Boolean(agendamento.atendimento_residencial),
+    );
     setModalReagendarAberto(true);
   }
 
   async function salvarReagendamento() {
     if (!agendamentoReagendar) return;
 
-    if (!dataReagendamento || !horaReagendamento) {
-      alert("Informe a nova data e o novo horário.");
+    if (!dataReagendamento || !horaReagendamento || !servicoReagendamento) {
+      alert("Informe serviço, nova data e novo horário.");
       return;
     }
 
@@ -516,7 +860,29 @@ export default function AgendaPage() {
       return;
     }
 
-    const duracaoTotal = Number(agendamentoReagendar.duracao_minutos || 60);
+    const servicosSelecionadosNomes = [
+      servicoReagendamento,
+      ...servicosExtrasReagendamento,
+    ]
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+
+    const servicosSelecionados = servicosSelecionadosNomes
+      .map((nome) => servicos.find((item) => item.nome === nome))
+      .filter(Boolean) as Servico[];
+
+    if (servicosSelecionados.length !== servicosSelecionadosNomes.length) {
+      alert("Selecione serviços válidos para o reagendamento.");
+      return;
+    }
+
+    const servicoPrincipal = servicosSelecionados[0];
+
+    const duracaoServicos = servicosSelecionados.reduce((total, item) => {
+      return total + Number(item.duracao_padrao_minutos || item.duracao || 60);
+    }, 0);
+
+    const duracaoTotal = duracaoServicos + 10;
     const horarioFim = somarMinutos(horaReagendamento, duracaoTotal);
 
     const conflito = agendamentos.some((item) => {
@@ -542,6 +908,27 @@ export default function AgendaPage() {
       return;
     }
 
+    const valorManual = Number(valorReagendamentoManual || 0);
+    const valorServicoPrincipal =
+      valorManual > 0
+        ? valorManual
+        : obterValorServico(servicosSelecionados[0]);
+
+    const valorServicosExtras = servicosSelecionados
+      .slice(1)
+      .reduce((total, item) => total + obterValorServico(item), 0);
+
+    const valorBase = valorServicoPrincipal + valorServicosExtras;
+    const percentualResidencialAplicado = atendimentoResidencialReagendamento
+      ? obterPercentualResidencial(servicosSelecionados)
+      : 0;
+    const valorFinal = atendimentoResidencialReagendamento
+      ? Number(
+          (valorBase + (valorBase * percentualResidencialAplicado) / 100).toFixed(2),
+        )
+      : Number(valorBase.toFixed(2));
+    const nomeServicos = servicosSelecionados.map((item) => item.nome).join(" + ");
+
     setLoadingReagendar(true);
 
     const { error } = await supabase
@@ -549,6 +936,12 @@ export default function AgendaPage() {
       .update({
         data: dataReagendamento,
         horario: horaReagendamento,
+        servico: nomeServicos,
+        servico_id: servicoPrincipal.id,
+        duracao_minutos: duracaoTotal,
+        valor: valorFinal,
+        atendimento_residencial: atendimentoResidencialReagendamento,
+        percentual_residencial: percentualResidencialAplicado,
         status:
           agendamentoReagendar.status === "confirmado"
             ? "confirmado"
@@ -567,6 +960,12 @@ export default function AgendaPage() {
       ...agendamentoReagendar,
       data: dataReagendamento,
       horario: horaReagendamento,
+      servico: nomeServicos,
+      servico_id: servicoPrincipal.id,
+      duracao_minutos: duracaoTotal,
+      valor: valorFinal,
+      atendimento_residencial: atendimentoResidencialReagendamento,
+      percentual_residencial: percentualResidencialAplicado,
       status:
         agendamentoReagendar.status === "confirmado"
           ? "confirmado"
@@ -609,13 +1008,15 @@ export default function AgendaPage() {
 
   return Number.isNaN(valorNormal) ? 0 : valorNormal;
 }
-  function obterPercentualResidencial(servicosSelecionados: Servico[]) {
-    const percentualDoServico = servicosSelecionados
-      .map((item) => Number(item.percentual_residencial || 0))
-      .find((percentual) => percentual > 0);
+ function obterPercentualResidencial(
+  servicosSelecionados: Servico[],
+) {
+  const percentuais = servicosSelecionados.map((servico) =>
+    Number(servico.percentual_residencial || 0),
+  );
 
-    return Number(percentualDoServico ?? percentualResidencial ?? 0);
-  }
+  return Math.max(0, ...percentuais);
+}
 
   function valorPadraoDoAgendamento(agendamento: Agendamento) {
     if (agendamento.valor !== null && agendamento.valor !== undefined) {
@@ -873,7 +1274,11 @@ ${linkFoto}` : "As fotos do atendimento já estão registradas no sistema."}
 Obrigada pela preferência! 💜`;
 
     const numero = normalizarTelefoneWhatsapp(telefone);
-    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`, "_blank");
+    window.open(
+      `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function buscarPacotesDisponiveis(
@@ -1021,11 +1426,20 @@ Obrigada pela preferência! 💜`;
     if (!token) return;
 
     const linkMeuEspaco = montarLinkMeuEspaco(token);
+    const horaInicio = agendamento.horario || "não informado";
+    const horaFim = agendamento.horario
+      ? somarMinutos(
+          agendamento.horario,
+          Number(agendamento.duracao_minutos || 60),
+        )
+      : "não informado";
+
     const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu agendamento foi confirmado.
 
 Serviço: ${agendamento.servico || "não informado"}
 Data: ${formatarData(agendamento.data)}
-Horário: ${agendamento.horario || "não informado"}
+Início: ${horaInicio}
+Término previsto: ${horaFim}
 Profissional: ${agendamento.profissional || "não informado"}
 
 Para confirmar ou acompanhar seu agendamento, acesse:
@@ -1034,7 +1448,11 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+      `https://wa.me/${numero}?text=${texto}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function enviarCancelamentoWhatsapp(agendamento: Agendamento) {
@@ -1059,7 +1477,11 @@ Caso queira remarcar, entre em contato conosco.`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+      `https://wa.me/${numero}?text=${texto}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
@@ -1077,11 +1499,20 @@ Caso queira remarcar, entre em contato conosco.`;
     if (!token) return;
 
     const linkMeuEspaco = montarLinkMeuEspaco(token);
+    const horaInicio = agendamento.horario || "não informado";
+    const horaFim = agendamento.horario
+      ? somarMinutos(
+          agendamento.horario,
+          Number(agendamento.duracao_minutos || 60),
+        )
+      : "não informado";
+
     const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu atendimento foi reagendado.
 
 Serviço: ${agendamento.servico || "não informado"}
 Data: ${formatarData(agendamento.data)}
-Horário: ${agendamento.horario || "não informado"}
+Início: ${horaInicio}
+Término previsto: ${horaFim}
 Profissional: ${agendamento.profissional || "não informado"}
 
 Para confirmar ou acompanhar seu agendamento, acesse:
@@ -1090,7 +1521,11 @@ ${linkMeuEspaco}`;
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
 
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+      `https://wa.me/${numero}?text=${texto}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
@@ -1120,7 +1555,11 @@ ${linkMeuEspaco}`;
     const texto = encodeURIComponent(mensagem);
 
     // Usar href evita bloqueio de pop-up depois que a finalização salva no banco.
-    window.location.href = `https://wa.me/${numero}?text=${texto}`;
+    window.open(
+      `https://wa.me/${numero}?text=${texto}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   async function finalizarComPagamento() {
@@ -1480,22 +1919,23 @@ ${linkMeuEspaco}`;
   }, [servico, servicosExtras, servicos]);
 
   const valorBaseFormulario = useMemo(() => {
-    const valorCalculado = servicosSelecionadosFormulario.reduce(
-      (total, item) => total + obterValorServico(item),
-      0,
-    );
     const valorManual = Number(valorAgendamentoManual || 0);
 
-    if (servicosSelecionadosFormulario.length > 1 || valorManual <= 0) {
-      return valorCalculado;
-    }
+    const valorServicoPrincipal =
+      valorManual > 0
+        ? valorManual
+        : obterValorServico(servicosSelecionadosFormulario[0]);
 
-    return valorManual;
+    const valorServicosExtras = servicosSelecionadosFormulario
+      .slice(1)
+      .reduce((total, item) => total + obterValorServico(item), 0);
+
+    return valorServicoPrincipal + valorServicosExtras;
   }, [servicosSelecionadosFormulario, valorAgendamentoManual]);
 
-  const percentualResidencialFormulario = atendimentoResidencial
-    ? obterPercentualResidencial(servicosSelecionadosFormulario)
-    : 0;
+  const percentualResidencialFormulario = obterPercentualResidencial(
+    servicosSelecionadosFormulario,
+  );
 
   const valorFinalFormulario = atendimentoResidencial
     ? Number(
@@ -1505,6 +1945,44 @@ ${linkMeuEspaco}`;
         ).toFixed(2),
       )
     : Number(valorBaseFormulario.toFixed(2));
+
+  const servicosSelecionadosReagendamento = useMemo(() => {
+    const nomes = [servicoReagendamento, ...servicosExtrasReagendamento]
+      .map((nome) => nome.trim())
+      .filter(Boolean);
+
+    return nomes
+      .map((nome) => servicos.find((item) => item.nome === nome))
+      .filter(Boolean) as Servico[];
+  }, [servicoReagendamento, servicosExtrasReagendamento, servicos]);
+
+  const valorBaseReagendamento = useMemo(() => {
+    const valorManual = Number(valorReagendamentoManual || 0);
+
+    const valorServicoPrincipal =
+      valorManual > 0
+        ? valorManual
+        : obterValorServico(servicosSelecionadosReagendamento[0]);
+
+    const valorServicosExtras = servicosSelecionadosReagendamento
+      .slice(1)
+      .reduce((total, item) => total + obterValorServico(item), 0);
+
+    return valorServicoPrincipal + valorServicosExtras;
+  }, [servicosSelecionadosReagendamento, valorReagendamentoManual]);
+
+  const percentualResidencialReagendamento = obterPercentualResidencial(
+    servicosSelecionadosReagendamento,
+  );
+
+  const valorFinalReagendamento = atendimentoResidencialReagendamento
+    ? Number(
+        (
+          valorBaseReagendamento +
+          (valorBaseReagendamento * percentualResidencialReagendamento) / 100
+        ).toFixed(2),
+      )
+    : Number(valorBaseReagendamento.toFixed(2));
 
   const agendamentosDoDia = useMemo(() => {
     return agendamentos
@@ -1596,17 +2074,21 @@ ${linkMeuEspaco}`;
 
   return (
     <div className="space-y-6">
-      <AgendaHeader
-        dataSelecionada={selectedDate}
-        onChangeData={(value) => {
-          setSelectedDate(value);
-          setData(value);
-        }}
-        onNovoAgendamento={() => {
-          limparFormulario();
-          setData(selectedDate);
-          setModalNovoAberto(true);
-        }}
+      <PageHeader
+        eyebrow="Agenda inteligente"
+        title="Agenda"
+        description="Visual diário com filtros, horários e cards de atendimento no estilo clínica/salão."
+        action={
+          <PrimaryButton
+            onClick={() => {
+              limparFormulario();
+              setData(selectedDate);
+              setModalNovoAberto(true);
+            }}
+          >
+            + Agendar
+          </PrimaryButton>
+        }
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -1722,12 +2204,39 @@ ${linkMeuEspaco}`;
             </div>
           </div>
 
-          <ResumoDia
-            total={totaisDia.total}
-            confirmados={totaisDia.confirmados}
-            finalizados={totaisDia.finalizados}
-            cancelados={totaisDia.cancelados}
-          />
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-800">
+              Resumo do dia
+            </p>
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-xs text-slate-500">Total</p>
+                <p className="text-2xl font-bold text-slate-900">
+                  {totaisDia.total}
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-blue-50 px-3 py-3 text-center">
+                  <p className="text-xs text-blue-600">Confirmados</p>
+                  <p className="text-lg font-bold text-blue-700">
+                    {totaisDia.confirmados}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-emerald-50 px-3 py-3 text-center">
+                  <p className="text-xs text-emerald-600">Finalizados</p>
+                  <p className="text-lg font-bold text-emerald-700">
+                    {totaisDia.finalizados}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-rose-50 px-3 py-3 text-center">
+                  <p className="text-xs text-rose-600">Cancelados</p>
+                  <p className="text-lg font-bold text-rose-700">
+                    {totaisDia.cancelados}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </aside>
 
         <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -1882,14 +2391,57 @@ ${linkMeuEspaco}`;
                             )}
                         </div>
 
-                        <AgendaActions
-                          item={item}
-                          onFotos={() => void abrirModalFotosAtendimento(item)}
-                          onConfirmar={() => void confirmarAgendamento(item)}
-                          onReagendar={() => abrirModalReagendar(item)}
-                          onCancelar={() => void cancelarAgendamento(item)}
-                          onFinalizar={() => void abrirModalFinalizar(item)}
-                        />
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          <SecondaryButton
+                            onClick={() => void abrirModalFotosAtendimento(item)}
+                          >
+                            Ver fotos
+                          </SecondaryButton>
+
+                          {item.status !== "finalizado" &&
+                            item.status !== "cancelado" && (
+                              <SecondaryButton
+                                onClick={() => void enviarConfirmacaoWhatsapp(item)}
+                              >
+                                WhatsApp
+                              </SecondaryButton>
+                            )}
+
+                          {item.status !== "finalizado" &&
+                            item.status !== "cancelado" && (
+                              <>
+                                {item.status !== "confirmado" && (
+                                  <SecondaryButton
+                                    onClick={() =>
+                                      void confirmarAgendamento(item)
+                                    }
+                                  >
+                                    Confirmar
+                                  </SecondaryButton>
+                                )}
+
+                                <SecondaryButton
+                                  onClick={() => abrirModalReagendar(item)}
+                                >
+                                  Reagendar
+                                </SecondaryButton>
+
+                                <SecondaryButton
+                                  onClick={() =>
+                                    void cancelarAgendamento(item)
+                                  }
+                                >
+                                  Cancelar
+                                </SecondaryButton>
+
+                                <PrimaryButton
+                                  onClick={() => void abrirModalFinalizar(item)}
+                                >
+                                  Finalizar
+                                </PrimaryButton>
+                              </>
+                            )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -2176,8 +2728,30 @@ ${linkMeuEspaco}`;
         horarios={HORARIOS}
         minData={usuarioEhAdmin() ? undefined : getTodayString()}
         loading={loadingReagendar}
+        servicos={servicos}
+        servicoReagendamento={servicoReagendamento}
+        servicosExtrasReagendamento={servicosExtrasReagendamento}
+        valorReagendamentoManual={valorReagendamentoManual}
+        atendimentoResidencialReagendamento={atendimentoResidencialReagendamento}
+        percentualResidencialReagendamento={percentualResidencialReagendamento}
+        valorBaseReagendamento={valorBaseReagendamento}
+        valorFinalReagendamento={valorFinalReagendamento}
         onChangeData={setDataReagendamento}
         onChangeHora={setHoraReagendamento}
+        onChangeServico={(nomeServico) => {
+          setServicoReagendamento(nomeServico);
+          const servicoSelecionado = servicos.find(
+            (item) => item.nome === nomeServico,
+          );
+          setValorReagendamentoManual(
+            servicoSelecionado
+              ? String(servicoSelecionado.preco ?? servicoSelecionado.valor ?? 0)
+              : "",
+          );
+        }}
+        onChangeServicosExtras={setServicosExtrasReagendamento}
+        onChangeValorManual={setValorReagendamentoManual}
+        onChangeAtendimentoResidencial={setAtendimentoResidencialReagendamento}
         onFechar={() => {
           setModalReagendarAberto(false);
           setAgendamentoReagendar(null);
@@ -2527,49 +3101,309 @@ ${linkMeuEspaco}`;
         </div>
       )}
 
-      <ModalFinalizacao
-        aberto={modalFinalizarAberto}
-        agendamento={agendamentoSelecionado}
-        loadingAlertasFinalizacao={loadingAlertasFinalizacao}
-        alertasFinalizacao={alertasFinalizacao}
-        cuidadoEspecial={cuidadoEspecial}
-        setCuidadoEspecial={setCuidadoEspecial}
-        acrescimoCuidado={acrescimoCuidado}
-        setAcrescimoCuidado={setAcrescimoCuidado}
-        observacaoCuidado={observacaoCuidado}
-        setObservacaoCuidado={setObservacaoCuidado}
-        pacotesDisponiveis={pacotesDisponiveis}
-        saldoPacoteSelecionadoId={saldoPacoteSelecionadoId}
-        setSaldoPacoteSelecionadoId={setSaldoPacoteSelecionadoId}
-        usarPacote={usarPacote}
-        onToggleUsarPacote={(marcado) => {
-          setUsarPacote(marcado);
-          if (marcado) {
-            setValorPagamento("0");
-            setFormaPagamento("pacote");
-            setStatusPagamento("pago");
-          } else if (agendamentoSelecionado) {
-            setValorPagamento(valorPadraoDoAgendamento(agendamentoSelecionado));
-            setFormaPagamento("pix");
-            setStatusPagamento("pago");
-          }
-        }}
-        valorPagamento={valorPagamento}
-        setValorPagamento={setValorPagamento}
-        formaPagamento={formaPagamento}
-        setFormaPagamento={setFormaPagamento}
-        statusPagamento={statusPagamento}
-        setStatusPagamento={setStatusPagamento}
-        fotoAtendimento={fotoAtendimento}
-        setFotoAtendimento={setFotoAtendimento}
-        previewFotoAtendimento={previewFotoAtendimento}
-        setPreviewFotoAtendimento={setPreviewFotoAtendimento}
-        tipoFotoAtendimento={tipoFotoAtendimento}
-        setTipoFotoAtendimento={setTipoFotoAtendimento}
-        loadingFinalizar={loadingFinalizar}
-        onFechar={() => setModalFinalizarAberto(false)}
-        onFinalizar={() => void finalizarComPagamento()}
-      />
+      {modalFinalizarAberto && agendamentoSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="mb-5">
+              <h2 className="text-2xl font-bold text-slate-900">
+                Finalizar atendimento
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Confirme os dados antes de concluir e lançar no financeiro.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
+              <p>
+                <strong>Cliente:</strong> {agendamentoSelecionado.cliente}
+              </p>
+              <p>
+                <strong>Serviço:</strong> {agendamentoSelecionado.servico}
+              </p>
+              <p>
+                <strong>Profissional:</strong>{" "}
+                {agendamentoSelecionado.profissional || "Não informado"}
+              </p>
+              <p>
+                <strong>Data:</strong> {agendamentoSelecionado.data} às{" "}
+                {agendamentoSelecionado.horario}
+              </p>
+            </div>
+
+            {loadingAlertasFinalizacao && (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                Verificando alertas da anamnese...
+              </div>
+            )}
+
+            {!loadingAlertasFinalizacao && filtrarAlertasDeCuidado(alertasFinalizacao).length > 0 && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-black">Atenção: cuidado especial informado na anamnese</p>
+                <p className="mt-1 text-xs">
+                  Foram encontrados alertas que podem exigir atendimento diferenciado, como diabetes, micose/fungo ou unha encravada. O sistema não faz diagnóstico; use esta informação apenas como alerta operacional.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {filtrarAlertasDeCuidado(alertasFinalizacao).slice(0, 4).map((alerta, index) => (
+                    <div key={index} className="rounded-xl bg-white/70 px-3 py-2 text-xs">
+                      {textoDoAlerta(alerta)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-black text-amber-900">Cuidado especial / ajuste de preço</p>
+              <p className="mt-1 text-xs text-amber-700">
+                Use quando o atendimento exigir mais tempo, materiais ou técnica diferenciada.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <select
+                  value={cuidadoEspecial}
+                  onChange={(e) => setCuidadoEspecial(e.target.value)}
+                  disabled={usarPacote}
+                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                >
+                  <option value="nenhum">Sem cuidado especial</option>
+                  <option value="diabetes">Diabetes</option>
+                  <option value="micose/fungo">Micose / fungo</option>
+                  <option value="unha encravada">Unha encravada</option>
+                  <option value="outro">Outro cuidado especial</option>
+                </select>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={acrescimoCuidado}
+                  onChange={(e) => setAcrescimoCuidado(e.target.value)}
+                  disabled={usarPacote || cuidadoEspecial === "nenhum"}
+                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                  placeholder="Acréscimo R$ 0,00"
+                />
+              </div>
+              <textarea
+                value={observacaoCuidado}
+                onChange={(e) => setObservacaoCuidado(e.target.value)}
+                disabled={usarPacote || cuidadoEspecial === "nenhum"}
+                className="mt-3 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
+                placeholder="Observação interna sobre o cuidado especial"
+              />
+              {!usarPacote && cuidadoEspecial !== "nenhum" && (
+                <p className="mt-2 text-xs font-bold text-amber-800">
+                  Total previsto: {(Number(valorPagamento || 0) + Number(acrescimoCuidado || 0)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+              )}
+            </div>
+
+            {pacotesDisponiveis.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm font-bold text-emerald-900">
+                  Cliente possui pacote disponível para este serviço
+                </p>
+
+                <div className="mt-3 grid gap-3">
+                  <select
+                    value={saldoPacoteSelecionadoId}
+                    onChange={(e) =>
+                      setSaldoPacoteSelecionadoId(e.target.value)
+                    }
+                    className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 outline-none"
+                  >
+                    {pacotesDisponiveis.map((pacote) => (
+                      <option key={pacote.saldo_id} value={pacote.saldo_id}>
+                        {pacote.pacote_nome} — saldo {pacote.restante}/
+                        {pacote.quantidade_total}
+                        {pacote.data_fim
+                          ? ` — válido até ${pacote.data_fim}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                    <input
+                      type="checkbox"
+                      checked={usarPacote}
+                      onChange={(e) => {
+                        const marcado = e.target.checked;
+                        setUsarPacote(marcado);
+                        if (marcado) {
+                          setValorPagamento("0");
+                          setFormaPagamento("pacote");
+                          setStatusPagamento("pago");
+                        } else {
+                          setValorPagamento(
+                            valorPadraoDoAgendamento(agendamentoSelecionado),
+                          );
+                          setFormaPagamento("pix");
+                          setStatusPagamento("pago");
+                        }
+                      }}
+                    />
+                    Usar pacote do cliente e baixar 1 unidade do saldo
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {pacotesDisponiveis.length === 0 && (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                Nenhum pacote ativo com saldo disponível para este serviço.
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Valor
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={valorPagamento}
+                  onChange={(e) => setValorPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
+                  placeholder="0,00"
+                />
+                {usarPacote && (
+                  <p className="mt-1 text-xs font-semibold text-emerald-700">
+                    Valor zerado porque o atendimento será baixado do pacote.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Forma de pagamento
+                </label>
+                <select
+                  value={formaPagamento}
+                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
+                >
+                  <option value="pix">Pix</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao_credito">Cartão de crédito</option>
+                  <option value="cartao_debito">Cartão de débito</option>
+                  <option value="pacote">Pacote</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Status do pagamento
+                </label>
+                <select
+                  value={statusPagamento}
+                  onChange={(e) => setStatusPagamento(e.target.value)}
+                  disabled={usarPacote}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
+                >
+                  <option value="pago">Pago</option>
+                  <option value="pendente">Pendente</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Foto do atendimento (opcional)
+              </label>
+              <p className="mb-3 text-xs text-slate-500">
+                Tire ou envie uma foto do serviço prestado. Se não quiser anexar
+                agora, é só finalizar normalmente.
+              </p>
+
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {[
+                  { label: "Geral", value: "geral" },
+                  { label: "Antes", value: "antes" },
+                  { label: "Depois", value: "depois" },
+                ].map((opcao) => {
+                  const ativo = tipoFotoAtendimento === opcao.value;
+                  return (
+                    <button
+                      key={opcao.value}
+                      type="button"
+                      onClick={() =>
+                        setTipoFotoAtendimento(
+                          opcao.value as "geral" | "antes" | "depois",
+                        )
+                      }
+                      className={`rounded-2xl px-3 py-2 text-xs font-black transition ${
+                        ativo
+                          ? "bg-orange-600 text-white shadow-sm"
+                          : "bg-slate-50 text-slate-700 ring-1 ring-slate-200"
+                      }`}
+                    >
+                      {opcao.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setFotoAtendimento(file);
+
+                  if (previewFotoAtendimento) {
+                    URL.revokeObjectURL(previewFotoAtendimento);
+                  }
+
+                  setPreviewFotoAtendimento(
+                    file ? URL.createObjectURL(file) : "",
+                  );
+                }}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700"
+              />
+
+              {previewFotoAtendimento && (
+                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+                  <img
+                    src={previewFotoAtendimento}
+                    alt="Prévia da foto do atendimento"
+                    className="h-20 w-20 rounded-2xl object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">
+                      {fotoAtendimento?.name}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (previewFotoAtendimento) {
+                          URL.revokeObjectURL(previewFotoAtendimento);
+                        }
+                        setFotoAtendimento(null);
+                        setPreviewFotoAtendimento("");
+                      }}
+                      className="mt-2 rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                    >
+                      Remover foto
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <SecondaryButton onClick={() => setModalFinalizarAberto(false)}>
+                Cancelar
+              </SecondaryButton>
+              <PrimaryButton onClick={() => void finalizarComPagamento()}>
+                {loadingFinalizar ? "Salvando..." : "Confirmar finalização"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

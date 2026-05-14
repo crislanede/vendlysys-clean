@@ -1,6 +1,6 @@
 import SecondaryButton from "../../../components/ui/SecondaryButton";
 import PrimaryButton from "../../../components/ui/PrimaryButton";
-import type { Agendamento } from "../types";
+import type { Agendamento, Servico } from "../types";
 
 type Props = {
   aberto: boolean;
@@ -10,8 +10,22 @@ type Props = {
   horarios: string[];
   minData?: string;
   loading: boolean;
+
+  servicos: Servico[];
+  servicoReagendamento: string;
+  servicosExtrasReagendamento: string[];
+  valorReagendamentoManual: string;
+  atendimentoResidencialReagendamento: boolean;
+  percentualResidencialReagendamento: number;
+  valorBaseReagendamento: number;
+  valorFinalReagendamento: number;
+
   onChangeData: (value: string) => void;
   onChangeHora: (value: string) => void;
+  onChangeServico: (value: string) => void;
+  onChangeServicosExtras: (value: string[]) => void;
+  onChangeValorManual: (value: string) => void;
+  onChangeAtendimentoResidencial: (value: boolean) => void;
   onFechar: () => void;
   onSalvar: () => void;
 };
@@ -24,8 +38,22 @@ export default function ModalReagendamento({
   horarios,
   minData,
   loading,
+
+  servicos,
+  servicoReagendamento,
+  servicosExtrasReagendamento,
+  valorReagendamentoManual,
+  atendimentoResidencialReagendamento,
+  percentualResidencialReagendamento,
+  valorBaseReagendamento,
+  valorFinalReagendamento,
+
   onChangeData,
   onChangeHora,
+  onChangeServico,
+  onChangeServicosExtras,
+  onChangeValorManual,
+  onChangeAtendimentoResidencial,
   onFechar,
   onSalvar,
 }: Props) {
@@ -33,7 +61,7 @@ export default function ModalReagendamento({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-      <div className="w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-auto rounded-[28px] bg-white p-6 shadow-2xl">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-orange-600">
@@ -43,7 +71,7 @@ export default function ModalReagendamento({
               Reagendar atendimento
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Escolha uma nova data e horário para este agendamento.
+              Altere data, horário e serviços incluídos neste atendimento.
             </p>
           </div>
 
@@ -61,7 +89,7 @@ export default function ModalReagendamento({
             <strong>Cliente:</strong> {agendamento.cliente}
           </p>
           <p>
-            <strong>Serviço:</strong> {agendamento.servico}
+            <strong>Serviço atual:</strong> {agendamento.servico}
           </p>
           <p>
             <strong>Profissional:</strong>{" "}
@@ -102,6 +130,113 @@ export default function ModalReagendamento({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="text-sm font-bold text-slate-700">
+              Serviço principal
+            </label>
+            <select
+              value={servicoReagendamento}
+              onChange={(e) => onChangeServico(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+            >
+              <option value="">Selecione o serviço</option>
+              {servicos.map((item) => (
+                <option key={item.id} value={item.nome}>
+                  {item.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-bold text-slate-700">
+              Valor do serviço principal
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={valorReagendamentoManual}
+              onChange={(e) => onChangeValorManual(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-orange-300"
+              placeholder="Valor final"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {servicosExtrasReagendamento.map((servicoExtra, index) => (
+            <div key={`reagendamento-extra-${index}`} className="flex gap-2">
+              <select
+                value={servicoExtra}
+                onChange={(e) => {
+                  const novos = [...servicosExtrasReagendamento];
+                  novos[index] = e.target.value;
+                  onChangeServicosExtras(novos);
+                }}
+                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+              >
+                <option value="">Selecione outro serviço</option>
+                {servicos.map((item) => (
+                  <option key={item.id} value={item.nome}>
+                    {item.nome}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onChangeServicosExtras(
+                    servicosExtrasReagendamento.filter(
+                      (_, itemIndex) => itemIndex !== index,
+                    ),
+                  )
+                }
+                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={() =>
+              onChangeServicosExtras([...servicosExtrasReagendamento, ""])
+            }
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700"
+          >
+            + Adicionar outro serviço
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+            <input
+              type="checkbox"
+              checked={atendimentoResidencialReagendamento}
+              onChange={(e) =>
+                onChangeAtendimentoResidencial(e.target.checked)
+              }
+            />
+            Atendimento residencial (+{percentualResidencialReagendamento}%)
+          </label>
+
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
+            Serviços: {valorBaseReagendamento.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            })}
+            <br />
+            Total: {valorFinalReagendamento.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            })}
           </div>
         </div>
 

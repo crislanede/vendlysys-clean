@@ -4,6 +4,7 @@ import AssinaturaCanvas from "../components/AssinaturaCanvas";
 import { gerarHash } from "../lib/hash";
 import { gerarPdfBlob } from "../lib/pdfAnamnese";
 import { uploadPdfAnamnese } from "../lib/uploadAnamnese";
+import { criarUrlFotoAtendimento } from "../lib/storage/uploadFotoAtendimento";
 
 import type {
   CampoAnamnese,
@@ -22,6 +23,28 @@ import {
   horarioSobrepoeIntervalo,
   gerarHorariosBase,
 } from "./meu-espaco/utils";
+
+type FotoCliente = {
+  id: string;
+  agendamento_id: string;
+  empresa_id?: string | null;
+  cliente_id?: string | null;
+  url_foto?: string | null;
+  caminho?: string | null;
+  tipo?: "geral" | "antes" | "depois" | string | null;
+  descricao?: string | null;
+  created_at?: string | null;
+  signedUrl?: string;
+  agendamento?: {
+    servico?: string | null;
+    data?: string | null;
+    horario?: string | null;
+  } | null;
+};
+
+function caminhoDaFotoCliente(foto: FotoCliente) {
+  return foto.caminho || foto.url_foto || "";
+}
 
 function obterDataBaseAnamnese(ficha: any) {
   return (
@@ -116,6 +139,9 @@ export default function MeuEspaco() {
   const [historico, setHistorico] = useState<any[]>([]);
   const [pacotesCliente, setPacotesCliente] = useState<any[]>([]);
   const [carregandoPacotesCliente, setCarregandoPacotesCliente] = useState(false);
+  const [fotosCliente, setFotosCliente] = useState<FotoCliente[]>([]);
+  const [carregandoFotosCliente, setCarregandoFotosCliente] = useState(false);
+  const [fotoClienteAmpliada, setFotoClienteAmpliada] = useState<FotoCliente | null>(null);
 
   const [anamneseObrigatoria, setAnamneseObrigatoria] = useState(false);
   const [modalAnamneseAberto, setModalAnamneseAberto] = useState(false);
@@ -613,6 +639,7 @@ export default function MeuEspaco() {
     const ags = await carregarAgendamentos(data.id);
     await carregarHistorico(data.id);
     await carregarPacotesCliente(data.id);
+    await carregarFotosCliente(data.id);
 
     const empresaId =
       data.empresa_id || ags.find((a: any) => a.empresa_id)?.empresa_id || null;
@@ -642,6 +669,74 @@ export default function MeuEspaco() {
       .order("data", { ascending: false });
 
     setHistorico(data || []);
+  }
+
+  async function carregarFotosCliente(clienteId: string) {
+    setCarregandoFotosCliente(true);
+
+    try {
+      const { data: agendamentosCliente, error: erroAgendamentos } =
+        await supabase
+          .from("agendamentos")
+          .select("id, servico, data, horario")
+          .eq("cliente_id", clienteId)
+          .order("data", { ascending: false });
+
+      if (erroAgendamentos) {
+        console.error("Erro ao buscar agendamentos para fotos:", erroAgendamentos);
+        setFotosCliente([]);
+        return;
+      }
+
+      const agendamentosLista = agendamentosCliente || [];
+      const idsAgendamentos = agendamentosLista.map((item: any) => item.id).filter(Boolean);
+
+      if (idsAgendamentos.length === 0) {
+        setFotosCliente([]);
+        return;
+      }
+
+      const { data: fotosBanco, error: erroFotos } = await supabase
+        .from("agendamento_fotos")
+        .select("*")
+        .in("agendamento_id", idsAgendamentos)
+        .order("created_at", { ascending: false });
+
+      if (erroFotos) {
+        console.error("Erro ao carregar fotos do cliente:", erroFotos);
+        setFotosCliente([]);
+        return;
+      }
+
+      const mapaAgendamentos = new Map(
+        agendamentosLista.map((item: any) => [item.id, item]),
+      );
+
+      const fotosComUrl = await Promise.all(
+        ((fotosBanco || []) as FotoCliente[]).map(async (foto) => {
+          const caminho = caminhoDaFotoCliente(foto);
+          let signedUrl = foto.signedUrl || "";
+
+          if (caminho) {
+            try {
+              signedUrl = await criarUrlFotoAtendimento(caminho);
+            } catch (erro) {
+              console.warn("Não foi possível gerar link da foto:", erro);
+            }
+          }
+
+          return {
+            ...foto,
+            signedUrl,
+            agendamento: mapaAgendamentos.get(foto.agendamento_id) || null,
+          };
+        }),
+      );
+
+      setFotosCliente(fotosComUrl);
+    } finally {
+      setCarregandoFotosCliente(false);
+    }
   }
 
 
@@ -2144,6 +2239,8 @@ export default function MeuEspaco() {
     setPdfAnamneseUrl("");
     setNovoAgendamentoAberto(false);
     setAgendamentoReagendandoId(null);
+    setFotosCliente([]);
+    setFotoClienteAmpliada(null);
     setServicoAgendamentoId("");
     setProfissionalAgendamentoId("");
     setHorarioAgendamento("");
@@ -3111,6 +3208,7 @@ const botaoAba = (valor: string, label: string) => {
 {botaoAba("dados", "Dados pessoais")}
 {botaoAba("anamnese", "Anamnese")}
 {botaoAba("historico", "Histórico")}
+{botaoAba("fotos", "Fotos")}
 {botaoAba("pacotes", "Pacotes")}
           </div>
         )}
@@ -4249,6 +4347,260 @@ const botaoAba = (valor: string, label: string) => {
             )}
 
 
+          {aba === "fotos" &&
+            !anamneseObrigatoria &&
+            !assinaturaComplementarObrigatoria && (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 14,
+                    flexWrap: "wrap",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: 0 }}>Minhas fotos</h2>
+                    <p style={{ color: "#64748b", margin: "6px 0 0" }}>
+                      Veja as fotos registradas nos seus atendimentos.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => cliente?.id && carregarFotosCliente(cliente.id)}
+                    style={{
+                      padding: "11px 14px",
+                      borderRadius: 14,
+                      border: "1px solid #cbd5e1",
+                      background: "#fff",
+                      color: "#282663",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Atualizar
+                  </button>
+                </div>
+
+                {carregandoFotosCliente && (
+                  <p style={{ color: "#64748b" }}>Carregando fotos...</p>
+                )}
+
+                {!carregandoFotosCliente && fotosCliente.length === 0 && (
+                  <div
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: isMobile ? 13 : 18,
+                      marginBottom: 14,
+                      background: "#f8fafc",
+                    }}
+                  >
+                    <strong>Nenhuma foto encontrada.</strong>
+                    <p style={{ color: "#64748b", marginTop: 8 }}>
+                      Quando o estabelecimento registrar fotos de um atendimento,
+                      elas aparecerão aqui.
+                    </p>
+                  </div>
+                )}
+
+                {!carregandoFotosCliente && fotosCliente.length > 0 && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(230px, 1fr))",
+                      gap: isMobile ? 12 : 16,
+                    }}
+                  >
+                    {fotosCliente.map((foto) => (
+                      <div
+                        key={foto.id}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 22,
+                          overflow: "hidden",
+                          background: "#fff",
+                          boxShadow: "0 10px 25px rgba(15,23,42,.06)",
+                        }}
+                      >
+                        {foto.signedUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setFotoClienteAmpliada(foto)}
+                            style={{
+                              width: "100%",
+                              border: 0,
+                              padding: 0,
+                              background: "#f1f5f9",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <img
+                              src={foto.signedUrl}
+                              alt={foto.descricao || "Foto do atendimento"}
+                              style={{
+                                width: "100%",
+                                height: isMobile ? 220 : 240,
+                                objectFit: "cover",
+                                display: "block",
+                              }}
+                            />
+                          </button>
+                        ) : (
+                          <div
+                            style={{
+                              height: isMobile ? 220 : 240,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "#f1f5f9",
+                              color: "#64748b",
+                              fontWeight: 800,
+                              padding: 16,
+                              textAlign: "center",
+                            }}
+                          >
+                            Foto indisponível
+                          </div>
+                        )}
+
+                        <div style={{ padding: isMobile ? 12 : 14 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 8,
+                              alignItems: "center",
+                              marginBottom: 8,
+                            }}
+                          >
+                            <span
+                              style={{
+                                background: "#eef2ff",
+                                color: "#3730a3",
+                                borderRadius: 999,
+                                padding: "6px 10px",
+                                fontSize: 12,
+                                fontWeight: 900,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {foto.tipo || "geral"}
+                            </span>
+
+                            <span style={{ color: "#64748b", fontSize: 12, fontWeight: 800 }}>
+                              {foto.created_at
+                                ? new Date(foto.created_at).toLocaleDateString("pt-BR")
+                                : ""}
+                            </span>
+                          </div>
+
+                          <strong style={{ color: "#0f172a" }}>
+                            {foto.agendamento?.servico || foto.descricao || "Atendimento"}
+                          </strong>
+
+                          <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13 }}>
+                            {foto.agendamento?.data
+                              ? `${formatarData(foto.agendamento.data)} às ${foto.agendamento?.horario || ""}`
+                              : foto.descricao || "Foto registrada no atendimento."}
+                          </p>
+
+                          {foto.signedUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setFotoClienteAmpliada(foto)}
+                              style={{
+                                width: "100%",
+                                marginTop: 12,
+                                padding: "11px 14px",
+                                borderRadius: 14,
+                                border: "1px solid #282663",
+                                background: "#fff",
+                                color: "#282663",
+                                fontWeight: 900,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Ver foto
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {fotoClienteAmpliada && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      background: "rgba(15,23,42,.85)",
+                      zIndex: 80,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: isMobile ? 10 : 24,
+                    }}
+                  >
+                    <div style={{ width: "100%", maxWidth: 920 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "center",
+                          marginBottom: 12,
+                        }}
+                      >
+                        <strong style={{ color: "#fff" }}>
+                          {fotoClienteAmpliada.agendamento?.servico ||
+                            fotoClienteAmpliada.descricao ||
+                            "Foto do atendimento"}
+                        </strong>
+
+                        <button
+                          type="button"
+                          onClick={() => setFotoClienteAmpliada(null)}
+                          style={{
+                            border: 0,
+                            borderRadius: 999,
+                            background: "#fff",
+                            color: "#0f172a",
+                            padding: "10px 14px",
+                            fontWeight: 900,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Fechar
+                        </button>
+                      </div>
+
+                      {fotoClienteAmpliada.signedUrl && (
+                        <img
+                          src={fotoClienteAmpliada.signedUrl}
+                          alt={fotoClienteAmpliada.descricao || "Foto ampliada"}
+                          style={{
+                            width: "100%",
+                            maxHeight: "82vh",
+                            objectFit: "contain",
+                            borderRadius: isMobile ? 18 : 24,
+                            background: "#000",
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+
           {aba === "pacotes" &&
             !anamneseObrigatoria &&
             !assinaturaComplementarObrigatoria && (
@@ -4443,7 +4795,7 @@ const botaoAba = (valor: string, label: string) => {
               boxShadow: "0 18px 45px rgba(15,23,42,.18)",
               padding: "8px 8px calc(8px + env(safe-area-inset-bottom))",
               display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
+              gridTemplateColumns: "repeat(6, 1fr)",
               gap: 6,
               backdropFilter: "blur(14px)",
             }}
@@ -4453,6 +4805,7 @@ const botaoAba = (valor: string, label: string) => {
               ["dados", "👤", "Dados"],
               ["anamnese", "🧾", "Ficha"],
               ["historico", "🕘", "Histórico"],
+              ["fotos", "🖼️", "Fotos"],
               ["pacotes", "🎁", "Pacotes"],
             ].map(([valor, icone, label]) => (
               <button
