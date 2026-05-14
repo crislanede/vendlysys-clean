@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
-import PageHeader from "../components/ui/PageHeader";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
+import MiniCalendar from "../components/MiniCalendar";
+import AgendaActions from "./agenda/components/AgendaActions";
+import AgendaHeader from "./agenda/components/AgendaHeader";
+import ResumoDia from "./agenda/components/ResumoDia";
+import { classByStatus } from "./agenda/status";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 import {
   montarLinkMeuEspaco,
@@ -36,7 +40,6 @@ import {
   parseTimeToMinutes,
   somarMinutos,
   formatDisplayDate,
-  classByStatus,
   filtrarAniversariantesDoMes,
   formatarData,
   formatarDataNascimento,
@@ -78,86 +81,6 @@ const STATUS_OPTIONS = [
   { label: "Finalizado", value: "finalizado" },
   { label: "Cancelado", value: "cancelado" },
 ];
-
-const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
-  month: "long",
-  year: "numeric",
-});
-function MiniCalendar({
-  selectedDate,
-  onSelect,
-}: {
-  selectedDate: string;
-  onSelect: (date: string) => void;
-}) {
-  const selected = new Date(`${selectedDate}T00:00:00`);
-  const year = selected.getFullYear();
-  const month = selected.getMonth();
-
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const daysInMonth = lastDay.getDate();
-
-  const days: Array<number | null> = [];
-  for (let i = 0; i < startOffset; i += 1) days.push(null);
-  for (let day = 1; day <= daysInMonth; day += 1) days.push(day);
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-semibold capitalize text-slate-800">
-          {monthFormatter.format(selected)}
-        </p>
-      </div>
-
-      <div className="mb-2 grid grid-cols-7 text-center text-[11px] uppercase tracking-wide text-slate-400">
-        {["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map((day) => (
-          <span key={day}>{day}</span>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7 gap-1">
-        {days.map((day, index) => {
-          if (!day) {
-            return <div key={`empty-${index}`} className="h-9" />;
-          }
-
-          const date = new Date(year, month, day);
-          const iso = `${date.getFullYear()}-${String(
-            date.getMonth() + 1,
-          ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-          const isSelected = iso === selectedDate;
-          const isToday = iso === getTodayString();
-
-          return (
-            <button
-              key={iso}
-              type="button"
-              onClick={() => onSelect(iso)}
-              className="flex h-9 items-center justify-center rounded-xl text-sm transition"
-              style={{
-                backgroundColor: isSelected
-                  ? "var(--color-primary)"
-                  : isToday
-                    ? "rgba(249, 115, 22, 0.12)"
-                    : "transparent",
-                color: isSelected
-                  ? "#fff"
-                  : isToday
-                    ? "var(--color-primary)"
-                    : "#0f172a",
-                fontWeight: isSelected || isToday ? 700 : 500,
-              }}
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function AgendaPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
@@ -1673,21 +1596,17 @@ ${linkMeuEspaco}`;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Agenda inteligente"
-        title="Agenda"
-        description="Visual diário com filtros, horários e cards de atendimento no estilo clínica/salão."
-        action={
-          <PrimaryButton
-            onClick={() => {
-              limparFormulario();
-              setData(selectedDate);
-              setModalNovoAberto(true);
-            }}
-          >
-            + Agendar
-          </PrimaryButton>
-        }
+      <AgendaHeader
+        dataSelecionada={selectedDate}
+        onChangeData={(value) => {
+          setSelectedDate(value);
+          setData(value);
+        }}
+        onNovoAgendamento={() => {
+          limparFormulario();
+          setData(selectedDate);
+          setModalNovoAberto(true);
+        }}
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -1803,39 +1722,12 @@ ${linkMeuEspaco}`;
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-800">
-              Resumo do dia
-            </p>
-            <div className="mt-4 grid gap-3">
-              <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">Total</p>
-                <p className="text-2xl font-bold text-slate-900">
-                  {totaisDia.total}
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-2xl bg-blue-50 px-3 py-3 text-center">
-                  <p className="text-xs text-blue-600">Confirmados</p>
-                  <p className="text-lg font-bold text-blue-700">
-                    {totaisDia.confirmados}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-emerald-50 px-3 py-3 text-center">
-                  <p className="text-xs text-emerald-600">Finalizados</p>
-                  <p className="text-lg font-bold text-emerald-700">
-                    {totaisDia.finalizados}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-rose-50 px-3 py-3 text-center">
-                  <p className="text-xs text-rose-600">Cancelados</p>
-                  <p className="text-lg font-bold text-rose-700">
-                    {totaisDia.cancelados}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ResumoDia
+            total={totaisDia.total}
+            confirmados={totaisDia.confirmados}
+            finalizados={totaisDia.finalizados}
+            cancelados={totaisDia.cancelados}
+          />
         </aside>
 
         <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -1990,48 +1882,14 @@ ${linkMeuEspaco}`;
                             )}
                         </div>
 
-                        <div className="flex flex-wrap gap-2 lg:justify-end">
-                          <SecondaryButton
-                            onClick={() => void abrirModalFotosAtendimento(item)}
-                          >
-                            Ver fotos
-                          </SecondaryButton>
-
-                          {item.status !== "finalizado" &&
-                            item.status !== "cancelado" && (
-                              <>
-                                {item.status !== "confirmado" && (
-                                  <SecondaryButton
-                                    onClick={() =>
-                                      void confirmarAgendamento(item)
-                                    }
-                                  >
-                                    Confirmar
-                                  </SecondaryButton>
-                                )}
-
-                                <SecondaryButton
-                                  onClick={() => abrirModalReagendar(item)}
-                                >
-                                  Reagendar
-                                </SecondaryButton>
-
-                                <SecondaryButton
-                                  onClick={() =>
-                                    void cancelarAgendamento(item)
-                                  }
-                                >
-                                  Cancelar
-                                </SecondaryButton>
-
-                                <PrimaryButton
-                                  onClick={() => void abrirModalFinalizar(item)}
-                                >
-                                  Finalizar
-                                </PrimaryButton>
-                              </>
-                            )}
-                        </div>
+                        <AgendaActions
+                          item={item}
+                          onFotos={() => void abrirModalFotosAtendimento(item)}
+                          onConfirmar={() => void confirmarAgendamento(item)}
+                          onReagendar={() => abrirModalReagendar(item)}
+                          onCancelar={() => void cancelarAgendamento(item)}
+                          onFinalizar={() => void abrirModalFinalizar(item)}
+                        />
                       </div>
                     </div>
                   );
