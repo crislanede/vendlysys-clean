@@ -1146,12 +1146,10 @@ export default function MeuEspaco() {
     }
 
     const inicioExpediente = normalizarHorario(
-      profissionalSelecionado.inicio_expediente,
-      "08:00",
+      profissionalSelecionado.hora_inicio
     );
     const fimExpediente = normalizarHorario(
-      profissionalSelecionado.fim_expediente,
-      "18:00",
+     profissionalSelecionado.hora_fim
     );
     const inicioAlmoco = normalizarHorario(
       profissionalSelecionado.inicio_almoco,
@@ -3795,7 +3793,7 @@ const botaoAba = (valor: string, label: string) => {
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                {formatarMoeda(Number(servico.valor || 0))}
+                               {formatarMoeda(precoBaseServico(servico))}
                               </div>
                             </div>
                           ))}
