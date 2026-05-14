@@ -8,6 +8,7 @@ import AgendaActions from "./agenda/components/AgendaActions";
 import AgendaHeader from "./agenda/components/AgendaHeader";
 import ResumoDia from "./agenda/components/ResumoDia";
 import ModalReagendamento from "./agenda/components/ModalReagendamento";
+import ModalFinalizacao from "./agenda/components/ModalFinalizacao";
 import { classByStatus } from "./agenda/status";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 import {
@@ -46,8 +47,6 @@ import {
   formatarDataNascimento,
   montarMensagemAniversario,
   caminhoDaFoto,
-  textoDoAlerta,
-  filtrarAlertasDeCuidado,
   rotuloAlertaAgenda,
 } from "./agenda/utils";
 
@@ -2528,309 +2527,49 @@ ${linkMeuEspaco}`;
         </div>
       )}
 
-      {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
-            <div className="mb-5">
-              <h2 className="text-2xl font-bold text-slate-900">
-                Finalizar atendimento
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Confirme os dados antes de concluir e lançar no financeiro.
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
-              <p>
-                <strong>Cliente:</strong> {agendamentoSelecionado.cliente}
-              </p>
-              <p>
-                <strong>Serviço:</strong> {agendamentoSelecionado.servico}
-              </p>
-              <p>
-                <strong>Profissional:</strong>{" "}
-                {agendamentoSelecionado.profissional || "Não informado"}
-              </p>
-              <p>
-                <strong>Data:</strong> {agendamentoSelecionado.data} às{" "}
-                {agendamentoSelecionado.horario}
-              </p>
-            </div>
-
-            {loadingAlertasFinalizacao && (
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-500">
-                Verificando alertas da anamnese...
-              </div>
-            )}
-
-            {!loadingAlertasFinalizacao && filtrarAlertasDeCuidado(alertasFinalizacao).length > 0 && (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                <p className="font-black">Atenção: cuidado especial informado na anamnese</p>
-                <p className="mt-1 text-xs">
-                  Foram encontrados alertas que podem exigir atendimento diferenciado, como diabetes, micose/fungo ou unha encravada. O sistema não faz diagnóstico; use esta informação apenas como alerta operacional.
-                </p>
-                <div className="mt-3 space-y-2">
-                  {filtrarAlertasDeCuidado(alertasFinalizacao).slice(0, 4).map((alerta, index) => (
-                    <div key={index} className="rounded-xl bg-white/70 px-3 py-2 text-xs">
-                      {textoDoAlerta(alerta)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-black text-amber-900">Cuidado especial / ajuste de preço</p>
-              <p className="mt-1 text-xs text-amber-700">
-                Use quando o atendimento exigir mais tempo, materiais ou técnica diferenciada.
-              </p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <select
-                  value={cuidadoEspecial}
-                  onChange={(e) => setCuidadoEspecial(e.target.value)}
-                  disabled={usarPacote}
-                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
-                >
-                  <option value="nenhum">Sem cuidado especial</option>
-                  <option value="diabetes">Diabetes</option>
-                  <option value="micose/fungo">Micose / fungo</option>
-                  <option value="unha encravada">Unha encravada</option>
-                  <option value="outro">Outro cuidado especial</option>
-                </select>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={acrescimoCuidado}
-                  onChange={(e) => setAcrescimoCuidado(e.target.value)}
-                  disabled={usarPacote || cuidadoEspecial === "nenhum"}
-                  className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
-                  placeholder="Acréscimo R$ 0,00"
-                />
-              </div>
-              <textarea
-                value={observacaoCuidado}
-                onChange={(e) => setObservacaoCuidado(e.target.value)}
-                disabled={usarPacote || cuidadoEspecial === "nenhum"}
-                className="mt-3 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none disabled:bg-slate-100"
-                placeholder="Observação interna sobre o cuidado especial"
-              />
-              {!usarPacote && cuidadoEspecial !== "nenhum" && (
-                <p className="mt-2 text-xs font-bold text-amber-800">
-                  Total previsto: {(Number(valorPagamento || 0) + Number(acrescimoCuidado || 0)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </p>
-              )}
-            </div>
-
-            {pacotesDisponiveis.length > 0 && (
-              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-sm font-bold text-emerald-900">
-                  Cliente possui pacote disponível para este serviço
-                </p>
-
-                <div className="mt-3 grid gap-3">
-                  <select
-                    value={saldoPacoteSelecionadoId}
-                    onChange={(e) =>
-                      setSaldoPacoteSelecionadoId(e.target.value)
-                    }
-                    className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 outline-none"
-                  >
-                    {pacotesDisponiveis.map((pacote) => (
-                      <option key={pacote.saldo_id} value={pacote.saldo_id}>
-                        {pacote.pacote_nome} — saldo {pacote.restante}/
-                        {pacote.quantidade_total}
-                        {pacote.data_fim
-                          ? ` — válido até ${pacote.data_fim}`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-
-                  <label className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                    <input
-                      type="checkbox"
-                      checked={usarPacote}
-                      onChange={(e) => {
-                        const marcado = e.target.checked;
-                        setUsarPacote(marcado);
-                        if (marcado) {
-                          setValorPagamento("0");
-                          setFormaPagamento("pacote");
-                          setStatusPagamento("pago");
-                        } else {
-                          setValorPagamento(
-                            valorPadraoDoAgendamento(agendamentoSelecionado),
-                          );
-                          setFormaPagamento("pix");
-                          setStatusPagamento("pago");
-                        }
-                      }}
-                    />
-                    Usar pacote do cliente e baixar 1 unidade do saldo
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {pacotesDisponiveis.length === 0 && (
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                Nenhum pacote ativo com saldo disponível para este serviço.
-              </div>
-            )}
-
-            <div className="mt-5 grid gap-4">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Valor
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={valorPagamento}
-                  onChange={(e) => setValorPagamento(e.target.value)}
-                  disabled={usarPacote}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
-                  placeholder="0,00"
-                />
-                {usarPacote && (
-                  <p className="mt-1 text-xs font-semibold text-emerald-700">
-                    Valor zerado porque o atendimento será baixado do pacote.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Forma de pagamento
-                </label>
-                <select
-                  value={formaPagamento}
-                  onChange={(e) => setFormaPagamento(e.target.value)}
-                  disabled={usarPacote}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
-                >
-                  <option value="pix">Pix</option>
-                  <option value="dinheiro">Dinheiro</option>
-                  <option value="cartao_credito">Cartão de crédito</option>
-                  <option value="cartao_debito">Cartão de débito</option>
-                  <option value="pacote">Pacote</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Status do pagamento
-                </label>
-                <select
-                  value={statusPagamento}
-                  onChange={(e) => setStatusPagamento(e.target.value)}
-                  disabled={usarPacote}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300 disabled:bg-slate-100"
-                >
-                  <option value="pago">Pago</option>
-                  <option value="pendente">Pendente</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Foto do atendimento (opcional)
-              </label>
-              <p className="mb-3 text-xs text-slate-500">
-                Tire ou envie uma foto do serviço prestado. Se não quiser anexar
-                agora, é só finalizar normalmente.
-              </p>
-
-              <div className="mb-3 grid grid-cols-3 gap-2">
-                {[
-                  { label: "Geral", value: "geral" },
-                  { label: "Antes", value: "antes" },
-                  { label: "Depois", value: "depois" },
-                ].map((opcao) => {
-                  const ativo = tipoFotoAtendimento === opcao.value;
-                  return (
-                    <button
-                      key={opcao.value}
-                      type="button"
-                      onClick={() =>
-                        setTipoFotoAtendimento(
-                          opcao.value as "geral" | "antes" | "depois",
-                        )
-                      }
-                      className={`rounded-2xl px-3 py-2 text-xs font-black transition ${
-                        ativo
-                          ? "bg-orange-600 text-white shadow-sm"
-                          : "bg-slate-50 text-slate-700 ring-1 ring-slate-200"
-                      }`}
-                    >
-                      {opcao.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setFotoAtendimento(file);
-
-                  if (previewFotoAtendimento) {
-                    URL.revokeObjectURL(previewFotoAtendimento);
-                  }
-
-                  setPreviewFotoAtendimento(
-                    file ? URL.createObjectURL(file) : "",
-                  );
-                }}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700"
-              />
-
-              {previewFotoAtendimento && (
-                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
-                  <img
-                    src={previewFotoAtendimento}
-                    alt="Prévia da foto do atendimento"
-                    className="h-20 w-20 rounded-2xl object-cover"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-800">
-                      {fotoAtendimento?.name}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (previewFotoAtendimento) {
-                          URL.revokeObjectURL(previewFotoAtendimento);
-                        }
-                        setFotoAtendimento(null);
-                        setPreviewFotoAtendimento("");
-                      }}
-                      className="mt-2 rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-                    >
-                      Remover foto
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <SecondaryButton onClick={() => setModalFinalizarAberto(false)}>
-                Cancelar
-              </SecondaryButton>
-              <PrimaryButton onClick={() => void finalizarComPagamento()}>
-                {loadingFinalizar ? "Salvando..." : "Confirmar finalização"}
-              </PrimaryButton>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalFinalizacao
+        aberto={modalFinalizarAberto}
+        agendamento={agendamentoSelecionado}
+        loadingAlertasFinalizacao={loadingAlertasFinalizacao}
+        alertasFinalizacao={alertasFinalizacao}
+        cuidadoEspecial={cuidadoEspecial}
+        setCuidadoEspecial={setCuidadoEspecial}
+        acrescimoCuidado={acrescimoCuidado}
+        setAcrescimoCuidado={setAcrescimoCuidado}
+        observacaoCuidado={observacaoCuidado}
+        setObservacaoCuidado={setObservacaoCuidado}
+        pacotesDisponiveis={pacotesDisponiveis}
+        saldoPacoteSelecionadoId={saldoPacoteSelecionadoId}
+        setSaldoPacoteSelecionadoId={setSaldoPacoteSelecionadoId}
+        usarPacote={usarPacote}
+        onToggleUsarPacote={(marcado) => {
+          setUsarPacote(marcado);
+          if (marcado) {
+            setValorPagamento("0");
+            setFormaPagamento("pacote");
+            setStatusPagamento("pago");
+          } else if (agendamentoSelecionado) {
+            setValorPagamento(valorPadraoDoAgendamento(agendamentoSelecionado));
+            setFormaPagamento("pix");
+            setStatusPagamento("pago");
+          }
+        }}
+        valorPagamento={valorPagamento}
+        setValorPagamento={setValorPagamento}
+        formaPagamento={formaPagamento}
+        setFormaPagamento={setFormaPagamento}
+        statusPagamento={statusPagamento}
+        setStatusPagamento={setStatusPagamento}
+        fotoAtendimento={fotoAtendimento}
+        setFotoAtendimento={setFotoAtendimento}
+        previewFotoAtendimento={previewFotoAtendimento}
+        setPreviewFotoAtendimento={setPreviewFotoAtendimento}
+        tipoFotoAtendimento={tipoFotoAtendimento}
+        setTipoFotoAtendimento={setTipoFotoAtendimento}
+        loadingFinalizar={loadingFinalizar}
+        onFechar={() => setModalFinalizarAberto(false)}
+        onFinalizar={() => void finalizarComPagamento()}
+      />
     </div>
   );
 }
