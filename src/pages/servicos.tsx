@@ -507,22 +507,26 @@ export default function ServicosPage() {
 
   async function excluirServico(item: Servico) {
     const confirmar = window.confirm(
-      `Deseja excluir o serviço "${item.nome}"?`,
+      `Deseja inativar o serviço "${item.nome}"? Ele não aparecerá mais para novos agendamentos, mas o histórico será mantido.`,
     );
     if (!confirmar) return;
 
     const { error } = await supabase
       .from("servicos")
-      .delete()
+      .update({
+        ativo: false,
+        atualizado_em: new Date().toISOString(),
+      })
       .eq("id", item.id)
       .eq("empresa_id", empresaId);
 
     if (error) {
-      alert("Erro ao excluir serviço: " + error.message);
+      alert("Erro ao inativar serviço: " + error.message);
       return;
     }
 
     await carregarServicos();
+    alert("Serviço inativado com sucesso!");
   }
 
   function formatarMoeda(valor: number | null | undefined) {
@@ -1380,11 +1384,13 @@ export default function ServicosPage() {
                                 >
                                   {item.ativo ? "Inativar" : "Ativar"}
                                 </SecondaryButton>
-                                <SecondaryButton
-                                  onClick={() => excluirServico(item)}
-                                >
-                                  Excluir
-                                </SecondaryButton>
+                                {item.ativo && (
+                                  <SecondaryButton
+                                    onClick={() => excluirServico(item)}
+                                  >
+                                    Inativar seguro
+                                  </SecondaryButton>
+                                )}
                               </div>
                             </td>
                           </tr>

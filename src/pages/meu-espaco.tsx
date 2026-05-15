@@ -1146,10 +1146,12 @@ export default function MeuEspaco() {
     }
 
     const inicioExpediente = normalizarHorario(
-      profissionalSelecionado.hora_inicio
+      profissionalSelecionado.hora_inicio || profissionalSelecionado.inicio_expediente,
+      "08:00",
     );
     const fimExpediente = normalizarHorario(
-     profissionalSelecionado.hora_fim
+      profissionalSelecionado.hora_fim || profissionalSelecionado.fim_expediente,
+      "18:00",
     );
     const inicioAlmoco = normalizarHorario(
       profissionalSelecionado.inicio_almoco,
@@ -1312,11 +1314,11 @@ export default function MeuEspaco() {
     const duracaoTotal = duracaoTotalServicos(servicosSelecionados);
 
     const inicioExpediente = normalizarHorario(
-      profissionalSelecionado.inicio_expediente,
+      profissionalSelecionado.hora_inicio || profissionalSelecionado.inicio_expediente,
       "08:00",
     );
     const fimExpediente = normalizarHorario(
-      profissionalSelecionado.fim_expediente,
+      profissionalSelecionado.hora_fim || profissionalSelecionado.fim_expediente,
       "18:00",
     );
 
@@ -1477,18 +1479,18 @@ export default function MeuEspaco() {
 
     const { data: modeloData } = await query.maybeSingle();
 
-   if (!modeloData) {
-  setModelo(null);
-  setCampos([]);
-  setEmpresaAnamneseId(empresaId || null);
-  setAnamneseObrigatoria(true);
-  setModalAnamneseAberto(true);
-  setAssinaturaComplementarObrigatoria(false);
-  setModoAtualizacaoAnamnese(false);
-  setAba("anamnese");
-  setMensagem("Não foi possível carregar a ficha de anamnese. Tente novamente.");
-  return;
-}
+    if (!modeloData) {
+      setModelo(null);
+      setCampos([]);
+      setEmpresaAnamneseId(empresaId || null);
+      setAnamneseObrigatoria(false);
+      setModalAnamneseAberto(false);
+      setAnamnesePreenchida(null);
+      setPdfAnamneseUrl("");
+      setAssinaturaComplementarObrigatoria(false);
+      setModoAtualizacaoAnamnese(false);
+      return;
+    }
 
     setModelo(modeloData);
     setEmpresaAnamneseId(modeloData.empresa_id || empresaId || null);
@@ -1535,10 +1537,7 @@ export default function MeuEspaco() {
     }
 
     const listaFichas = (fichasPreenchidas || []) as any[];
-    const fichaPreenchida = listaFichas.length > 0 ? listaFichas[0] : null;
-
-    setAnamnesePreenchida(fichaPreenchida);
-    setPdfAnamneseUrl(fichaPreenchida?.pdf_url || "");
+    let fichaPreenchida: any = null;
 
     const respostasAnteriores: Record<string, string> = {};
     const justificativasAnteriores: Record<string, string> = {};
@@ -1564,6 +1563,19 @@ export default function MeuEspaco() {
           erroRespostasSalvas,
         );
       }
+
+      const idsFichasComRespostas = new Set(
+        (respostasSalvas || [])
+          .filter((item: any) => String(item?.resposta || "").trim() !== "")
+          .map((item: any) => item?.anamnese_id)
+          .filter(Boolean),
+      );
+
+      fichaPreenchida =
+        listaFichas.find((ficha: any) => {
+          const temAssinatura = String(ficha?.assinatura || "").trim() !== "";
+          return temAssinatura && idsFichasComRespostas.has(ficha?.id);
+        }) || null;
 
       const idsCamposRespondidos = Array.from(
         new Set(
@@ -1634,6 +1646,9 @@ export default function MeuEspaco() {
           });
       });
     }
+
+    setAnamnesePreenchida(fichaPreenchida);
+    setPdfAnamneseUrl(fichaPreenchida?.pdf_url || "");
 
     // Reaplica respostas antigas nos ids atuais quando o campo foi recriado.
     camposAtivos.forEach((campo: any) => {
@@ -3793,7 +3808,7 @@ const botaoAba = (valor: string, label: string) => {
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                               {formatarMoeda(precoBaseServico(servico))}
+                                {formatarMoeda(precoBaseServico(servico))}
                               </div>
                             </div>
                           ))}
