@@ -1477,18 +1477,18 @@ export default function MeuEspaco() {
 
     const { data: modeloData } = await query.maybeSingle();
 
-    if (!modeloData) {
-      setModelo(null);
-      setCampos([]);
-      setEmpresaAnamneseId(empresaId || null);
-      setAnamneseObrigatoria(false);
-      setModalAnamneseAberto(false);
-      setAnamnesePreenchida(null);
-      setPdfAnamneseUrl("");
-      setAssinaturaComplementarObrigatoria(false);
-      setModoAtualizacaoAnamnese(false);
-      return;
-    }
+   if (!modeloData) {
+  setModelo(null);
+  setCampos([]);
+  setEmpresaAnamneseId(empresaId || null);
+  setAnamneseObrigatoria(true);
+  setModalAnamneseAberto(true);
+  setAssinaturaComplementarObrigatoria(false);
+  setModoAtualizacaoAnamnese(false);
+  setAba("anamnese");
+  setMensagem("Não foi possível carregar a ficha de anamnese. Tente novamente.");
+  return;
+}
 
     setModelo(modeloData);
     setEmpresaAnamneseId(modeloData.empresa_id || empresaId || null);
