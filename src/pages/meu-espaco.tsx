@@ -24,6 +24,9 @@ import {
   gerarHorariosBase,
 } from "./meu-espaco/utils";
 
+
+const MEU_ESPACO_CLIENTE_STORAGE_KEY = "vendlysys_meu_espaco_cliente";
+
 type FotoCliente = {
   id: string;
   agendamento_id: string;
@@ -196,6 +199,45 @@ export default function MeuEspaco() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [configuracoes, setConfiguracoes] = useState<any>(null);
+
+
+  useEffect(() => {
+    const restaurarSessaoMeuEspaco = async () => {
+      if (cliente || carregando) return;
+
+      const parametros = new URLSearchParams(window.location.search);
+      const tokenAtual = parametros.get("token");
+
+      try {
+        const salvo = localStorage.getItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
+        if (!salvo) return;
+
+        const sessao = JSON.parse(salvo);
+
+        if (!sessao?.id) return;
+
+        // Se existe token na URL, ele tem prioridade sobre sessão salva.
+        if (tokenAtual && sessao?.token && tokenAtual !== sessao.token) {
+          return;
+        }
+
+        setCarregando(true);
+        await carregarCliente(sessao.id);
+
+        if (sessao.telefone) {
+          setTelefone(sessao.telefone);
+        }
+      } catch (error) {
+        console.warn("Não foi possível restaurar sessão do Meu Espaço:", error);
+        localStorage.removeItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
+      } finally {
+        setCarregando(false);
+      }
+    };
+
+    restaurarSessaoMeuEspaco();
+  }, []);
+
 
   useEffect(() => {
     const atualizarMobile = () => setIsMobile(window.innerWidth < 640);
@@ -626,18 +668,7 @@ export default function MeuEspaco() {
 
     const { data, error } = await supabase
       .from("empresas")
-      .select(`
-        banner_cliente_ativo,
-        banner_cliente_categoria,
-        banner_cliente_titulo,
-        banner_cliente_texto,
-        banner_cliente_botao_texto,
-        banner_cliente_botao_link,
-        banner_cliente_imagem_url,
-        banner_cliente_pos_x,
-        banner_cliente_pos_y,
-        banner_cliente_zoom
-      `)
+      .select("*")
       .eq("id", empresaId)
       .maybeSingle();
 
@@ -663,6 +694,20 @@ export default function MeuEspaco() {
     }
 
     setCliente(data);
+
+    try {
+      localStorage.setItem(
+        MEU_ESPACO_CLIENTE_STORAGE_KEY,
+        JSON.stringify({
+          id: data.id,
+          telefone: data.telefone || telefone || "",
+          token: new URLSearchParams(window.location.search).get("token") || "",
+          salvo_em: new Date().toISOString(),
+        }),
+      );
+    } catch (error) {
+      console.warn("Não foi possível salvar sessão do Meu Espaço:", error);
+    }
 
     const ags = await carregarAgendamentos(data.id);
     await carregarHistorico(data.id);
@@ -2299,6 +2344,12 @@ export default function MeuEspaco() {
   }
 
   function sair() {
+    try {
+      localStorage.removeItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
+    } catch (error) {
+      console.warn("Não foi possível limpar sessão do Meu Espaço:", error);
+    }
+
     setCliente(null);
     setTelefone("");
     setMensagem("");
@@ -2618,6 +2669,175 @@ export default function MeuEspaco() {
       )}
     </div>
   );
+
+
+  function abrirWhatsAppEmpresa() {
+    const numero = limparTelefone(
+      configuracoes?.whatsapp ||
+        configuracoes?.telefone ||
+        cliente?.telefone ||
+        "",
+    );
+
+    if (!numero) {
+      alert("WhatsApp ainda não configurado.");
+      return;
+    }
+
+    window.open(`https://wa.me/55${numero}`, "_blank");
+  }
+
+  function ligarEmpresa() {
+    const numero = limparTelefone(
+      configuracoes?.telefone ||
+        configuracoes?.whatsapp ||
+        cliente?.telefone ||
+        "",
+    );
+
+    if (!numero) {
+      alert("Telefone ainda não configurado.");
+      return;
+    }
+
+    window.location.href = `tel:+55${numero}`;
+  }
+
+  function abrirLinkConfiguracao(
+    link?: string | null,
+    mensagem = "Link ainda não configurado.",
+  ) {
+    if (!link) {
+      alert(mensagem);
+      return;
+    }
+
+    window.open(link, "_blank");
+  }
+
+  function copiarPixEmpresa() {
+    const chavePix =
+      configuracoes?.chave_pix ||
+      configuracoes?.pix ||
+      configuracoes?.pix_chave ||
+      "";
+
+    if (!chavePix) {
+      alert("Chave PIX ainda não configurada.");
+      return;
+    }
+
+    navigator.clipboard?.writeText(chavePix);
+    alert("Chave PIX copiada!");
+  }
+
+  function irParaAgendamento() {
+    setAba("agenda");
+    setNovoAgendamentoAberto(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+  }
+
+
+
+  const bannerMeuEspaco = {
+    ativo: configuracoes?.banner_cliente_ativo ?? true,
+    imagem:
+      configuracoes?.imagem_banner_cliente_url ||
+      configuracoes?.banner_imagem_url ||
+      configuracoes?.banner_imagem ||
+      configuracoes?.banner_meu_espaco_url ||
+      configuracoes?.banner_meu_espaco ||
+      configuracoes?.banner_cliente_imagem_url ||
+      "",
+    chamada:
+      configuracoes?.chamada_banner_cliente ||
+      configuracoes?.banner_cliente_categoria ||
+      configuracoes?.banner_chamada ||
+      "NOVIDADE",
+    titulo:
+      configuracoes?.titulo_banner_cliente ||
+      configuracoes?.banner_titulo ||
+      configuracoes?.titulo_meu_espaco ||
+      configuracoes?.banner_cliente_titulo ||
+      "Bem-vinda ao Meu Espaço",
+    texto:
+      configuracoes?.texto_banner_cliente ||
+      configuracoes?.subtitulo_banner_cliente ||
+      configuracoes?.banner_texto ||
+      configuracoes?.banner_subtitulo ||
+      configuracoes?.texto_meu_espaco ||
+      configuracoes?.banner_cliente_texto ||
+      "Acompanhe novidades, promoções e dicas exclusivas.",
+    botaoTexto:
+      configuracoes?.texto_botao_banner_cliente ||
+      configuracoes?.banner_botao_texto ||
+      configuracoes?.botao_meu_espaco_texto ||
+      configuracoes?.banner_cliente_botao_texto ||
+      "Siga-nos no Instagram",
+    botaoLink:
+      configuracoes?.link_botao_banner_cliente ||
+      configuracoes?.banner_botao_link ||
+      configuracoes?.botao_meu_espaco_link ||
+      configuracoes?.banner_cliente_botao_link ||
+      configuracoes?.instagram_url ||
+      "",
+    posX: Number(
+      configuracoes?.banner_cliente_pos_x ?? configuracoes?.banner_pos_x ?? 50,
+    ),
+    posY: Number(
+      configuracoes?.banner_cliente_pos_y ?? configuracoes?.banner_pos_y ?? 50,
+    ),
+    zoom:
+      Number(configuracoes?.banner_cliente_zoom ?? configuracoes?.banner_zoom ?? 100) /
+      100,
+  };
+
+
+
+  const agendamentosOrdenados = [...(agendamentos || [])].sort((a: any, b: any) => {
+    const dataA = `${a?.data || ""} ${a?.horario || a?.hora || "00:00"}`;
+    const dataB = `${b?.data || ""} ${b?.horario || b?.hora || "00:00"}`;
+    return dataA.localeCompare(dataB);
+  });
+
+  const proximoAgendamentoCliente =
+    agendamentosOrdenados.find(
+      (item: any) =>
+        !["cancelado", "finalizado", "concluido"].includes(
+          String(item?.status || "").toLowerCase(),
+        ),
+    ) || null;
+
+  const nomeServicoProximo =
+    proximoAgendamentoCliente?.servico_nome ||
+    proximoAgendamentoCliente?.servico ||
+    proximoAgendamentoCliente?.servicos?.nome ||
+    "Atendimento";
+
+  const dataProximoAgendamento =
+    proximoAgendamentoCliente?.data
+      ? formatarData(proximoAgendamentoCliente.data)
+      : "";
+
+  const horarioProximoAgendamento =
+    proximoAgendamentoCliente?.horario ||
+    proximoAgendamentoCliente?.hora ||
+    proximoAgendamentoCliente?.inicio ||
+    "";
+
+  const profissionalProximoAgendamento =
+    proximoAgendamentoCliente?.profissional_nome ||
+    proximoAgendamentoCliente?.profissional ||
+    proximoAgendamentoCliente?.profissionais?.nome ||
+    "";
+
+  const totalPacotesAtivosCliente = Array.isArray(pacotesCliente)
+    ? pacotesCliente.filter((pacote: any) => {
+        const status = String(pacote?.status || pacote?.situacao || "").toLowerCase();
+        return status !== "cancelado" && status !== "finalizado" && status !== "expirado";
+      }).length
+    : 0;
+
 
 const botaoAba = (valor: string, label: string) => {
     const abaBloqueada = acessoBloqueadoPorAnamnese && valor !== "anamnese";
@@ -3078,7 +3298,7 @@ const botaoAba = (valor: string, label: string) => {
         padding: isMobile ? "10px 10px 92px" : 28,
       }}
     >
-      <div style={{ maxWidth: 1160, margin: "0 auto" }}>
+      <div style={{ width: "100%", maxWidth: 1320, margin: "0 auto" }}>
         <div
           style={{
             background: "#282663",
@@ -3120,10 +3340,313 @@ const botaoAba = (valor: string, label: string) => {
           </button>
         </div>
 
+       {/* CARTÃO DIGITAL PREMIUM DO CLIENTE */}
+
+        {false && !novoAgendamentoAberto && !anamneseObrigatoria && !assinaturaComplementarObrigatoria && (
+          <div
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              borderRadius: isMobile ? 26 : 34,
+              marginBottom: isMobile ? 14 : 18,
+              background: "#111827",
+              color: "#fff",
+              boxShadow: "0 24px 70px rgba(15,23,42,.28)",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                backgroundImage: `url(${
+                  configuracoes?.banner_cliente_imagem_url ||
+                  "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1400&q=80"
+                })`,
+                backgroundSize: "cover",
+                backgroundPosition: `${configuracoes?.banner_cliente_pos_x ?? 50}% ${
+                  configuracoes?.banner_cliente_pos_y ?? 50
+                }%`,
+                opacity: 0.48,
+              }}
+            />
+
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "linear-gradient(180deg, rgba(15,23,42,.68), rgba(15,23,42,.96))",
+              }}
+            />
+
+            <div
+              style={{
+                position: "relative",
+                zIndex: 2,
+                padding: isMobile ? "24px 18px" : "34px 42px",
+                maxWidth: 980,
+                margin: "0 auto",
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: isMobile ? 84 : 100,
+                  height: isMobile ? 84 : 100,
+                  borderRadius: 28,
+                  margin: "0 auto 16px",
+                  background: "rgba(255,255,255,.18)",
+                  border: "1px solid rgba(255,255,255,.35)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: isMobile ? 34 : 42,
+                  fontWeight: 900,
+                  backdropFilter: "blur(12px)",
+                }}
+              >
+                {String(
+                  configuracoes?.banner_cliente_titulo ||
+                    cliente?.empresa_nome ||
+                    "V",
+                )
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </div>
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "rgba(255,255,255,.72)",
+                  fontSize: isMobile ? 12 : 14,
+                  fontWeight: 900,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
+                {configuracoes?.banner_cliente_categoria || "Meu Espaço"}
+              </p>
+
+              <h2
+                style={{
+                  margin: "8px 0",
+                  fontSize: isMobile ? 28 : 40,
+                  lineHeight: 1.04,
+                  fontWeight: 950,
+                }}
+              >
+                {configuracoes?.banner_cliente_titulo ||
+                  cliente?.empresa_nome ||
+                  "Espaço Áurea"}
+              </h2>
+
+              <p
+                style={{
+                  margin: "0 auto 14px",
+                  maxWidth: 560,
+                  color: "rgba(255,255,255,.86)",
+                  fontSize: isMobile ? 15 : 18,
+                  lineHeight: 1.45,
+                  fontWeight: 700,
+                }}
+              >
+                {configuracoes?.slogan ||
+                  configuracoes?.banner_cliente_texto ||
+                  "Beleza, cuidado e praticidade em um só lugar."}
+              </p>
+
+              {(configuracoes?.endereco ||
+                configuracoes?.cidade ||
+                configuracoes?.estado) && (
+                <p
+                  style={{
+                    margin: "0 auto 20px",
+                    maxWidth: 560,
+                    color: "#fff",
+                    fontSize: isMobile ? 14 : 16,
+                    lineHeight: 1.5,
+                    fontWeight: 900,
+                  }}
+                >
+                  📍{" "}
+                  {[
+                    configuracoes?.endereco,
+                    configuracoes?.cidade,
+                    configuracoes?.estado,
+                  ]
+                    .filter(Boolean)
+                    .join(" - ")}
+                </p>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                  maxWidth: 540,
+                  margin: "0 auto 16px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={abrirWhatsAppEmpresa}
+                  style={{
+                    border: 0,
+                    borderRadius: 999,
+                    padding: "13px 16px",
+                    background: "linear-gradient(90deg, #282663, #5b5bd6)",
+                    color: "#fff",
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  💬 WhatsApp
+                </button>
+
+                <button
+                  type="button"
+                  onClick={ligarEmpresa}
+                  style={{
+                    border: 0,
+                    borderRadius: 999,
+                    padding: "13px 16px",
+                    background: "linear-gradient(90deg, #282663, #5b5bd6)",
+                    color: "#fff",
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  📞 Ligar
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  maxWidth: 560,
+                  margin: "0 auto",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={irParaAgendamento}
+                  style={{
+                    border: 0,
+                    borderRadius: 999,
+                    padding: isMobile ? "15px 18px" : "17px 24px",
+                    background: "linear-gradient(90deg, #282663, #5b5bd6)",
+                    color: "#fff",
+                    fontSize: isMobile ? 16 : 18,
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  📅 Agende seu Horário
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    abrirLinkConfiguracao(
+                      configuracoes?.google_avaliacao_url,
+                      "Link de avaliação do Google ainda não configurado.",
+                    )
+                  }
+                  style={{
+                    border: "1px solid rgba(255,255,255,.18)",
+                    borderRadius: 999,
+                    padding: "14px 18px",
+                    background:
+                      "linear-gradient(90deg, rgba(40,38,99,.96), rgba(91,91,214,.92))",
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  ⭐ Avalie no Google
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    abrirLinkConfiguracao(
+                      configuracoes?.instagram_url,
+                      "Instagram ainda não configurado.",
+                    )
+                  }
+                  style={{
+                    border: "1px solid rgba(255,255,255,.18)",
+                    borderRadius: 999,
+                    padding: "14px 18px",
+                    background:
+                      "linear-gradient(90deg, rgba(40,38,99,.96), rgba(91,91,214,.92))",
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  📸 Instagram
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    abrirLinkConfiguracao(
+                      configuracoes?.loja_url,
+                      "Loja ainda não configurada.",
+                    )
+                  }
+                  style={{
+                    border: "1px solid rgba(255,255,255,.18)",
+                    borderRadius: 999,
+                    padding: "14px 18px",
+                    background:
+                      "linear-gradient(90deg, rgba(40,38,99,.96), rgba(91,91,214,.92))",
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  🛒 Nossa Loja
+                </button>
+
+                <button
+                  type="button"
+                  onClick={copiarPixEmpresa}
+                  style={{
+                    border: "1px solid rgba(255,255,255,.18)",
+                    borderRadius: 999,
+                    padding: "14px 18px",
+                    background:
+                      "linear-gradient(90deg, rgba(40,38,99,.96), rgba(91,91,214,.92))",
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 950,
+                    cursor: "pointer",
+                  }}
+                >
+                  💠 Chave PIX
+                </button>
+              </div>
+
+
+
+
+              
+            </div>
+          </div>
+        )}
+
+
        {/* BANNER PROMOCIONAL */}
-        {!anamneseObrigatoria &&
+        {!novoAgendamentoAberto && !anamneseObrigatoria &&
           !assinaturaComplementarObrigatoria &&
-          configuracoes?.banner_cliente_ativo !== false && (
+          (bannerMeuEspaco.ativo ?? true) !== false && (
             <div
               style={{
                 position: "relative",
@@ -3138,25 +3661,19 @@ const botaoAba = (valor: string, label: string) => {
             >
               <img
                 src={
-                  configuracoes?.banner_cliente_imagem_url ||
+                  bannerMeuEspaco.imagem ||
                   "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1400&q=80"
                 }
-                alt={configuracoes?.banner_cliente_titulo || "Banner do Meu Espaço"}
+                alt={bannerMeuEspaco.titulo || "Banner do Meu Espaço"}
                 style={{
                   position: "absolute",
                   inset: 0,
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  objectPosition: `${configuracoes?.banner_cliente_pos_x ?? 50}% ${
-                    configuracoes?.banner_cliente_pos_y ?? 50
-                  }%`,
-                  transform: `scale(${
-                    Number(configuracoes?.banner_cliente_zoom ?? 100) / 100
-                  })`,
-                  transformOrigin: `${configuracoes?.banner_cliente_pos_x ?? 50}% ${
-                    configuracoes?.banner_cliente_pos_y ?? 50
-                  }%`,
+                  objectPosition: `${bannerMeuEspaco.posX}% ${bannerMeuEspaco.posY}%`,
+                  transform: `scale(${bannerMeuEspaco.zoom})`,
+                  transformOrigin: `${bannerMeuEspaco.posX}% ${bannerMeuEspaco.posY}%`,
                 }}
               />
 
@@ -3188,7 +3705,7 @@ const botaoAba = (valor: string, label: string) => {
                     letterSpacing: 1,
                   }}
                 >
-                  {configuracoes?.banner_cliente_categoria || "Novidade"}
+                  {bannerMeuEspaco.chamada}
                 </p>
 
                 <h2
@@ -3199,8 +3716,7 @@ const botaoAba = (valor: string, label: string) => {
                     fontWeight: 900,
                   }}
                 >
-                  {configuracoes?.banner_cliente_titulo ||
-                    "Bem-vinda ao Meu Espaço"}
+                  {bannerMeuEspaco.titulo}
                 </h2>
 
                 <p
@@ -3211,19 +3727,15 @@ const botaoAba = (valor: string, label: string) => {
                     lineHeight: 1.5,
                   }}
                 >
-                  {configuracoes?.banner_cliente_texto ||
-                    "Acompanhe novidades, promoções e dicas exclusivas."}
+                  {bannerMeuEspaco.texto}
                 </p>
 
-                {(configuracoes?.banner_cliente_botao_texto ||
-                  configuracoes?.banner_cliente_botao_link) && (
+                {(bannerMeuEspaco.botaoTexto || bannerMeuEspaco.botaoLink) && (
                   <button
                     type="button"
                     onClick={() => {
-                      const link = configuracoes?.banner_cliente_botao_link;
-
-                      if (link) {
-                        window.open(link, "_blank");
+                      if (bannerMeuEspaco.botaoLink) {
+                        window.open(bannerMeuEspaco.botaoLink, "_blank");
                       }
                     }}
                     style={{
@@ -3235,13 +3747,11 @@ const botaoAba = (valor: string, label: string) => {
                       padding: isMobile ? "11px 16px" : "14px 20px",
                       fontWeight: 900,
                       fontSize: 15,
-                      cursor: configuracoes?.banner_cliente_botao_link
-                        ? "pointer"
-                        : "default",
+                      cursor: bannerMeuEspaco.botaoLink ? "pointer" : "default",
                       boxShadow: "0 8px 20px rgba(0,0,0,.18)",
                     }}
                   >
-                    {configuracoes?.banner_cliente_botao_texto || "Saiba mais"}
+                    {bannerMeuEspaco.botaoTexto || "Saiba mais"}
                   </button>
                 )}
               </div>
@@ -3267,7 +3777,7 @@ const botaoAba = (valor: string, label: string) => {
         ) : (
           <div
             style={{
-              display: navInferior ? "none" : "flex",
+              display: "none",
               gap: 10,
               marginBottom: isMobile ? 16 : 22,
               flexWrap: isMobile ? "nowrap" : "wrap",
@@ -3334,22 +3844,595 @@ const botaoAba = (valor: string, label: string) => {
             </div>
           )}
 
+
+        {/* EXPERIÊNCIA PREMIUM DO CLIENTE */}
+        {!novoAgendamentoAberto &&
+          !anamneseObrigatoria &&
+          !assinaturaComplementarObrigatoria && (
+            <section
+              style={{
+                width: "100%",
+                maxWidth: 1320,
+                margin: isMobile ? "14px auto 16px" : "20px auto 24px",
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr",
+                gap: isMobile ? 12 : 18,
+              }}
+            >
+              <div
+                style={{
+                  borderRadius: 26,
+                  padding: isMobile ? 18 : 24,
+                  background: proximoAgendamentoCliente
+                    ? "linear-gradient(135deg, #282663 0%, #5b5bd6 100%)"
+                    : "#ffffff",
+                  color: proximoAgendamentoCliente ? "#ffffff" : "#0f172a",
+                  border: proximoAgendamentoCliente
+                    ? "1px solid rgba(255,255,255,.14)"
+                    : "1px solid #dbe4ff",
+                  boxShadow: proximoAgendamentoCliente
+                    ? "0 20px 48px rgba(40,38,99,.24)"
+                    : "0 14px 38px rgba(15,23,42,.08)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 950,
+                    opacity: proximoAgendamentoCliente ? 0.82 : 0.65,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 10,
+                  }}
+                >
+                  Próximo atendimento
+                </div>
+
+                {proximoAgendamentoCliente ? (
+                  <>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: isMobile ? 24 : 32,
+                        lineHeight: 1.1,
+                        fontWeight: 950,
+                      }}
+                    >
+                      {nomeServicoProximo}
+                    </h2>
+
+                    <p
+                      style={{
+                        margin: "10px 0 0",
+                        fontSize: isMobile ? 14 : 17,
+                        fontWeight: 800,
+                        opacity: 0.92,
+                      }}
+                    >
+                      {dataProximoAgendamento}
+                      {horarioProximoAgendamento
+                        ? ` • ${horarioProximoAgendamento}`
+                        : ""}
+                      {profissionalProximoAgendamento
+                        ? ` • com ${profissionalProximoAgendamento}`
+                        : ""}
+                    </p>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        marginTop: 18,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAba("agenda");
+                          setNovoAgendamentoAberto(true);
+                          setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+                        }}
+                        style={{
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "12px 18px",
+                          background: "#ffffff",
+                          color: "#282663",
+                          fontWeight: 950,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Reagendar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={abrirWhatsAppEmpresa}
+                        style={{
+                          border: "1px solid rgba(255,255,255,.36)",
+                          borderRadius: 999,
+                          padding: "12px 18px",
+                          background: "rgba(255,255,255,.12)",
+                          color: "#ffffff",
+                          fontWeight: 950,
+                          cursor: "pointer",
+                        }}
+                      >
+                        WhatsApp
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: isMobile ? 23 : 30,
+                        lineHeight: 1.1,
+                        fontWeight: 950,
+                      }}
+                    >
+                      Nenhum horário marcado ainda
+                    </h2>
+
+                    <p
+                      style={{
+                        margin: "10px 0 0",
+                        color: "#64748b",
+                        fontWeight: 700,
+                        fontSize: isMobile ? 13 : 15,
+                      }}
+                    >
+                      Escolha um serviço e reserve seu próximo atendimento em poucos cliques.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAba("agenda");
+                        setNovoAgendamentoAberto(true);
+                        setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+                      }}
+                      style={{
+                        marginTop: 18,
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "13px 20px",
+                        background: "linear-gradient(135deg, #282663, #5b5bd6)",
+                        color: "#ffffff",
+                        fontWeight: 950,
+                        cursor: "pointer",
+                        boxShadow: "0 14px 30px rgba(40,38,99,.18)",
+                      }}
+                    >
+                      Agendar agora
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div
+                style={{
+                  borderRadius: 26,
+                  padding: isMobile ? 18 : 22,
+                  background: "#ffffff",
+                  border: "1px solid #dbe4ff",
+                  boxShadow: "0 14px 38px rgba(15,23,42,.08)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 950,
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 14,
+                  }}
+                >
+                  Status do cliente
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                  }}
+                >
+                  {[
+                    {
+                      texto: "Cadastro concluído",
+                      status: true,
+                      icone: "✔",
+                    },
+                    {
+                      texto:
+                        !anamneseObrigatoria
+                          ? "Anamnese em dia"
+                          : "Anamnese pendente",
+                      status:
+                        !anamneseObrigatoria,
+                      icone:
+                        !anamneseObrigatoria
+                          ? "✔"
+                          : "!",
+                    },
+                    {
+                      texto: proximoAgendamentoCliente
+                        ? "Próximo horário ativo"
+                        : "Sem horário ativo",
+                      status: Boolean(proximoAgendamentoCliente),
+                      icone: proximoAgendamentoCliente ? "🕒" : "📅",
+                    },
+                    {
+                      texto:
+                        totalPacotesAtivosCliente > 0
+                          ? `${totalPacotesAtivosCliente} pacote(s) ativo(s)`
+                          : "Consulte pacotes disponíveis",
+                      status: totalPacotesAtivosCliente > 0,
+                      icone: "🎁",
+                    },
+                  ].map((item, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        borderRadius: 999,
+                        padding: "11px 13px",
+                        background: item.status ? "#ecfdf5" : "#fff7ed",
+                        color: item.status ? "#166534" : "#9a3412",
+                        fontWeight: 900,
+                        fontSize: isMobile ? 12 : 13,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 999,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: item.status ? "#dcfce7" : "#fed7aa",
+                          flex: "0 0 auto",
+                        }}
+                      >
+                        {item.icone}
+                      </span>
+                      {item.texto}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+        {/* MENU PRINCIPAL EM CARDS */}
+        {!novoAgendamentoAberto &&
+          !anamneseObrigatoria &&
+          !assinaturaComplementarObrigatoria && (
+            <section
+              style={{
+                width: "100%",
+                maxWidth: 1320,
+                margin: isMobile ? "14px auto 14px" : "18px auto 28px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 14,
+                  alignItems: isMobile ? "flex-start" : "center",
+                  flexDirection: isMobile ? "column" : "row",
+                  marginBottom: 14,
+                }}
+              >
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: "#0f172a",
+                      fontSize: isMobile ? 22 : 30,
+                      lineHeight: 1.08,
+                      fontWeight: 950,
+                    }}
+                  >
+                    O que você deseja fazer?
+                  </h2>
+                  <p
+                    style={{
+                      margin: "6px 0 0",
+                      color: "#64748b",
+                      fontSize: isMobile ? 13 : 16,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Acesse seus agendamentos, dados, ficha, histórico, fotos e pacotes.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    background: "#eef2ff",
+                    color: "#282663",
+                    border: "1px solid #dbe4ff",
+                    borderRadius: 999,
+                    padding: "10px 14px",
+                    fontWeight: 950,
+                    fontSize: isMobile ? 12 : 14,
+                  }}
+                >
+                  Portal do cliente
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(3, minmax(0, 1fr))",
+                  gap: isMobile ? 12 : 18,
+                }}
+              >
+                {[
+                  {
+                    valor: "agenda",
+                    icone: "📅",
+                    titulo: "Agendamentos",
+                    texto: "Agende novos horários e acompanhe seus próximos atendimentos.",
+                  },
+                  {
+                    valor: "dados",
+                    icone: "👤",
+                    titulo: "Dados pessoais",
+                    texto: "Confira e atualize suas informações cadastrais.",
+                  },
+                  {
+                    valor: "anamnese",
+                    icone: "🧾",
+                    titulo: "Anamnese",
+                    texto: "Preencha ou consulte sua ficha obrigatória de atendimento.",
+                  },
+                  {
+                    valor: "historico",
+                    icone: "🕘",
+                    titulo: "Histórico",
+                    texto: "Veja atendimentos já realizados e detalhes anteriores.",
+                  },
+                  {
+                    valor: "fotos",
+                    icone: "🖼️",
+                    titulo: "Fotos",
+                    texto: "Acompanhe registros visuais dos seus atendimentos.",
+                  },
+                  {
+                    valor: "pacotes",
+                    icone: "🎁",
+                    titulo: "Pacotes",
+                    texto: "Consulte combos, sessões disponíveis e validade.",
+                  },
+                ].map((item) => {
+                  const abaBloqueada =
+                    acessoBloqueadoPorAnamnese && item.valor !== "anamnese";
+
+                  return (
+                    <button
+                      key={item.valor}
+                      type="button"
+                      onClick={() => {
+                        if (abaBloqueada) {
+                          levarParaAnamneseObrigatoria();
+                          return;
+                        }
+
+                        setAba(item.valor);
+                        setNovoAgendamentoAberto(true);
+                        setTimeout(
+                          () =>
+                            window.scrollTo({
+                              top: 0,
+                              behavior: "smooth",
+                            }),
+                          80,
+                        );
+                      }}
+                      disabled={abaBloqueada}
+                      style={{
+                        width: "100%",
+                        minHeight: isMobile ? 118 : 150,
+                        border: aba === item.valor && (item.valor !== "agenda" || novoAgendamentoAberto)
+                          ? "2px solid #5b5bd6"
+                          : "1px solid #dbe4ff",
+                        borderRadius: 26,
+                        background: aba === item.valor && (item.valor !== "agenda" || novoAgendamentoAberto)
+                          ? "linear-gradient(135deg, #eef2ff, #ffffff)"
+                          : "#ffffff",
+                        boxShadow: aba === item.valor && (item.valor !== "agenda" || novoAgendamentoAberto)
+                          ? "0 20px 46px rgba(40,38,99,.16)"
+                          : "0 14px 38px rgba(15,23,42,.08)",
+                        padding: isMobile ? 16 : 22,
+                        display: "flex",
+                        gap: 16,
+                        alignItems: "center",
+                        textAlign: "left",
+                        cursor: abaBloqueada ? "not-allowed" : "pointer",
+                        opacity: abaBloqueada ? 0.55 : 1,
+                        transition: "all .18s ease",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: isMobile ? 52 : 62,
+                          height: isMobile ? 52 : 62,
+                          borderRadius: 20,
+                          background:
+                            "linear-gradient(135deg, rgba(91,91,214,.16), rgba(40,38,99,.08))",
+                          color: "#282663",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: isMobile ? 26 : 32,
+                          flex: "0 0 auto",
+                        }}
+                      >
+                        {item.icone}
+                      </span>
+
+                      <span style={{ display: "block" }}>
+                        <strong
+                          style={{
+                            display: "block",
+                            color: "#0f172a",
+                            fontSize: isMobile ? 17 : 20,
+                            lineHeight: 1.1,
+                            fontWeight: 950,
+                          }}
+                        >
+                          {item.titulo}
+                        </strong>
+                        <span
+                          style={{
+                            display: "block",
+                            marginTop: 7,
+                            color: "#64748b",
+                            fontSize: isMobile ? 13 : 14,
+                            lineHeight: 1.35,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {item.texto}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
         <div
+          id="painel-cliente-detalhe"
           style={{
+            display: novoAgendamentoAberto ? undefined : "none",
             background: "#fff",
-            borderRadius: isMobile ? 22 : 26,
-            padding: isMobile ? 13 : 28,
-            boxShadow: "0 14px 35px rgba(15,23,42,.08)",
-            border: isMobile ? "1px solid #e2e8f0" : undefined,
+            borderRadius: novoAgendamentoAberto ? 0 : isMobile ? 22 : 26,
+            padding: novoAgendamentoAberto ? (isMobile ? 14 : 28) : isMobile ? 13 : 28,
+            boxShadow: novoAgendamentoAberto ? "none" : "0 14px 35px rgba(15,23,42,.08)",
+            border: novoAgendamentoAberto ? "none" : isMobile ? "1px solid #e2e8f0" : undefined,
           }}
         >
+            {novoAgendamentoAberto && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: isMobile ? "stretch" : "center",
+                  flexDirection: isMobile ? "column" : "row",
+                  marginBottom: 22,
+                  paddingBottom: 16,
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNovoAgendamentoAberto(false);
+                      setAba("agenda");
+                      setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+                    }}
+                    style={{
+                      border: "1px solid #dbe4ff",
+                      background: "#fff",
+                      color: "#282663",
+                      borderRadius: 999,
+                      padding: "10px 16px",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                      marginBottom: 12,
+                    }}
+                  >
+                    ← Voltar ao Meu Espaço
+                  </button>
+
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: "#0f172a",
+                      fontSize: isMobile ? 24 : 32,
+                      fontWeight: 950,
+                    }}
+                  >
+                    {aba === "agenda"
+                      ? "Agendamentos"
+                      : aba === "dados"
+                      ? "Dados pessoais"
+                      : aba === "anamnese"
+                      ? "Anamnese"
+                      : aba === "historico"
+                      ? "Histórico"
+                      : aba === "fotos"
+                      ? "Fotos"
+                      : aba === "pacotes"
+                      ? "Pacotes"
+                      : "Meu Espaço"}
+                  </h2>
+
+                  <p
+                    style={{
+                      margin: "6px 0 0",
+                      color: "#64748b",
+                      fontSize: isMobile ? 13 : 16,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {aba === "agenda"
+                      ? "Escolha um serviço, profissional e horário para agendar."
+                      : aba === "dados"
+                      ? "Confira e atualize seus dados cadastrais."
+                      : aba === "anamnese"
+                      ? "Consulte ou preencha sua ficha obrigatória."
+                      : aba === "historico"
+                      ? "Acompanhe seus atendimentos anteriores."
+                      : aba === "fotos"
+                      ? "Veja os registros dos seus atendimentos."
+                      : aba === "pacotes"
+                      ? "Consulte seus pacotes, combos e sessões."
+                      : ""}
+                  </p>
+                </div>
+
+                <span
+                  style={{
+                    alignSelf: isMobile ? "flex-start" : "center",
+                    borderRadius: 999,
+                    background: "#eef2ff",
+                    color: "#282663",
+                    border: "1px solid #dbe4ff",
+                    padding: "10px 14px",
+                    fontWeight: 950,
+                    fontSize: 13,
+                  }}
+                >
+                  Portal do cliente
+                </span>
+              </div>
+            )}
+
+
           {aba === "agenda" &&
             !anamneseObrigatoria &&
             !assinaturaComplementarObrigatoria && (
-              <div>
+              <div id="area-agendamento-cliente">
                 <div
                   style={{
-                    display: "flex",
+                    display: novoAgendamentoAberto ? "none" : "flex",
                     flexDirection: isMobile ? "column" : "row",
                     justifyContent: "space-between",
                     gap: 12,
@@ -3358,8 +4441,47 @@ const botaoAba = (valor: string, label: string) => {
                   }}
                 >
                   <div>
-                    <h2 style={{ margin: 0 }}>Agendamentos</h2>
-                    <p style={{ color: "#64748b", margin: "6px 0 0" }}>
+                    {novoAgendamentoAberto && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNovoAgendamentoAberto(false);
+                          setAgendamentoReagendandoId(null);
+                          setAba("agenda");
+                          setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+                        }}
+                        style={{
+                          border: "1px solid #dbe4ff",
+                          background: "#fff",
+                          color: "#282663",
+                          borderRadius: 999,
+                          padding: "10px 16px",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                          marginBottom: 14,
+                        }}
+                      >
+                        ← Voltar ao Meu Espaço
+                      </button>
+                    )}
+
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: isMobile ? 24 : 34,
+                        color: "#0f172a",
+                        fontWeight: 950,
+                      }}
+                    >
+                      {novoAgendamentoAberto ? "Agendar horário" : "Agendamentos"}
+                    </h2>
+                    <p
+                      style={{
+                        color: "#64748b",
+                        margin: "8px 0 0",
+                        fontSize: isMobile ? 14 : 18,
+                      }}
+                    >
                       Escolha um serviço, profissional e um horário livre para
                       agendar.
                     </p>
@@ -3383,6 +4505,7 @@ const botaoAba = (valor: string, label: string) => {
                     }}
                     disabled={acessoBloqueadoPorAnamnese}
                     style={{
+                      display: novoAgendamentoAberto ? "none" : undefined,
                       padding: isMobile ? "11px 14px" : "13px 18px",
                       width: isMobile ? "100%" : undefined,
                       borderRadius: 999,
@@ -3956,7 +5079,7 @@ const botaoAba = (valor: string, label: string) => {
                   </p>
                 )}
 
-                {agendamentos.map((a) => {
+                {aba === 'agenda' && !novoAgendamentoAberto && agendamentos.map((a) => {
                   const status = String(a.status || "").toLowerCase();
                   const podeAlterar = !["cancelado", "finalizado"].includes(status);
                   const jaConfirmado = status === "confirmado";
