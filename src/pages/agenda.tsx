@@ -348,6 +348,78 @@ function caminhoDaFoto(foto: FotoAtendimento) {
   return foto.caminho || foto.url_foto || "";
 }
 
+
+function normalizarBuscaAgenda(valor?: string | number | null) {
+  return String(valor ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function somenteNumerosAgenda(valor?: string | number | null) {
+  return String(valor ?? "").replace(/\D/g, "");
+}
+
+function clienteDoAgendamentoBusca(
+  agendamento: Agendamento,
+  clientes: Cliente[],
+) {
+  return (
+    clientes.find((cliente) => {
+      if (agendamento.cliente_id && cliente.id === agendamento.cliente_id) {
+        return true;
+      }
+
+      return (
+        normalizarBuscaAgenda(cliente.nome) ===
+        normalizarBuscaAgenda(agendamento.cliente)
+      );
+    }) || null
+  );
+}
+
+function agendamentoCombinaComBusca(
+  agendamento: Agendamento,
+  clientes: Cliente[],
+  termoBusca: string,
+) {
+  const termo = normalizarBuscaAgenda(termoBusca);
+  const termoNumerico = somenteNumerosAgenda(termoBusca);
+
+  if (!termo && !termoNumerico) return true;
+
+  const clienteBanco = clienteDoAgendamentoBusca(agendamento, clientes);
+
+  const camposTexto = [
+    agendamento.cliente,
+    agendamento.servico,
+    agendamento.profissional,
+    agendamento.status,
+    agendamento.observacoes,
+    agendamento.telefone,
+    clienteBanco?.nome,
+    clienteBanco?.telefone,
+    clienteBanco?.email,
+  ];
+
+  const encontrouTexto = camposTexto.some((campo) =>
+    normalizarBuscaAgenda(campo).includes(termo),
+  );
+
+  const camposTelefone = [agendamento.telefone, clienteBanco?.telefone];
+
+  const encontrouTelefone =
+    termoNumerico.length > 0 &&
+    camposTelefone.some((campo) =>
+      somenteNumerosAgenda(campo).includes(termoNumerico),
+    );
+
+  return encontrouTexto || encontrouTelefone;
+}
+
+
 const PALAVRAS_ALERTA_CUIDADO = [
   "diabetes",
   "diabete",
@@ -1985,8 +2057,15 @@ ${linkMeuEspaco}`;
     : Number(valorBaseReagendamento.toFixed(2));
 
   const agendamentosDoDia = useMemo(() => {
+    const termoBusca = search.trim();
+
     return agendamentos
-      .filter((item) => item.data === selectedDate)
+      .filter((item) => {
+        // Sem busca: agenda normal mostra apenas o dia selecionado.
+        // Com busca: mostra todos os agendamentos encontrados, independente da data.
+        if (termoBusca) return true;
+        return item.data === selectedDate;
+      })
       .filter((item) => item.status !== "cancelado")
       .filter((item) =>
         statusFilter === "todos" ? true : (item.status || "") === statusFilter,
@@ -1998,17 +2077,15 @@ ${linkMeuEspaco}`;
               profissionalFilter ||
             (item.profissional || "") === profissionalFilter,
       )
-      .filter((item) => {
-        const term = search.trim().toLowerCase();
-        if (!term) return true;
-        return [item.cliente, item.servico, item.profissional]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term));
-      })
-      .sort(
-        (a, b) => parseTimeToMinutes(a.horario) - parseTimeToMinutes(b.horario),
-      );
-  }, [agendamentos, selectedDate, statusFilter, profissionalFilter, search]);
+      .filter((item) => agendamentoCombinaComBusca(item, clientes, search))
+      .sort((a, b) => {
+        if (termoBusca && a.data !== b.data) {
+          return String(a.data || "").localeCompare(String(b.data || ""));
+        }
+
+        return parseTimeToMinutes(a.horario) - parseTimeToMinutes(b.horario);
+      });
+  }, [agendamentos, selectedDate, statusFilter, profissionalFilter, search, clientes]);
 
   const totaisDia = useMemo(() => {
     return {
@@ -2150,9 +2227,14 @@ ${linkMeuEspaco}`;
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar cliente, serviço ou profissional"
+              placeholder="Buscar cliente, telefone, serviço ou profissional"
               className="mt-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-orange-300"
             />
+            {search.trim() && (
+              <p className="mt-2 text-xs font-semibold text-slate-500">
+                {agendamentosDoDia.length} resultado(s) encontrado(s) para "{search.trim()}".
+              </p>
+            )}
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2305,12 +2387,21 @@ ${linkMeuEspaco}`;
             <div className="relative">
               <div className="flex h-14 items-center border-b border-slate-200 px-5">
                 <p className="text-sm font-semibold text-slate-700">
-                  {agendamentosDoDia.length} agendamento(s) neste dia
+                  {search.trim()
+                    ? `${agendamentosDoDia.length} resultado(s) encontrados`
+                    : `${agendamentosDoDia.length} agendamento(s) neste dia`}
                 </p>
               </div>
 
-              <div className="relative">
-                {HORARIOS.map((horario) => (
+              <div
+                className="relative"
+                style={{
+                  minHeight: search.trim()
+                    ? Math.max(agendamentosDoDia.length * 132 + 24, 420)
+                    : undefined,
+                }}
+              >
+                {!search.trim() && HORARIOS.map((horario) => (
                   <div
                     key={horario}
                     className="h-[88px] border-b border-slate-100"
@@ -2318,6 +2409,7 @@ ${linkMeuEspaco}`;
                 ))}
 
                 {typeof topNowLine === "number" &&
+                  !search.trim() &&
                   topNowLine >= 0 &&
                   topNowLine <= HORARIOS.length * 88 && (
                     <div
@@ -2331,15 +2423,19 @@ ${linkMeuEspaco}`;
                     </div>
                   )}
 
-                {agendamentosDoDia.map((item) => {
+                {agendamentosDoDia.map((item, index) => {
                   const mins = parseTimeToMinutes(item.horario);
-                  const top = ((mins - 8 * 60) / 60) * 88 + 8;
+                  const top = search.trim()
+                    ? index * 132 + 12
+                    : ((mins - 8 * 60) / 60) * 88 + 8;
                   const visual = classByStatus(item.status);
                   const duracao = Number(item.duracao_minutos || 30);
-                  const alturaCard = Math.max((duracao / 30) * 88 - 10, 78);
+                  const alturaCard = search.trim()
+                    ? 116
+                    : Math.max((duracao / 30) * 88 - 10, 78);
                   const horarioFim = somarMinutos(item.horario, duracao);
 
-                  if (mins < 8 * 60 || mins > 20 * 60 + 59) return null;
+                  if (!search.trim() && (mins < 8 * 60 || mins > 20 * 60 + 59)) return null;
 
                   return (
                     <div
@@ -2367,6 +2463,7 @@ ${linkMeuEspaco}`;
                             {item.servico || "Serviço"}
                           </p>
                           <p className="text-xs opacity-80">
+                            {search.trim() ? `${formatarData(item.data)} · ` : ""}
                             {item.horario} às {horarioFim} ·{" "}
                             {item.profissional || "Sem profissional"}
                           </p>
