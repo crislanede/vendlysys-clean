@@ -1239,7 +1239,7 @@ export default function AgendaPage() {
           cliente_id: clienteId,
           url_foto: caminhoFoto,
           caminho: caminhoFoto,
-          tipo,
+          tipo: tipo || "geral",
           descricao:
             tipo === "antes"
               ? `Antes do atendimento de ${agendamento.cliente || "cliente"}`
@@ -2104,20 +2104,27 @@ ${linkMeuEspaco}`;
 
 
   const fotosAntes = useMemo(
-    () => fotosAtendimento.filter((foto) => foto.tipo === "antes"),
+    () =>
+      fotosAtendimento.filter(
+        (foto) => String(foto.tipo || "").toLowerCase() === "antes",
+      ),
     [fotosAtendimento],
   );
 
   const fotosDepois = useMemo(
-    () => fotosAtendimento.filter((foto) => foto.tipo === "depois"),
+    () =>
+      fotosAtendimento.filter(
+        (foto) => String(foto.tipo || "").toLowerCase() === "depois",
+      ),
     [fotosAtendimento],
   );
 
   const fotosGerais = useMemo(
     () =>
-      fotosAtendimento.filter(
-        (foto) => !foto.tipo || foto.tipo === "geral",
-      ),
+      fotosAtendimento.filter((foto) => {
+        const tipo = String(foto.tipo || "geral").toLowerCase();
+        return tipo !== "antes" && tipo !== "depois";
+      }),
     [fotosAtendimento],
   );
 
@@ -2946,11 +2953,15 @@ ${linkMeuEspaco}`;
                       const file = input.files?.[0];
                       if (!file || !agendamentoFotos) return;
 
+                      const tipoSelecionado = tipoFotoAtendimento;
+
                       await adicionarFotoAoAgendamento(
                         agendamentoFotos,
                         file,
-                        tipoFotoAtendimento,
+                        tipoSelecionado,
                       );
+
+                      input.value = "";
                     }}
                     className="mt-4 w-full rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm outline-none"
                   />
@@ -3199,8 +3210,8 @@ ${linkMeuEspaco}`;
       )}
 
       {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 p-4 md:items-center">
-          <div className="my-6 max-h-[92vh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5">
               <h2 className="text-2xl font-bold text-slate-900">
                 Finalizar atendimento
@@ -3447,7 +3458,9 @@ ${linkMeuEspaco}`;
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
+                  const input = e.target as HTMLInputElement;
+                  const file = input.files?.[0] || null;
+
                   setFotoAtendimento(file);
 
                   if (previewFotoAtendimento) {
@@ -3457,6 +3470,10 @@ ${linkMeuEspaco}`;
                   setPreviewFotoAtendimento(
                     file ? URL.createObjectURL(file) : "",
                   );
+
+                  if (!file) {
+                    input.value = "";
+                  }
                 }}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700"
               />
