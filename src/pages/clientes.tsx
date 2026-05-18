@@ -17,6 +17,11 @@ type Cliente = {
   cidade?: string | null;
   estado?: string | null;
   empresa_id?: string | null;
+  origem?: string | null;
+  novo_cliente?: boolean | null;
+  visualizado?: boolean | null;
+  data_cadastro?: string | null;
+  created_at?: string | null;
 };
 
 type Servico = {
@@ -59,6 +64,64 @@ function carregarRascunhoCliente(chave: string) {
     return null;
   }
 }
+
+
+/* FORCA_TIMEZONE_SAO_PAULO_V2 */
+function formatarDataHoraCadastro(
+  dataCadastro?: string | null,
+  createdAt?: string | null,
+) {
+  const valorOriginal = createdAt || dataCadastro;
+
+  if (!valorOriginal) return "-";
+
+  const texto = String(valorOriginal).trim();
+
+  // Supabase costuma retornar timestamptz em UTC.
+  // Alguns retornos chegam como "2026-05-18T15:35:00" sem Z.
+  // Aqui normalizamos sempre como UTC quando não houver timezone explícito.
+  const temTimezone =
+    /z$/i.test(texto) || /[+-]\d{2}:?\d{2}$/.test(texto);
+
+  const textoUtc =
+    texto.includes("T") && !temTimezone ? `${texto}Z` : texto;
+
+  const data = new Date(textoUtc);
+
+  if (Number.isNaN(data.getTime())) {
+    return "-";
+  }
+
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(data);
+
+  const mapa = Object.fromEntries(
+    partes.map((parte) => [parte.type, parte.value]),
+  );
+
+  return `${mapa.day}/${mapa.month}/${mapa.year}, ${mapa.hour}:${mapa.minute}`;
+}
+function rotuloOrigemCliente(origem?: string | null) {
+  const valor = String(origem || "painel").toLowerCase();
+
+  if (valor === "meu_espaco") return "Meu Espaço";
+  if (valor === "whatsapp") return "WhatsApp";
+  if (valor === "importacao") return "Importação";
+
+  return "Painel";
+}
+
+function clienteEhNovo(cliente: Cliente) {
+  return Boolean(cliente.novo_cliente) && cliente.visualizado !== true;
+}
+
 
 export default function ClientesPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
@@ -707,7 +770,33 @@ async function carregarHistoricoUsoPacotes(clienteId: string) {
     setModalAberto(true);
   }
 
+  async function marcarClienteVisualizado(cliente: Cliente) {
+    if (!empresaId || !cliente.id || !clienteEhNovo(cliente)) return;
+
+    setClientes((atuais) =>
+      atuais.map((item) =>
+        item.id === cliente.id
+          ? { ...item, novo_cliente: false, visualizado: true }
+          : item,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("clientes")
+      .update({
+        novo_cliente: false,
+        visualizado: true,
+      })
+      .eq("id", cliente.id)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      console.warn("Não foi possível marcar cliente como visualizado:", error.message);
+    }
+  }
+
   function abrirEdicao(cliente: Cliente) {
+    void marcarClienteVisualizado(cliente);
     setClienteEditando(cliente);
     setForm({
       nome: cliente.nome || "",
@@ -764,6 +853,14 @@ carregarHistoricoUsoPacotes(cliente.id);
       cidade: form.cidade.trim() || null,
       estado: form.estado.trim().toUpperCase() || null,
       empresa_id: empresaId,
+      ...(clienteEditando?.id
+        ? {}
+        : {
+            origem: "painel",
+            novo_cliente: false,
+            visualizado: true,
+            data_cadastro: new Date().toISOString(),
+          }),
     };
 
     const { error } = clienteEditando?.id
@@ -832,7 +929,9 @@ carregarHistoricoUsoPacotes(cliente.id);
         cliente.data_nascimento
       )} ${cliente.cep || ""} ${cliente.endereco || ""} ${cliente.bairro || ""} ${
         cliente.cidade || ""
-      } ${cliente.estado || ""}`
+      } ${cliente.estado || ""} ${rotuloOrigemCliente(cliente.origem)} ${
+        formatarDataHoraCadastro(cliente.data_cadastro, cliente.created_at)
+      }`
         .toLowerCase()
         .includes(termo)
     );
@@ -880,10 +979,11 @@ carregarHistoricoUsoPacotes(cliente.id);
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card title="Total de clientes" value={clientes.length} />
+        <Card title="Novos" value={clientes.filter(clienteEhNovo).length} />
+        <Card title="Meu Espaço" value={clientes.filter((c) => c.origem === "meu_espaco").length} />
         <Card title="Com telefone" value={clientes.filter((c) => !!c.telefone).length} />
-        <Card title="Com e-mail" value={clientes.filter((c) => !!c.email).length} />
         <Card title="Aniversariantes do mês" value={aniversariantesMes.length} />
       </div>
 
@@ -916,6 +1016,8 @@ carregarHistoricoUsoPacotes(cliente.id);
                   <th>E-mail</th>
                   <th>Nascimento</th>
                   <th>Endereço</th>
+                  <th>Origem</th>
+                  <th>Cadastro</th>
                   <th>Anamnese</th>
                   <th className="text-right pr-4">Ações</th>
                 </tr>
@@ -924,11 +1026,32 @@ carregarHistoricoUsoPacotes(cliente.id);
               <tbody>
                 {clientesFiltrados.map((cliente) => (
                   <tr key={cliente.id} className="border-t hover:bg-slate-50">
-                    <td className="p-4 font-bold text-slate-900">{cliente.nome}</td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{cliente.nome}</span>
+                        {clienteEhNovo(cliente) && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase text-red-700">
+                            Novo
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td>{cliente.telefone || "-"}</td>
                     <td>{cliente.email || "-"}</td>
                     <td>{formatarDataNascimento(cliente.data_nascimento)}</td>
                     <td>{formatarEndereco(cliente)}</td>
+                    <td>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          cliente.origem === "meu_espaco"
+                            ? "bg-violet-50 text-violet-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {rotuloOrigemCliente(cliente.origem)}
+                      </span>
+                    </td>
+                    <td>{formatarDataHoraCadastro(cliente.data_cadastro, cliente.created_at)}</td>
                     <td>
                       {anamnesePorCliente[cliente.id]?.preenchida ? (
                         <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
@@ -959,7 +1082,7 @@ carregarHistoricoUsoPacotes(cliente.id);
 
                 {clientesFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-10 text-center text-slate-500">
+                    <td colSpan={9} className="p-10 text-center text-slate-500">
                       Nenhum cliente encontrado.
                     </td>
                   </tr>
@@ -981,6 +1104,16 @@ carregarHistoricoUsoPacotes(cliente.id);
                 <p className="text-sm text-slate-500">
                   Dados pessoais, contato e endereço do cliente.
                 </p>
+                {clienteEditando && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      Origem: {rotuloOrigemCliente(clienteEditando.origem)}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      Cadastro: {formatarDataHoraCadastro(clienteEditando.data_cadastro, clienteEditando.created_at)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <button

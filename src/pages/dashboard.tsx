@@ -64,6 +64,16 @@ type Agendamento = {
   created_at?: string | null;
 };
 
+type ClienteDashboard = {
+  id: string;
+  origem?: string | null;
+  novo_cliente?: boolean | null;
+  visualizado?: boolean | null;
+  data_cadastro?: string | null;
+  created_at?: string | null;
+};
+
+
 type GraficoLinha = {
   data: string;
   receita: number;
@@ -282,6 +292,7 @@ export default function Dashboard() {
   const [financeiro, setFinanceiro] = useState<Financeiro[]>([]);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [clientesDashboard, setClientesDashboard] = useState<ClienteDashboard[]>([]);
 
   const [loading, setLoading] = useState(false);
 
@@ -327,7 +338,7 @@ export default function Dashboard() {
 
     setLoading(true);
 
-    const [financeiroResp, despesasResp, agendamentosResp] = await Promise.all([
+    const [financeiroResp, despesasResp, agendamentosResp, clientesResp] = await Promise.all([
       supabase
         .from("financeiro")
         .select("*")
@@ -347,6 +358,10 @@ export default function Dashboard() {
         .gte("data", dataInicio)
         .lte("data", dataFim)
         .order("data", { ascending: true }),
+
+      supabase
+        .from("clientes")
+        .select("id, origem, novo_cliente, visualizado, data_cadastro, created_at"),
     ]);
 
     if (financeiroResp.error) {
@@ -378,6 +393,13 @@ export default function Dashboard() {
       setAgendamentos([]);
     } else {
       setAgendamentos((agendamentosResp.data || []) as Agendamento[]);
+    }
+
+    if (clientesResp.error) {
+      console.warn("Erro ao carregar clientes do dashboard:", clientesResp.error.message);
+      setClientesDashboard([]);
+    } else {
+      setClientesDashboard((clientesResp.data || []) as ClienteDashboard[]);
     }
 
     setLoading(false);
@@ -524,6 +546,23 @@ export default function Dashboard() {
       .slice(0, 8);
   }, [agendamentos]);
 
+  const novosClientesPendentes = useMemo(() => {
+    return clientesDashboard.filter(
+      (cliente) => cliente.novo_cliente && cliente.visualizado !== true,
+    ).length;
+  }, [clientesDashboard]);
+
+  const cadastrosMeuEspacoPeriodo = useMemo(() => {
+    return clientesDashboard.filter((cliente) => {
+      if (cliente.origem !== "meu_espaco") return false;
+
+      const dataCadastroReal = cliente.created_at || cliente.data_cadastro || "";
+      const dataISO = dataCadastroReal.slice(0, 10);
+
+      return dataISO >= dataInicio && dataISO <= dataFim;
+    }).length;
+  }, [clientesDashboard, dataInicio, dataFim]);
+
   const ultimosLancamentos = useMemo(() => {
     return [...financeiro]
       .sort((a, b) => {
@@ -618,7 +657,7 @@ export default function Dashboard() {
         </div>
       </SectionCard>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-9">
         <KpiCard
           title="Resultado"
           value={formatarMoeda(indicadores.faturamento)}
@@ -643,6 +682,16 @@ export default function Dashboard() {
           title="Agendamentos"
           value={String(indicadores.agendamentos)}
           variant="blue"
+        />
+        <KpiCard
+          title="Novos clientes"
+          value={String(novosClientesPendentes)}
+          variant="red"
+        />
+        <KpiCard
+          title="Meu Espaço"
+          value={String(cadastrosMeuEspacoPeriodo)}
+          variant="indigo"
         />
         <KpiCard
           title="Online"

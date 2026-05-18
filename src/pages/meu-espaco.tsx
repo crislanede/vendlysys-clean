@@ -695,6 +695,8 @@ export default function MeuEspaco() {
 
     setCliente(data);
 
+    void marcarClienteComoOrigemMeuEspaco(data.id);
+
     try {
       localStorage.setItem(
         MEU_ESPACO_CLIENTE_STORAGE_KEY,
@@ -2837,6 +2839,26 @@ export default function MeuEspaco() {
         return status !== "cancelado" && status !== "finalizado" && status !== "expirado";
       }).length
     : 0;
+
+
+
+  async function marcarClienteComoOrigemMeuEspaco(clienteId?: string | null) {
+    if (!clienteId) return;
+
+    try {
+      await supabase
+        .from("clientes")
+        .update({
+          origem: "meu_espaco",
+          novo_cliente: true,
+          visualizado: false,
+        })
+        .eq("id", clienteId)
+        .or("origem.is.null,origem.neq.meu_espaco");
+    } catch (error) {
+      console.warn("Não foi possível marcar origem do cliente:", error);
+    }
+  }
 
 
 const botaoAba = (valor: string, label: string) => {

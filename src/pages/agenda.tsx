@@ -26,6 +26,11 @@ type Cliente = {
   telefone?: string | null;
   email?: string | null;
   data_nascimento?: string | null;
+  origem?: string | null;
+  novo_cliente?: boolean | null;
+  visualizado?: boolean | null;
+  data_cadastro?: string | null;
+  created_at?: string | null;
 };
 
 type Servico = {
@@ -339,6 +344,16 @@ function formatarDataNascimento(data?: string | null) {
   if (partes.length !== 3) return data;
   return `${partes[2]}/${partes[1]}`;
 }
+
+
+function rotuloOrigemClienteAgenda(origem?: string | null) {
+  return origem === "meu_espaco" ? "Meu Espaço" : "Painel";
+}
+
+function clienteEhNovoAgenda(cliente?: Cliente | null) {
+  return Boolean(cliente?.novo_cliente) && cliente?.visualizado !== true;
+}
+
 
 function montarMensagemAniversario(nome: string) {
   return `Olá, ${nome}! 🎉 Passando para te desejar um feliz aniversário! Temos uma condição especial para você este mês. 💝`;
@@ -2431,6 +2446,13 @@ ${linkMeuEspaco}`;
                   )}
 
                 {agendamentosDoDia.map((item, index) => {
+                  const clienteBancoAgenda =
+                    clientes.find((cliente) =>
+                      item.cliente_id
+                        ? cliente.id === item.cliente_id
+                        : normalizarBuscaAgenda(cliente.nome) === normalizarBuscaAgenda(item.cliente),
+                    ) || null;
+
                   const mins = parseTimeToMinutes(item.horario);
                   const top = search.trim()
                     ? index * 132 + 12
@@ -2465,6 +2487,16 @@ ${linkMeuEspaco}`;
                             <span className="rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
                               {item.status || "agendado"}
                             </span>
+                            {clienteEhNovoAgenda(clienteBancoAgenda) && (
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-red-700">
+                                Novo cliente
+                              </span>
+                            )}
+                            {clienteBancoAgenda?.origem === "meu_espaco" && (
+                              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-violet-700">
+                                {rotuloOrigemClienteAgenda(clienteBancoAgenda.origem)}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-1 text-sm font-medium">
                             {item.servico || "Serviço"}
@@ -3210,8 +3242,8 @@ ${linkMeuEspaco}`;
       )}
 
       {modalFinalizarAberto && agendamentoSelecionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-4">
+          <div className="mx-auto my-6 w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl">
             <div className="mb-5">
               <h2 className="text-2xl font-bold text-slate-900">
                 Finalizar atendimento
