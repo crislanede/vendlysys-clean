@@ -6,6 +6,7 @@ import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
 import ModalReagendamento from "./agenda/components/ModalReagendamento";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
+// import { substituirVariaveisMensagemAgenda } from "../utils/mensagens";
 import {
   montarLinkMeuEspaco,
   montarMensagemAgradecimento,
@@ -30,7 +31,6 @@ type Cliente = {
   novo_cliente?: boolean | null;
   visualizado?: boolean | null;
   data_cadastro?: string | null;
-  created_at?: string | null;
 };
 
 type Servico = {
@@ -338,6 +338,18 @@ function formatarData(data?: string | null) {
   return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
 }
 
+function formatarMoedaAgenda(valor?: number | string | null) {
+  const numero = Number(valor || 0);
+
+  if (!Number.isFinite(numero) || numero <= 0) {
+    return "A confirmar";
+  }
+
+  return numero.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
 function formatarDataNascimento(data?: string | null) {
   if (!data) return "-";
   const partes = data.split("-");
@@ -1521,16 +1533,27 @@ Obrigada pela preferência! 💜`;
         )
       : "não informado";
 
-    const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu agendamento foi confirmado.
+    const valorConfirmacao = formatarMoedaAgenda(
+      agendamento.valor ?? agendamento.valor_pago,
+    );
 
-Serviço: ${agendamento.servico || "não informado"}
-Data: ${formatarData(agendamento.data)}
-Início: ${horaInicio}
-Término previsto: ${horaFim}
-Profissional: ${agendamento.profissional || "não informado"}
+    const mensagem = `✨ Agendamento confirmado!
 
-Para confirmar ou acompanhar seu agendamento, acesse:
-${linkMeuEspaco}`;
+Olá, ${agendamento.cliente || "cliente"} 😊
+
+Seu horário foi confirmado com sucesso.
+
+📅 Data: ${formatarData(agendamento.data)}
+🕒 Horário: ${horaInicio}
+⏱️ Término previsto: ${horaFim}
+💅 Serviço: ${agendamento.servico || "não informado"}
+👩‍💼 Profissional: ${agendamento.profissional || "não informado"}
+💰 Valor: ${valorConfirmacao}
+
+📲 Acesse seu espaço do cliente:
+${linkMeuEspaco}
+
+Aguardamos você! 💜`;
 
     const numero = normalizarTelefoneWhatsapp(telefone);
     const texto = encodeURIComponent(mensagem);
