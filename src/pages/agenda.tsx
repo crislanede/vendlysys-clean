@@ -2989,22 +2989,23 @@ ${linkMeuEspaco}`;
 
           setValorReagendamentoManual(String(valorServico || ""));
         }}
-        onChangeServicosExtras={(novosServicosExtras) => {
-          const extrasLimpos = novosServicosExtras.filter(Boolean);
-
-          setServicosExtrasReagendamento(extrasLimpos);
+        onChangeServicosExtras={(novosServicosExtras: string[]) => {
+          setServicosExtrasReagendamento(novosServicosExtras);
 
           setValoresServicosReagendamento((atual) => {
             const proximo = { ...atual };
 
-            extrasLimpos.forEach((nomeServico) => {
-              if (proximo[nomeServico] === undefined) {
-                const servicoSelecionado = servicos.find(
-                  (item) => item.nome === nomeServico,
-                );
-                proximo[nomeServico] = obterValorServico(servicoSelecionado);
-              }
-            });
+            novosServicosExtras
+              .map((nomeServico) => nomeServico.trim())
+              .filter(Boolean)
+              .forEach((nomeServico) => {
+                if (proximo[nomeServico] === undefined) {
+                  const servicoSelecionado = servicos.find(
+                    (item) => item.nome === nomeServico,
+                  );
+                  proximo[nomeServico] = obterValorServico(servicoSelecionado);
+                }
+              });
 
             return proximo;
           });
