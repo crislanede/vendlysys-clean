@@ -563,10 +563,14 @@ export default function AgendaPage() {
   const [servicoReagendamento, setServicoReagendamento] = useState("");
   const [servicosExtrasReagendamento, setServicosExtrasReagendamento] =
     useState<string[]>([]);
+  const [valoresServicosReagendamento, setValoresServicosReagendamento] =
+    useState<Record<string, number>>({});
   const [valorReagendamentoManual, setValorReagendamentoManual] = useState("");
   const [atendimentoResidencialReagendamento, setAtendimentoResidencialReagendamento] =
     useState(false);
   const [loadingReagendar, setLoadingReagendar] = useState(false);
+  const [nomeEmpresaAgenda, setNomeEmpresaAgenda] = useState("");
+  const [enderecoEmpresaAgenda, setEnderecoEmpresaAgenda] = useState("");
 
   const [pacotesDisponiveis, setPacotesDisponiveis] = useState<
     PacoteDisponivel[]
@@ -595,7 +599,7 @@ export default function AgendaPage() {
       ] = await Promise.all([
         supabase
           .from("empresas")
-          .select("percentual_residencial")
+          .select("percentual_residencial, nome, nome_fantasia, endereco")
           .eq("id", empresaId)
           .maybeSingle(),
         supabase
@@ -623,6 +627,15 @@ export default function AgendaPage() {
 
       if (empresaConfigRes.error) {
         console.error("Erro ao carregar configuração residencial:", empresaConfigRes.error);
+      }
+
+      if (!empresaConfigRes.error && empresaConfigRes.data) {
+        setNomeEmpresaAgenda(
+          empresaConfigRes.data.nome_fantasia ||
+            empresaConfigRes.data.nome ||
+            "",
+        );
+        setEnderecoEmpresaAgenda(empresaConfigRes.data.endereco || "");
       }
 
       if (clientesRes.error) {
@@ -933,11 +946,40 @@ export default function AgendaPage() {
       servicos.find((item) => item.id === agendamento.servico_id)?.nome ||
       "";
 
+    const extras = nomesServicos.slice(1);
+
+    const valoresIniciais = [servicoPrincipalNome, ...extras]
+      .filter(Boolean)
+      .reduce<Record<string, number>>((mapa, nome) => {
+        const servicoEncontrado = servicos.find((item) => item.nome === nome);
+        mapa[nome] = obterValorServico(servicoEncontrado);
+        return mapa;
+      }, {});
+
+    const valorAtualAgendamento = Number(agendamento.valor || 0);
+    const somaValoresIniciais = Object.values(valoresIniciais).reduce(
+      (total, valor) => total + Number(valor || 0),
+      0,
+    );
+
+    if (
+      servicoPrincipalNome &&
+      valorAtualAgendamento > 0 &&
+      Number(valorAtualAgendamento.toFixed(2)) !==
+        Number(somaValoresIniciais.toFixed(2))
+    ) {
+      const diferenca = valorAtualAgendamento - somaValoresIniciais;
+      valoresIniciais[servicoPrincipalNome] = Number(
+        ((valoresIniciais[servicoPrincipalNome] || 0) + diferenca).toFixed(2),
+      );
+    }
+
     setServicoReagendamento(servicoPrincipalNome);
-    setServicosExtrasReagendamento(nomesServicos.slice(1));
+    setServicosExtrasReagendamento(extras);
+    setValoresServicosReagendamento(valoresIniciais);
     setValorReagendamentoManual(
-      agendamento.valor !== null && agendamento.valor !== undefined
-        ? String(agendamento.valor)
+      servicoPrincipalNome && valoresIniciais[servicoPrincipalNome] !== undefined
+        ? String(valoresIniciais[servicoPrincipalNome])
         : "",
     );
     setAtendimentoResidencialReagendamento(
@@ -1007,19 +1049,13 @@ export default function AgendaPage() {
       return;
     }
 
-    const valorManual = Number(valorReagendamentoManual || 0);
-    const valorServicoPrincipal =
-      valorManual > 0
-        ? valorManual
-        : obterValorServico(servicosSelecionados[0]);
-
-    const valorServicosExtras = servicosSelecionados
-      .slice(1)
-      .reduce((total, item) => total + obterValorServico(item), 0);
-
-    const valorBase = valorServicoPrincipal + valorServicosExtras;
+    const valorBase = servicosSelecionadosNomes.reduce(
+      (total, nomeServico) =>
+        total + obterValorServicoReagendamentoEditavel(nomeServico),
+      0,
+    );
     const percentualResidencialAplicado = atendimentoResidencialReagendamento
-      ? obterPercentualResidencial(servicosSelecionados)
+      ? percentualResidencialReagendamento
       : 0;
     const valorFinal = atendimentoResidencialReagendamento
       ? Number(
@@ -1548,7 +1584,10 @@ Seu horário foi confirmado com sucesso.
 ⏱️ Término previsto: ${horaFim}
 💅 Serviço: ${agendamento.servico || "não informado"}
 👩‍💼 Profissional: ${agendamento.profissional || "não informado"}
-💰 Valor: ${valorConfirmacao}
+💰 Valor: ${valorConfirmacao}${localAtendimentoAgenda ? `
+
+📍 Local:
+${localAtendimentoAgenda}` : ""}
 
 📲 Acesse seu espaço do cliente:
 ${linkMeuEspaco}
@@ -2066,24 +2105,52 @@ ${linkMeuEspaco}`;
       .filter(Boolean) as Servico[];
   }, [servicoReagendamento, servicosExtrasReagendamento, servicos]);
 
+  function obterValorServicoReagendamentoEditavel(nomeServico: string) {
+    const nome = nomeServico.trim();
+
+    if (!nome) return 0;
+
+    const valorEditado = valoresServicosReagendamento[nome];
+
+    if (valorEditado !== undefined && Number.isFinite(Number(valorEditado))) {
+      return Number(valorEditado);
+    }
+
+    const servicoEncontrado = servicos.find((item) => item.nome === nome);
+
+    return obterValorServico(servicoEncontrado);
+  }
+
   const valorBaseReagendamento = useMemo(() => {
-    const valorManual = Number(valorReagendamentoManual || 0);
+    const nomes = [servicoReagendamento, ...servicosExtrasReagendamento]
+      .map((nome) => nome.trim())
+      .filter(Boolean);
 
-    const valorServicoPrincipal =
-      valorManual > 0
-        ? valorManual
-        : obterValorServico(servicosSelecionadosReagendamento[0]);
+    return nomes.reduce(
+      (total, nomeServico) =>
+        total + obterValorServicoReagendamentoEditavel(nomeServico),
+      0,
+    );
+  }, [
+    servicoReagendamento,
+    servicosExtrasReagendamento,
+    valoresServicosReagendamento,
+    servicos,
+  ]);
 
-    const valorServicosExtras = servicosSelecionadosReagendamento
-      .slice(1)
-      .reduce((total, item) => total + obterValorServico(item), 0);
+  const percentualResidencialReagendamento = (() => {
+    const percentuaisDosServicos = servicosSelecionadosReagendamento.map((item) =>
+      Number(item?.percentual_residencial || 0),
+    );
 
-    return valorServicoPrincipal + valorServicosExtras;
-  }, [servicosSelecionadosReagendamento, valorReagendamentoManual]);
+    const maiorPercentualServico = Math.max(0, ...percentuaisDosServicos);
 
-  const percentualResidencialReagendamento = obterPercentualResidencial(
-    servicosSelecionadosReagendamento,
-  );
+    if (maiorPercentualServico > 0) {
+      return maiorPercentualServico;
+    }
+
+    return Number(0 || 0);
+  })();
 
   const valorFinalReagendamento = atendimentoResidencialReagendamento
     ? Number(
@@ -2176,6 +2243,13 @@ ${linkMeuEspaco}`;
     setSelectedDate(next);
     setData(next);
   }
+
+  const localAtendimentoAgenda = [
+    nomeEmpresaAgenda,
+    enderecoEmpresaAgenda,
+  ]
+    .filter(Boolean)
+    .join(" - ");
 
   const currentMinutes = (() => {
     if (selectedDate !== getTodayString()) return null;
@@ -2890,26 +2964,65 @@ ${linkMeuEspaco}`;
         servicos={servicos}
         servicoReagendamento={servicoReagendamento}
         servicosExtrasReagendamento={servicosExtrasReagendamento}
+        valoresServicosReagendamento={valoresServicosReagendamento}
         valorReagendamentoManual={valorReagendamentoManual}
         atendimentoResidencialReagendamento={atendimentoResidencialReagendamento}
         percentualResidencialReagendamento={percentualResidencialReagendamento}
         valorBaseReagendamento={valorBaseReagendamento}
         valorFinalReagendamento={valorFinalReagendamento}
+        localAtendimento={localAtendimentoAgenda}
         onChangeData={setDataReagendamento}
         onChangeHora={setHoraReagendamento}
         onChangeServico={(nomeServico) => {
           setServicoReagendamento(nomeServico);
+
           const servicoSelecionado = servicos.find(
             (item) => item.nome === nomeServico,
           );
-          setValorReagendamentoManual(
-            servicoSelecionado
-              ? String(servicoSelecionado.preco ?? servicoSelecionado.valor ?? 0)
-              : "",
-          );
+
+          const valorServico = obterValorServico(servicoSelecionado);
+
+          setValoresServicosReagendamento((atual) => ({
+            ...atual,
+            [nomeServico]: atual[nomeServico] ?? valorServico,
+          }));
+
+          setValorReagendamentoManual(String(valorServico || ""));
         }}
-        onChangeServicosExtras={setServicosExtrasReagendamento}
+        onChangeServicosExtras={(novosServicosExtras) => {
+          const extrasLimpos = novosServicosExtras.filter(Boolean);
+
+          setServicosExtrasReagendamento(extrasLimpos);
+
+          setValoresServicosReagendamento((atual) => {
+            const proximo = { ...atual };
+
+            extrasLimpos.forEach((nomeServico) => {
+              if (proximo[nomeServico] === undefined) {
+                const servicoSelecionado = servicos.find(
+                  (item) => item.nome === nomeServico,
+                );
+                proximo[nomeServico] = obterValorServico(servicoSelecionado);
+              }
+            });
+
+            return proximo;
+          });
+        }}
         onChangeValorManual={setValorReagendamentoManual}
+        onChangeValorServicoReagendamento={(
+          nomeServico: string,
+          valor: number,
+        ) => {
+          setValoresServicosReagendamento((atual) => ({
+            ...atual,
+            [nomeServico]: valor,
+          }));
+
+          if (nomeServico === servicoReagendamento) {
+            setValorReagendamentoManual(String(valor || ""));
+          }
+        }}
         onChangeAtendimentoResidencial={setAtendimentoResidencialReagendamento}
         onFechar={() => {
           setModalReagendarAberto(false);

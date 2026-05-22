@@ -10,6 +10,10 @@ export default function Configuracoes() {
   const [nomeFantasia, setNomeFantasia] = useState("");
   const [telefone, setTelefone] = useState("");
   const [endereco, setEndereco] = useState("");
+  const [whatsappComercial, setWhatsappComercial] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [facebook, setFacebook] = useState("");
+  const [site, setSite] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
 
   const [corPrimaria, setCorPrimaria] = useState("#4f46e5");
@@ -61,6 +65,10 @@ export default function Configuracoes() {
         nome_fantasia,
         telefone,
         endereco,
+        whatsapp_comercial,
+        instagram,
+        facebook,
+        site,
         logo_url,
         cor_primaria,
         cor_secundaria,
@@ -92,6 +100,10 @@ export default function Configuracoes() {
     setNomeFantasia(data.nome_fantasia || "");
     setTelefone(data.telefone || "");
     setEndereco(data.endereco || "");
+    setWhatsappComercial(data.whatsapp_comercial || "");
+    setInstagram(data.instagram || "");
+    setFacebook(data.facebook || "");
+    setSite(data.site || "");
     setLogoUrl(data.logo_url || "");
 
     setCorPrimaria(data.cor_primaria || "#4f46e5");
@@ -134,6 +146,10 @@ export default function Configuracoes() {
         nome_fantasia: nomeFantasia || null,
         telefone: telefone || null,
         endereco: endereco || null,
+        whatsapp_comercial: whatsappComercial || null,
+        instagram: instagram || null,
+        facebook: facebook || null,
+        site: site || null,
         logo_url: logoUrl || null,
 
         cor_primaria: corPrimaria || null,
@@ -315,6 +331,58 @@ export default function Configuracoes() {
             onChange={(e) => setEndereco(e.target.value)}
             className="rounded-2xl border border-slate-300 px-4 py-3"
           />
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">
+          Comunicação e redes sociais
+        </h2>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Estes dados poderão ser usados nos modelos de WhatsApp, no Meu Espaço
+          e nas mensagens automáticas da empresa.
+        </p>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <input
+            type="text"
+            placeholder="WhatsApp comercial"
+            value={whatsappComercial}
+            onChange={(e) => setWhatsappComercial(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3"
+          />
+
+          <input
+            type="text"
+            placeholder="Instagram. Ex: @suaempresa"
+            value={instagram}
+            onChange={(e) => setInstagram(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3"
+          />
+
+          <input
+            type="text"
+            placeholder="Facebook"
+            value={facebook}
+            onChange={(e) => setFacebook(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3"
+          />
+
+          <input
+            type="text"
+            placeholder="Site"
+            value={site}
+            onChange={(e) => setSite(e.target.value)}
+            className="rounded-2xl border border-slate-300 px-4 py-3"
+          />
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-900">
+          <p className="font-black">Variáveis disponíveis para comunicação</p>
+          <p className="mt-1 text-xs font-semibold">
+            {"{{endereco}}, {{telefone_empresa}}, {{whatsapp_comercial}}, {{instagram}}, {{facebook}} e {{site}}."}
+          </p>
         </div>
       </div>
 

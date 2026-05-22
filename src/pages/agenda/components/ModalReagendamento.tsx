@@ -14,17 +14,20 @@ type Props = {
   servicos: Servico[];
   servicoReagendamento: string;
   servicosExtrasReagendamento: string[];
+  valoresServicosReagendamento: Record<string, number>;
   valorReagendamentoManual: string;
   atendimentoResidencialReagendamento: boolean;
   percentualResidencialReagendamento: number;
   valorBaseReagendamento: number;
   valorFinalReagendamento: number;
+  localAtendimento?: string;
 
   onChangeData: (value: string) => void;
   onChangeHora: (value: string) => void;
   onChangeServico: (value: string) => void;
   onChangeServicosExtras: (value: string[]) => void;
   onChangeValorManual: (value: string) => void;
+  onChangeValorServicoReagendamento: (nomeServico: string, valor: number) => void;
   onChangeAtendimentoResidencial: (value: boolean) => void;
   onFechar: () => void;
   onSalvar: () => void;
@@ -42,22 +45,40 @@ export default function ModalReagendamento({
   servicos,
   servicoReagendamento,
   servicosExtrasReagendamento,
-  valorReagendamentoManual,
+  valoresServicosReagendamento,
   atendimentoResidencialReagendamento,
   percentualResidencialReagendamento,
   valorBaseReagendamento,
   valorFinalReagendamento,
+  localAtendimento,
 
   onChangeData,
   onChangeHora,
   onChangeServico,
   onChangeServicosExtras,
-  onChangeValorManual,
+  onChangeValorServicoReagendamento,
   onChangeAtendimentoResidencial,
   onFechar,
   onSalvar,
 }: Props) {
   if (!aberto || !agendamento) return null;
+
+  function obterValorServicoReagendamentoModal(nomeServico: string) {
+    const valorEditado = valoresServicosReagendamento[nomeServico];
+
+    if (valorEditado !== undefined && Number.isFinite(Number(valorEditado))) {
+      return Number(valorEditado);
+    }
+
+    const servicoEncontrado = servicos.find((item) => item.nome === nomeServico);
+
+    return Number(servicoEncontrado?.preco ?? servicoEncontrado?.valor ?? 0);
+  }
+
+  const nomesServicosSelecionados = [
+    servicoReagendamento,
+    ...servicosExtrasReagendamento,
+  ].filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
@@ -133,7 +154,7 @@ export default function ModalReagendamento({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="mt-5 grid gap-4">
           <div>
             <label className="text-sm font-bold text-slate-700">
               Serviço principal
@@ -150,21 +171,6 @@ export default function ModalReagendamento({
                 </option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-bold text-slate-700">
-              Valor do serviço principal
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={valorReagendamentoManual}
-              onChange={(e) => onChangeValorManual(e.target.value)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-orange-300"
-              placeholder="Valor final"
-            />
           </div>
         </div>
 
@@ -215,6 +221,54 @@ export default function ModalReagendamento({
           </button>
         </div>
 
+        {nomesServicosSelecionados.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 text-sm font-bold text-slate-900">
+              Valores por serviço
+            </div>
+
+            <div className="space-y-3">
+              {nomesServicosSelecionados.map((nomeServico) => (
+                <div
+                  key={nomeServico}
+                  className="flex flex-col gap-2 rounded-2xl bg-slate-50 p-3 md:flex-row md:items-center"
+                >
+                  <div className="flex-1 text-sm font-bold text-slate-700">
+                    {nomeServico}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-500">
+                      R$
+                    </span>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={obterValorServicoReagendamentoModal(nomeServico)}
+                      onChange={(e) =>
+                        onChangeValorServicoReagendamento(
+                          nomeServico,
+                          Number(e.target.value || 0),
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-right text-sm font-bold text-slate-900 outline-none focus:border-orange-300 md:w-40"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {localAtendimento && (
+          <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <p className="font-black">Local do atendimento</p>
+            <p className="mt-1 font-semibold">{localAtendimento}</p>
+          </div>
+        )}
+
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <label className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
             <input
@@ -224,8 +278,15 @@ export default function ModalReagendamento({
                 onChangeAtendimentoResidencial(e.target.checked)
               }
             />
-            Atendimento residencial (+{percentualResidencialReagendamento}%)
+            Atendimento residencial (+{percentualResidencialReagendamento || 0}%)
           </label>
+
+          {atendimentoResidencialReagendamento &&
+            Number(percentualResidencialReagendamento || 0) <= 0 && (
+              <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                O percentual residencial está zerado nas configurações. Ajuste em Configurações para aplicar acréscimo automático.
+              </div>
+            )}
 
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
             Serviços: {valorBaseReagendamento.toLocaleString("pt-BR", {

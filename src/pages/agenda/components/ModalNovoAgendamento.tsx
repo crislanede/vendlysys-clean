@@ -26,6 +26,7 @@ type Props = {
   percentualResidencialFormulario: number;
   valorBaseFormulario: number;
   valorFinalFormulario: number;
+  localAtendimento?: string;
   alertas: AlertaAnamneseItem[];
   loadingAlerta: boolean;
   confirmou: boolean;
@@ -68,6 +69,7 @@ export default function ModalNovoAgendamento({
   percentualResidencialFormulario,
   valorBaseFormulario,
   valorFinalFormulario,
+  localAtendimento,
   alertas,
   loadingAlerta,
   confirmou,
@@ -274,7 +276,7 @@ export default function ModalNovoAgendamento({
               checked={atendimentoResidencial}
               onChange={(e) => setAtendimentoResidencial(e.target.checked)}
             />
-            Atendimento residencial (+{percentualResidencialFormulario}%)
+            Local do atendimento\n{localAtendimento}\n\nAtendimento residencial (+{percentualResidencialFormulario}%)
           </label>
 
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900">
