@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -36,12 +36,15 @@ type MenuSecao = {
 
 export default function Sidebar() {
   const { empresaId } = useEmpresa();
+  const location = useLocation();
   const [novosClientes, setNovosClientes] = useState(0);
+
+  const estaNaTelaClientes = location.pathname.startsWith("/clientes");
 
   useEffect(() => {
     if (!empresaId) return;
 
-    carregarNovosClientes();
+    void carregarNovosClientes();
 
     const canal = supabase
       .channel(`novos-clientes-${empresaId}`)
@@ -54,7 +57,7 @@ export default function Sidebar() {
           filter: `empresa_id=eq.${empresaId}`,
         },
         () => {
-          carregarNovosClientes();
+          void carregarNovosClientes();
         },
       )
       .subscribe();
@@ -62,17 +65,28 @@ export default function Sidebar() {
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [empresaId]);
+  }, [empresaId, location.pathname]);
+
+  useEffect(() => {
+    if (!empresaId || !estaNaTelaClientes) return;
+
+    void marcarNovosClientesComoVisualizados();
+  }, [empresaId, estaNaTelaClientes]);
 
   async function carregarNovosClientes() {
     if (!empresaId) return;
+
+    if (estaNaTelaClientes) {
+      setNovosClientes(0);
+      return;
+    }
 
     const { count, error } = await supabase
       .from("clientes")
       .select("id", { count: "exact", head: true })
       .eq("empresa_id", empresaId)
       .eq("novo_cliente", true)
-      .eq("visualizado", false);
+      .or("visualizado.is.null,visualizado.eq.false");
 
     if (error) {
       console.warn("Não foi possível carregar novos clientes:", error.message);
@@ -80,6 +94,32 @@ export default function Sidebar() {
     }
 
     setNovosClientes(count || 0);
+  }
+
+  async function marcarNovosClientesComoVisualizados() {
+    if (!empresaId) return;
+
+    setNovosClientes(0);
+
+    const { error } = await supabase
+      .from("clientes")
+      .update({
+        novo_cliente: false,
+        visualizado: true,
+      })
+      .eq("empresa_id", empresaId)
+      .eq("novo_cliente", true)
+      .or("visualizado.is.null,visualizado.eq.false");
+
+    if (error) {
+      console.warn(
+        "Não foi possível marcar novos clientes como visualizados:",
+        error.message,
+      );
+      return;
+    }
+
+    setNovosClientes(0);
   }
 
   const menuAdmin: MenuSecao[] = [
@@ -94,7 +134,12 @@ export default function Sidebar() {
     {
       titulo: "Cadastros",
       itens: [
-        { nome: "Clientes", rota: "/clientes", icone: Users, badge: novosClientes },
+        {
+          nome: "Clientes",
+          rota: "/clientes",
+          icone: Users,
+          badge: estaNaTelaClientes ? 0 : novosClientes,
+        },
         { nome: "Profissionais", rota: "/profissionais", icone: UserSquare2 },
         { nome: "Serviços", rota: "/servicos", icone: Scissors },
         { nome: "Combos", rota: "/marketing-pacotes", icone: Package },
@@ -114,7 +159,11 @@ export default function Sidebar() {
       titulo: "WhatsApp",
       itens: [
         { nome: "WhatsApp", rota: "/whatsapp", icone: MessageCircle },
-        { nome: "Mensagens WhatsApp", rota: "/whatsapp-mensagens", icone: MessageCircle },
+        {
+          nome: "Mensagens WhatsApp",
+          rota: "/whatsapp-mensagens",
+          icone: MessageCircle,
+        },
         { nome: "Campanhas WhatsApp", rota: "/campanhas", icone: Megaphone },
         { nome: "Fila WhatsApp", rota: "/whatsapp-fila", icone: MessageCircle },
       ],
@@ -125,7 +174,11 @@ export default function Sidebar() {
         { nome: "Bloqueios", rota: "/bloqueios", icone: Ban },
         { nome: "Configurações", rota: "/configuracoes", icone: Settings },
         { nome: "Relatórios", rota: "/relatorios", icone: FileText },
-        { nome: "Anamnese", rota: "/anamnese-configuracao", icone: ShieldCheck },
+        {
+          nome: "Anamnese",
+          rota: "/anamnese-configuracao",
+          icone: ShieldCheck,
+        },
       ],
     },
   ];

@@ -657,7 +657,7 @@ export default function Dashboard() {
         </div>
       </SectionCard>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-9">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         <KpiCard
           title="Resultado"
           value={formatarMoeda(indicadores.faturamento)}
@@ -1066,13 +1066,15 @@ function KpiCard({
   }[variant];
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
+    <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-5">
       <div
-        className={`mb-3 inline-flex rounded-2xl px-3 py-1 text-xs font-extrabold ${variantClass}`}
+        className={`mb-3 inline-flex max-w-full rounded-2xl px-3 py-1 text-xs font-extrabold leading-tight ${variantClass}`}
       >
-        {title}
+        <span className="break-words">{title}</span>
       </div>
-      <p className="text-2xl font-extrabold text-slate-900">{value}</p>
+      <p className="break-words text-[clamp(1.35rem,2vw,1.9rem)] font-extrabold leading-tight text-slate-900">
+        {value}
+      </p>
     </div>
   );
 }

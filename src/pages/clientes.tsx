@@ -180,24 +180,39 @@ export default function ClientesPage() {
   async function carregarClientes() {
     if (!empresaId) return;
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .order("nome");
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .order("nome", { ascending: true });
 
-    setLoading(false);
+      if (error) {
+        console.error("Erro ao carregar clientes:", error);
+        alert("Erro ao carregar clientes: " + error.message);
+        return;
+      }
 
-    if (error) {
-      alert("Erro ao carregar clientes: " + error.message);
-      return;
+      const lista = (data || []) as Cliente[];
+
+      setClientes(lista);
+
+      try {
+        await carregarStatusAnamnese(lista);
+      } catch (erroAnamnese) {
+        console.error("Erro ao carregar status da anamnese:", erroAnamnese);
+        setAnamnesePorCliente({});
+      }
+
+      await marcarNovosClientesComoVisualizados(lista);
+    } catch (erroGeral) {
+      console.error("Erro geral ao carregar clientes:", erroGeral);
+      alert("Erro inesperado ao carregar clientes.");
+    } finally {
+      setLoading(false);
     }
-
-    const lista = (data || []) as Cliente[];
-    setClientes(lista);
-    await carregarStatusAnamnese(lista);
   }
 
   async function carregarStatusAnamnese(listaClientes: Cliente[]) {
@@ -232,6 +247,39 @@ export default function ClientesPage() {
     });
 
     setAnamnesePorCliente(mapa);
+  }
+
+  async function marcarNovosClientesComoVisualizados(listaClientes: Cliente[]) {
+    if (!empresaId) return;
+
+    const temNovos = listaClientes.some(clienteEhNovo);
+
+    if (!temNovos) return;
+
+    setClientes((atuais) =>
+      atuais.map((cliente) =>
+        clienteEhNovo(cliente)
+          ? { ...cliente, novo_cliente: false, visualizado: true }
+          : cliente,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("clientes")
+      .update({
+        novo_cliente: false,
+        visualizado: true,
+      })
+      .eq("empresa_id", empresaId)
+      .eq("novo_cliente", true)
+      .or("visualizado.is.null,visualizado.eq.false");
+
+    if (error) {
+      console.warn(
+        "Não foi possível marcar novos clientes como visualizados:",
+        error.message,
+      );
+    }
   }
 
   async function carregarServicos() {
