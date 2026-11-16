@@ -22,6 +22,11 @@ import {
 import { supabase } from "../../lib/supabase";
 import { useEmpresa } from "../../hooks/useEmpresa";
 
+type SidebarProps = {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+};
+
 type MenuItem = {
   nome: string;
   rota: string;
@@ -34,7 +39,7 @@ type MenuSecao = {
   itens: MenuItem[];
 };
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const { empresaId } = useEmpresa();
   const location = useLocation();
   const [novosClientes, setNovosClientes] = useState(0);
@@ -184,10 +189,15 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="w-72 min-h-screen bg-[#3d1d78] text-white flex flex-col">
-      <div className="px-6 py-8">
-        <h1 className="text-2xl font-black">VendlySys</h1>
-        <p className="text-sm text-slate-300 mt-1">Gestão inteligente</p>
+    <>
+      {mobileOpen && (
+        <button type="button" aria-label="Fechar menu de navegação" className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" onClick={onCloseMobile} />
+      )}
+      <aside aria-label="Navegação principal" className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-[#3d1d78] text-white shadow-xl transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:min-h-screen lg:shrink-0 lg:translate-x-0 lg:shadow-none ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className="flex items-start justify-between gap-2 px-6 py-8">
+        <div><h1 className="text-2xl font-black">VendlySys</h1>
+        <p className="text-sm text-slate-300 mt-1">Gestão inteligente</p></div>
+        <button type="button" aria-label="Fechar menu" onClick={onCloseMobile} className="rounded-lg px-2 py-1 text-xl text-white hover:bg-white/10 lg:hidden">×</button>
       </div>
 
       <nav className="flex-1 px-4 pb-10 overflow-y-auto">
@@ -205,6 +215,7 @@ export default function Sidebar() {
                   <NavLink
                     key={item.rota}
                     to={item.rota}
+                    onClick={onCloseMobile}
                     className={({ isActive }) =>
                       `flex items-center gap-3 rounded-2xl px-4 py-3 transition-all ${
                         isActive
@@ -229,5 +240,6 @@ export default function Sidebar() {
         ))}
       </nav>
     </aside>
+    </>
   );
 }
