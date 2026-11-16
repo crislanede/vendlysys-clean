@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Menu, X } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import EmpresaSwitcher from "./EmpresaSwitcher";
@@ -20,6 +21,7 @@ export default function AppLayout() {
 
   const [usuarioLogado, setUsuarioLogado] = useState("Usuário");
   const [perfilUsuario, setPerfilUsuario] = useState("");
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
   useEffect(() => {
     carregarUsuarioLogado();
@@ -133,16 +135,21 @@ export default function AppLayout() {
       className="min-h-screen flex"
       style={{ backgroundColor: "var(--cor-fundo)" }}
     >
-      <Sidebar />
+      <Sidebar mobileOpen={menuMobileAberto} onCloseMobile={() => setMenuMobileAberto(false)} />
 
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="min-w-0 flex-1 flex flex-col min-h-screen">
         <header
-          className="h-14 flex items-center justify-between px-6 shadow"
+          className="min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 py-2 shadow sm:px-6"
           style={{ backgroundColor: corPrimaria }}
         >
-          <div className="text-white font-semibold">{empresaNome}</div>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button type="button" aria-label={menuMobileAberto ? "Fechar menu" : "Abrir menu"} aria-expanded={menuMobileAberto} onClick={() => setMenuMobileAberto((aberto) => !aberto)} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white hover:bg-white/20 lg:hidden">
+              {menuMobileAberto ? <X size={22} /> : <Menu size={22} />}
+            </button>
+            <div className="min-w-0 truncate text-sm font-semibold text-white sm:text-base">{empresaNome}</div>
+          </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-4">
             <div className="hidden md:block text-right text-white leading-tight">
               <div className="text-xs opacity-75">Usuário logado</div>
               <div className="font-bold">{usuarioLogado}</div>
@@ -152,7 +159,7 @@ export default function AppLayout() {
               <button
                 type="button"
                 onClick={() => navigate("/admin/empresas")}
-                className="rounded-2xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white hover:bg-fuchsia-700"
+                className="rounded-2xl bg-fuchsia-600 px-3 py-2 text-xs font-bold text-white hover:bg-fuchsia-700 sm:px-4 sm:text-sm"
               >
                 Administração SaaS
               </button>
@@ -163,14 +170,14 @@ export default function AppLayout() {
             <button
               type="button"
               onClick={handleSair}
-              className="rounded-2xl bg-white/15 px-4 py-2 text-sm font-bold text-white hover:bg-white/25"
+              className="rounded-2xl bg-white/15 px-3 py-2 text-sm font-bold text-white hover:bg-white/25 sm:px-4"
             >
               Sair
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
