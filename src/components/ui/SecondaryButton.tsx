@@ -10,11 +10,11 @@ export default function SecondaryButton({
   return (
     <button
       {...props}
-      className={`rounded-2xl px-5 py-3 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex min-h-10 max-w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold tracking-tight transition disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       style={{
         backgroundColor: "transparent",
-        border: "2px solid var(--color-secondary)",
-        color: "var(--color-secondary)",
+        border: "1px solid #cbd5e1",
+        color: "#334155",
         ...(props.style || {}),
       }}
     >
