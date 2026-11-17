@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type Approver = { id: string; approver_id: string; created_at: string };
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type Candidate = { id: string; name: string; email: string };
 
 export default function SegurancaConta() {
   const [approvers, setApprovers] = useState<Approver[]>([]);
