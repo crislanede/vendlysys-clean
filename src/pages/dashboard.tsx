@@ -17,7 +17,6 @@ import {
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
 
-import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
 import PrimaryButton from "../components/ui/PrimaryButton";
 
