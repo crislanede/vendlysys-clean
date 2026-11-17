@@ -38,6 +38,19 @@ Deno.serve(async (req) => {
   const authorized = scope === "saas_admin" ? await isSaasAdmin(requester.id, requester.email) : await isCompanyAdmin(requester.id);
   if (!authorized) return json({ error: "Forbidden" }, 403);
 
+  if (input.action === "candidates") {
+    if (scope !== "saas_admin") return json({ error: "Unsupported scope" }, 400);
+    const { data: records, error: recordsError } = await admin.from("usuarios")
+      .select("nome,email").in("perfil", ["super_admin", "admin_saas"]).eq("ativo", true).limit(100);
+    if (recordsError) return json({ error: "Unable to list candidates" }, 500);
+    const { data: authUsers, error: authUsersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (authUsersError) return json({ error: "Unable to list candidates" }, 500);
+    const candidates = (records || []).flatMap((record) => {
+      const match = authUsers.users.find((user) => user.email?.toLowerCase() === record.email?.toLowerCase() && user.id !== requester.id);
+      return match ? [{ id: match.id, name: record.nome || "Administrador", email: record.email }] : [];
+    });
+    return json({ candidates });
+  }
   if (input.action === "list") {
     let query = admin.from("mfa_recovery_approvers").select("id,approver_id,scope,empresa_id,created_at").eq("requester_id", requester.id).eq("scope", scope);
     query = scope === "saas_admin" ? query.is("empresa_id", null) : query.eq("empresa_id", empresaId!);
