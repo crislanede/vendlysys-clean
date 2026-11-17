@@ -237,9 +237,9 @@ export default function Configuracoes() {
     setTelefone(data.telefone || "");
     setEndereco(data.endereco || "");
     setWhatsappComercial(data.whatsapp_numero || "");
-    setInstagram(data.instagram || "");
-    setFacebook(data.facebook || "");
-    setSite(data.site || "");
+    setInstagram("");
+    setFacebook("");
+    setSite("");
     setLogoUrl(data.logo_url || "");
 
     setCorPrimaria(data.cor_primaria || "#4f46e5");
