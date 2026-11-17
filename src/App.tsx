@@ -13,6 +13,7 @@ import Whatsapp from "./pages/whatsapp";
 import WhatsappFila from "./pages/whatsapp-fila";
 
 import Login from "./pages/login";
+import MFA from "./pages/mfa";
 import ResetarSenha from "./pages/resetar-senha";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 
@@ -62,6 +63,7 @@ function App() {
       <Routes>
         {/* ROTAS PÚBLICAS */}
         <Route path="/login" element={<Login />} />
+        <Route path="/mfa" element={<MFA />} />
         <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
