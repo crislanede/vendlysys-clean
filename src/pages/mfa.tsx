@@ -12,7 +12,6 @@ export default function MFA() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [verified, setVerified] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -60,9 +59,8 @@ export default function MFA() {
       if (error) throw error;
       const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (assurance?.currentLevel !== "aal2") throw new Error("Sessão sem AAL2");
-      setVerified(true);
       setQr(""); setSecret(""); setCode("");
-      setMessage("Autenticação em duas etapas confirmada!");
+      navigate("/admin/empresas", { replace: true });
     } catch {
       setMessage("Código inválido ou expirado. Tente novamente.");
     } finally { setBusy(false); }
@@ -83,13 +81,12 @@ export default function MFA() {
           <p className="text-xs text-slate-600">Não consegue escanear? Insira esta chave manualmente no aplicativo:</p>
           <code className="block break-all text-sm bg-slate-100 rounded-lg p-3 select-all">{secret}</code>
         </div>}
-        {factorId && !verified && <form onSubmit={(e) => { e.preventDefault(); void verify(); }} className="space-y-3">
+        {factorId && <form onSubmit={(e) => { e.preventDefault(); void verify(); }} className="space-y-3">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">Código de 6 dígitos</label>
           <input id="mfa-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} className="w-full border border-slate-300 rounded-xl p-3 tracking-widest text-center text-lg" />
           <button disabled={busy} type="submit" className="w-full rounded-xl bg-violet-700 text-white font-semibold py-3 disabled:opacity-50">{busy ? "Verificando..." : "Confirmar código"}</button>
         </form>}
         {message && <p role="status" className="text-sm text-slate-700">{message}</p>}
-        {verified && <button onClick={() => navigate("/admin/empresas", { replace: true })} className="w-full rounded-xl bg-violet-700 text-white font-semibold py-3">Continuar</button>}
         <button type="button" onClick={async () => { await supabase.auth.signOut(); navigate("/login", { replace: true }); }} className="w-full text-sm text-slate-600 underline">Sair da conta</button>
       </section>
     </main>
