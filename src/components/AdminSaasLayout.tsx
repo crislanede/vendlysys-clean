@@ -37,12 +37,10 @@ export default function AdminSaasLayout() {
   return (
     <div className="min-h-screen min-w-0 bg-[#F6F7FB] lg:flex">
       {menuAberto && <button aria-label="Fechar menu" type="button" onClick={() => setMenuAberto(false)} className="fixed inset-0 z-40 bg-[#090D1C]/60 backdrop-blur-[2px] lg:hidden" />}
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 px-5 backdrop-blur lg:hidden">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#171331] text-white"><LayoutDashboard size={18}/></div>
-          <div><p className="text-sm font-extrabold tracking-tight text-[#171331]">VendlySys</p><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-slate-400">Administração</p></div>
-        </div>
-        <button type="button" aria-label="Abrir menu" aria-expanded={menuAberto} onClick={() => setMenuAberto(true)} className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 shadow-sm"><Menu size={20}/></button>
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur lg:hidden">
+        <button type="button" aria-label="Abrir menu" aria-expanded={menuAberto} onClick={() => setMenuAberto(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-[#171331] shadow-sm"><Menu size={21}/></button>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#171331] text-white"><LayoutDashboard size={18}/></div>
+        <div className="min-w-0"><p className="text-sm font-extrabold tracking-tight text-[#171331]">VendlySys</p><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-slate-400">Administração</p></div>
       </header>
       <aside className={`fixed inset-y-0 left-0 z-50 flex w-[min(85vw,288px)] flex-col border-r border-white/10 bg-[#111427] text-white shadow-2xl transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:w-[264px] lg:shrink-0 lg:translate-x-0 lg:shadow-none ${menuAberto ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex-1 overflow-y-auto">
