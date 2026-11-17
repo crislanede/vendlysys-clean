@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
+import { obterPlanoSaas, podeAtivarProfissional } from "../lib/planosSaas";
 
 type Profissional = {
   id: string;
@@ -44,6 +45,7 @@ export default function ProfissionaisPage() {
   const { empresaId, carregandoEmpresa } = useEmpresa();
 
   const [lista, setLista] = useState<Profissional[]>([]);
+  const [planoEmpresa, setPlanoEmpresa] = useState<string | null>(null);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [profissionalServicos, setProfissionalServicos] = useState<ProfissionalServico[]>([]);
   const [servicosSelecionados, setServicosSelecionados] = useState<string[]>([]);
@@ -56,7 +58,12 @@ export default function ProfissionaisPage() {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    if (empresaId) carregarTudo();
+    if (empresaId) {
+      carregarTudo();
+      supabase.from("empresas").select("plano").eq("id", empresaId).single().then(({ data, error }) => {
+        setPlanoEmpresa(error ? null : data?.plano ?? null);
+      });
+    }
   }, [empresaId]);
 
   async function carregarTudo() {
@@ -124,6 +131,13 @@ export default function ProfissionaisPage() {
 
     if (!form.nome.trim()) {
       alert("Nome é obrigatório.");
+      return;
+    }
+
+    const ativos = lista.filter((p) => p.ativo !== false).length;
+    const editado = lista.find((p) => p.id === editandoId);
+    if ((!editandoId || editado?.ativo === false) && !podeAtivarProfissional(planoEmpresa, ativos)) {
+      alert("Limite de profissionais ativos do plano atingido ou plano não identificado. Atualize seu plano para continuar.");
       return;
     }
 
@@ -362,6 +376,10 @@ export default function ProfissionaisPage() {
         </button>
       </div>
 
+      <div className="rounded-xl border bg-white p-4 text-sm text-slate-700" role="status">
+        <strong>Profissionais ativos:</strong> {lista.filter((p) => p.ativo !== false).length} de {obterPlanoSaas(planoEmpresa)?.limiteProfissionais ?? "—"} permitidos pelo plano.
+        {!obterPlanoSaas(planoEmpresa) && <p className="mt-1 text-amber-700">Plano não reconhecido. Novas ativações ficam indisponíveis até regularização.</p>}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card title="Total" value={lista.length} />
         <Card title="Ativos" value={lista.filter((p) => p.ativo !== false).length} />
