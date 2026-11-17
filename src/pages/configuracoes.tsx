@@ -34,6 +34,36 @@ export default function Configuracoes() {
   const [bannerPosY, setBannerPosY] = useState(50);
   const [bannerZoom, setBannerZoom] = useState(100);
 
+  const [testandoAsaas, setTestandoAsaas] = useState(false);
+  const [resultadoAsaas, setResultadoAsaas] = useState("");
+
+  async function testarConexaoAsaas() {
+    setTestandoAsaas(true);
+    setResultadoAsaas("");
+    try {
+      const { data: { session }, error: sessaoErro } = await supabase.auth.getSession();
+      if (sessaoErro || !session) {
+        setResultadoAsaas("Faça login com sua conta administrativa para executar o teste.");
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("asaas-test-connection", {
+        method: "GET",
+      });
+      if (error) {
+        setResultadoAsaas("Não foi possível validar a conexão. Verifique a sessão, as permissões administrativas e os logs da função.");
+        return;
+      }
+      const result = data as { connected?: boolean; environment?: string; provider_status?: number; error?: string } | null;
+      setResultadoAsaas(result?.connected && result.environment === "sandbox"
+        ? "Conexão com Asaas Sandbox validada! Nenhuma cobrança foi criada."
+        : "Teste não confirmado. Verifique as configurações de sandbox e os logs da função.");
+    } catch {
+      setResultadoAsaas("Falha ao executar o teste. Confira os logs da Edge Function.");
+    } finally {
+      setTestandoAsaas(false);
+    }
+  }
+
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [enviandoBanner, setEnviandoBanner] = useState(false);
@@ -278,6 +308,20 @@ export default function Configuracoes() {
 
   return (
     <div className="space-y-8 p-6">
+      <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Asaas — conexão de testes</h2>
+            <p className="mt-1 text-sm text-slate-700">Consulta segura ao Asaas Sandbox. Não cria cobranças, subcontas ou pagamentos reais.</p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-800">Sandbox somente</span>
+        </div>
+        <button type="button" onClick={() => void testarConexaoAsaas()} disabled={testandoAsaas}
+          className="mt-4 rounded-xl bg-emerald-700 px-5 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+          {testandoAsaas ? "Testando conexão..." : "Testar conexão com Asaas"}
+        </button>
+        {resultadoAsaas && <p role="status" className="mt-3 text-sm font-medium text-slate-800">{resultadoAsaas}</p>}
+      </section>
       <div>
         <p
           style={{ color: "var(--cor-primaria, #4f46e5)" }}
