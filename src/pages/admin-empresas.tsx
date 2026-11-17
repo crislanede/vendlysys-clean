@@ -454,26 +454,18 @@ export default function AdminEmpresas() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[1600px] mx-auto p-3 sm:p-5 lg:p-7 space-y-5 bg-slate-50 min-h-screen">
-      <div className="min-w-0 overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-purple-950 to-fuchsia-900 text-white p-5 sm:p-7 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
-          <div>
-            <p className="text-xs font-black tracking-[0.2em] uppercase text-fuchsia-200">
-              Administração SaaS
-            </p>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black mt-2 break-words">Empresas cadastradas</h1>
-            <p className="text-sm md:text-base text-slate-200 mt-1">
-              Gerencie trials, licenças, bloqueios, pagamentos e planos do VendlySys.
-            </p>
+    <div className="w-full min-w-0 max-w-[1500px] mx-auto p-4 sm:p-7 lg:p-9 space-y-6 min-h-screen">
+      <div className="flex flex-col gap-5 border-b border-slate-200/80 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.13em] text-violet-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> Gestão da plataforma
           </div>
-
-          <button
-            onClick={() => setMostrarCadastro(true)}
-            className="w-full sm:w-auto bg-white text-slate-950 px-5 py-3 rounded-2xl font-black hover:scale-[1.01] active:scale-[0.99] transition shadow-sm"
-          >
-            + Nova empresa
-          </button>
+          <h1 className="text-[27px] font-extrabold leading-tight tracking-tight text-[#18172C] sm:text-4xl">Empresas</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">Gerencie estabelecimentos, assinaturas e licenças em um só lugar.</p>
         </div>
+        <button onClick={() => setMostrarCadastro(true)} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#24184A] px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-violet-950/10 transition hover:bg-[#38236A] sm:w-auto">
+          <span className="text-lg leading-none">+</span> Nova empresa
+        </button>
       </div>
 
       {erro && (
@@ -488,7 +480,7 @@ export default function AdminEmpresas() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 min-w-0">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 min-w-0">
         <Card title="Total" value={metricas.total} hint="empresas" />
         <Card title="Ativas" value={metricas.ativas} hint="liberadas" />
         <Card title="Bloqueadas" value={metricas.bloqueadas} hint="sem acesso" />
@@ -817,9 +809,9 @@ function Campo({
 
 function Card({ title, value, hint }: { title: string; value: string | number; hint?: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase text-slate-500">{title}</p>
-      <p className="text-2xl font-black text-slate-900 mt-1">{value}</p>
+    <div className="min-w-0 rounded-2xl border border-[#E9E9F2] bg-white p-4 sm:p-5 shadow-[0_4px_22px_rgba(27,26,57,0.035)]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 break-words">{title}</p>
+      <p className="text-3xl font-extrabold tracking-tight text-[#1D1937] mt-3">{value}</p>
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
     </div>
   );
