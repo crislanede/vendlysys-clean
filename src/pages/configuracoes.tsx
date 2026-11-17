@@ -116,6 +116,36 @@ export default function Configuracoes() {
     }
   }
 
+  const [cadastroFinanceiro, setCadastroFinanceiro] = useState({
+    tipo_pessoa: "fisica", nome_titular: "", documento: "", email: "", telefone: "",
+    cep: "", endereco: "", numero: "", bairro: "", cidade: "", estado: "",
+  });
+  const [aceiteFinanceiro, setAceiteFinanceiro] = useState(false);
+  const [salvandoCadastroFinanceiro, setSalvandoCadastroFinanceiro] = useState(false);
+  const [resultadoCadastroFinanceiro, setResultadoCadastroFinanceiro] = useState("");
+  async function salvarCadastroFinanceiro(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!empresaId || !aceiteFinanceiro) return;
+    setSalvandoCadastroFinanceiro(true);
+    setResultadoCadastroFinanceiro("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-cadastro-financeiro", {
+        method: "POST",
+        body: { empresa_id: empresaId, dados: cadastroFinanceiro, consentimento: aceiteFinanceiro },
+      });
+      if (error || !(data as { salvo?: boolean } | null)?.salvo) {
+        setResultadoCadastroFinanceiro("Não foi possível salvar. Confira os dados e suas permissões administrativas.");
+      } else {
+        setResultadoCadastroFinanceiro("Cadastro financeiro salvo como rascunho no ambiente de testes. Nenhuma conta foi criada no Asaas.");
+        setCadastroFinanceiro(prev => ({ ...prev, documento: "" }));
+      }
+    } catch {
+      setResultadoCadastroFinanceiro("Erro ao salvar cadastro financeiro.");
+    } finally {
+      setSalvandoCadastroFinanceiro(false);
+    }
+  }
+
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [enviandoBanner, setEnviandoBanner] = useState(false);
@@ -360,6 +390,47 @@ export default function Configuracoes() {
 
   return (
     <div className="space-y-8 p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <h2 className="text-xl font-bold text-slate-900">Cadastro financeiro — Asaas Sandbox</h2>
+        <p className="mt-1 text-sm text-slate-600">Preencha os dados do titular que receberá os pagamentos. Somente a superadministração pode salvar nesta etapa. Nenhuma conta será aberta agora.</p>
+        <form onSubmit={(e) => void salvarCadastroFinanceiro(e)} className="mt-5 space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-700">Tipo de titular
+              <select value={cadastroFinanceiro.tipo_pessoa} onChange={e => setCadastroFinanceiro(p => ({...p,tipo_pessoa:e.target.value,documento:""}))} className="mt-1 w-full rounded-xl border border-slate-300 p-3">
+                <option value="fisica">Pessoa física (CPF)</option><option value="juridica">Pessoa jurídica (CNPJ)</option>
+              </select>
+            </label>
+            {([
+              ["nome_titular","Nome completo ou razão social","text"],
+              ["documento",cadastroFinanceiro.tipo_pessoa === "fisica" ? "CPF" : "CNPJ","text"],
+              ["email","E-mail do titular","email"],
+              ["telefone","Telefone com DDD","tel"],
+              ["cep","CEP","text"],
+              ["endereco","Logradouro","text"],
+              ["numero","Número","text"],
+              ["bairro","Bairro","text"],
+              ["cidade","Cidade","text"],
+              ["estado","UF (ex.: SP)","text"],
+            ] as const).map(([field,label,type]) => (
+              <label key={field} className="text-sm font-semibold text-slate-700">{label}
+                <input required type={type} autoComplete="off" maxLength={field === "estado" ? 2 : 250}
+                  value={cadastroFinanceiro[field]}
+                  onChange={e => setCadastroFinanceiro(p => ({...p,[field]:e.target.value}))}
+                  className="mt-1 w-full rounded-xl border border-slate-300 p-3" />
+              </label>
+            ))}
+          </div>
+          <label className="flex items-start gap-3 text-sm text-slate-700">
+            <input type="checkbox" required checked={aceiteFinanceiro} onChange={e => setAceiteFinanceiro(e.target.checked)} className="mt-1" />
+            <span>Confirmo que tenho autorização para cadastrar estes dados do titular para a futura abertura de conta de pagamentos em ambiente de testes.</span>
+          </label>
+          <button type="submit" disabled={!empresaId || !aceiteFinanceiro || salvandoCadastroFinanceiro}
+            className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-50">
+            {salvandoCadastroFinanceiro ? "Salvando..." : "Salvar cadastro financeiro (rascunho)"}
+          </button>
+          {resultadoCadastroFinanceiro && <p role="status" className="text-sm font-medium text-slate-700">{resultadoCadastroFinanceiro}</p>}
+        </form>
+      </section>
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
