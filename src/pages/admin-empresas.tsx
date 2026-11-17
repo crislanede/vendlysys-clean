@@ -142,7 +142,7 @@ export default function AdminEmpresas() {
     const { data, error } = await supabase
       .from("empresas")
       .select(
-        "id,nome,slug,email,telefone,plano,status_assinatura,status_pagamento,valor_mensal,vencimento_assinatura,trial_inicio,trial_fim,licenca_vitalicia,bloqueada,ativa,data_bloqueio,created_at"
+        "id,nome,slug,email,telefone,plano,status_assinatura,status_pagamento,valor_mensal,vencimento_assinatura:data_vencimento,trial_inicio,trial_fim,licenca_vitalicia,bloqueada,ativa,data_bloqueio,created_at"
       )
       .order("created_at", { ascending: false });
 
@@ -243,7 +243,7 @@ export default function AdminEmpresas() {
       status_assinatura: statusAssinatura,
       status_pagamento: statusPagamento,
       valor_mensal: valorMensal,
-      vencimento_assinatura: novaEmpresa.vencimentoAssinatura || null,
+      data_vencimento: novaEmpresa.vencimentoAssinatura || null,
       licenca_vitalicia: licencaVitalicia,
       trial_inicio: licencaVitalicia ? null : trialInicio.toISOString(),
       trial_fim: licencaVitalicia ? null : trialFim.toISOString(),
