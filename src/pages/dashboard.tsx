@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -284,6 +285,9 @@ function agruparPorData(
 }
 
 export default function Dashboard() {
+  const { empresa, empresaNome } = useEmpresa();
+  const urlMeuEspaco = empresa?.slug ? `/meu-espaco?empresa=${encodeURIComponent(empresa.slug)}` : null;
+
 
    const [periodoRapido, setPeriodoRapido] = useState<PeriodoRapido>("mes");
   const [dataInicio, setDataInicio] = useState(inicioDoMesISO());
@@ -575,14 +579,35 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <PageHeader
-          eyebrow="Visão geral"
-          title="Dashboard"
-          description="Acompanhe o desempenho financeiro, atendimentos e indicadores do negócio por período."
-        />
-     
-      </div>
+      <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-gradient-to-br from-slate-950 via-[#241b42] to-[#513075] px-6 py-8 text-white shadow-[0_22px_60px_-30px_rgba(32,22,67,0.65)] sm:px-9 sm:py-10">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-fuchsia-400/20 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute bottom-0 right-1/3 h-36 w-36 rounded-full bg-indigo-400/15 blur-3xl" />
+        <div className="relative flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-violet-100">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Visão executiva
+            </span>
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Seu negócio em perspectiva.</h1>
+            <p className="mt-3 max-w-xl text-sm leading-7 text-violet-100/80 sm:text-base">
+              {empresaNome !== "VendlySys" ? `${empresaNome} · ` : ""}Indicadores, desempenho e decisões em um só lugar.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <a href="/agenda" className="inline-flex items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/20">
+              Abrir agenda <span aria-hidden="true" className="ml-2">↗</span>
+            </a>
+            {urlMeuEspaco ? (
+              <a href={urlMeuEspaco} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-extrabold text-[#281c49] shadow-lg shadow-black/15 transition hover:bg-violet-50">
+                Visualizar Meu Espaço <span aria-hidden="true" className="ml-2">↗</span>
+              </a>
+            ) : (
+              <span className="inline-flex items-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm text-white/70" title="Selecione uma empresa com endereço público configurado">
+                Meu Espaço indisponível
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
 
       <SectionCard
         title="Período"
