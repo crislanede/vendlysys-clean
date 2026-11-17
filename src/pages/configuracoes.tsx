@@ -150,9 +150,40 @@ export default function Configuracoes() {
   const [aceiteFinanceiro, setAceiteFinanceiro] = useState(false);
   const [salvandoCadastroFinanceiro, setSalvandoCadastroFinanceiro] = useState(false);
   const [resultadoCadastroFinanceiro, setResultadoCadastroFinanceiro] = useState("");
+  function documentoValido(valor: string, tipo: string): boolean {
+    const d = valor.replace(/\D/g, "");
+    if (tipo === "fisica") {
+      if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+      for (let n = 9; n <= 10; n++) {
+        const soma = [...d.slice(0, n)].reduce((a, x, i) => a + Number(x) * (n + 1 - i), 0);
+        if (Number(d[n]) !== (soma * 10) % 11 % 10) return false;
+      }
+      return true;
+    }
+    if (tipo !== "juridica" || d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+    for (const pesos of [[5,4,3,2,9,8,7,6,5,4,3,2],[6,5,4,3,2,9,8,7,6,5,4,3,2]]) {
+      const soma = pesos.reduce((a, peso, i) => a + Number(d[i]) * peso, 0);
+      const resto = soma % 11;
+      if (Number(d[pesos.length]) !== (resto < 2 ? 0 : 11 - resto)) return false;
+    }
+    return true;
+  }
   async function salvarCadastroFinanceiro(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!empresaId || !aceiteFinanceiro) return;
+    if (!documentoValido(cadastroFinanceiro.documento, cadastroFinanceiro.tipo_pessoa)) {
+      setResultadoCadastroFinanceiro("CPF/CNPJ inválido. Confira os dígitos do documento antes de salvar.");
+      return;
+    }
+    if (cadastroFinanceiro.cep.replace(/\D/g, "").length !== 8) {
+      setResultadoCadastroFinanceiro("CEP inválido: informe 8 dígitos.");
+      return;
+    }
+    const telefoneDigitos = cadastroFinanceiro.telefone.replace(/\D/g, "");
+    if (telefoneDigitos.length < 10 || telefoneDigitos.length > 13) {
+      setResultadoCadastroFinanceiro("Telefone inválido: informe DDD e número.");
+      return;
+    }
     setSalvandoCadastroFinanceiro(true);
     setResultadoCadastroFinanceiro("");
     try {
