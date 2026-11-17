@@ -32,6 +32,7 @@ export default function AdminSaasLayout() {
   const links = [
     { to: "/admin/empresas", label: "Empresas", icon: Building2 },
     { to: "/admin/usuarios", label: "Usuários SaaS", icon: UsersRound },
+    { to: "/admin/seguranca", label: "Segurança da conta", icon: ShieldCheck },
   ];
 
   return (
