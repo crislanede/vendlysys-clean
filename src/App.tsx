@@ -8,6 +8,7 @@ import {
 import AppLayout from "./components/layout/AppLayout";
 import AdminSaasLayout from "./components/AdminSaasLayout";
 import AdminRoute from "./components/AdminRoute";
+import PrivilegedMfaGate from "./components/PrivilegedMfaGate";
 import ThemeLoader from "./components/theme/ThemeLoader";
 import Whatsapp from "./pages/whatsapp";
 import WhatsappFila from "./pages/whatsapp-fila";
@@ -85,7 +86,7 @@ function App() {
         </Route>
 
         {/* SISTEMA INTERNO */}
-        <Route path="/" element={<AppLayout />}>
+        <Route path="/" element={<PrivilegedMfaGate><AppLayout /></PrivilegedMfaGate>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           <Route path="dashboard" element={<Dashboard />} />
