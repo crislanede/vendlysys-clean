@@ -15,6 +15,7 @@ import WhatsappFila from "./pages/whatsapp-fila";
 
 import Login from "./pages/login";
 import MFA from "./pages/mfa";
+import SegurancaConta from "./pages/seguranca-conta";
 import ResetarSenha from "./pages/resetar-senha";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 
@@ -80,6 +81,7 @@ function App() {
         >
           <Route path="empresas" element={<AdminEmpresas />} />
           <Route path="usuarios" element={<AdminUsuarios />} />
+          <Route path="seguranca" element={<SegurancaConta />} />
           <Route path="nova-empresa" element={<NovaEmpresa />} />
           <Route path="usuarios-empresa" element={<UsuariosEmpresa />} />
           <Route path="licencas" element={<Licencas />} />
