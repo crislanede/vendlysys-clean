@@ -48,6 +48,12 @@ const novaEmpresaInicial: NovaEmpresa = {
 };
 
 const ITENS_POR_PAGINA = 8;
+const PRECOS_PLANOS = [
+  { nome: "Básico", preco: "R$ 49,90", periodo: "/mês" },
+  { nome: "Profissional", preco: "R$ 89,90", periodo: "/mês" },
+  { nome: "Premium", preco: "R$ 149,90", periodo: "/mês" },
+  { nome: "Vitalício", preco: "R$ 499,00", periodo: "único" },
+] as const;
 
 export default function AdminEmpresas() {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -479,6 +485,22 @@ export default function AdminEmpresas() {
           {sucesso}
         </div>
       )}
+
+      <section className="rounded-2xl border border-[#E9E9F2] bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-lg font-extrabold tracking-tight text-[#1D1937]">Planos VendlySys</h2><p className="mt-1 text-xs text-slate-500">Tabela de preços aprovada • integração de cobrança em preparação</p></div>
+          <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700">Sandbox • sem cobranças</span>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {PRECOS_PLANOS.map((plano) => (
+            <div key={plano.nome} className="min-w-0 rounded-2xl border border-slate-100 bg-[#FAFAFD] p-4">
+              <p className="text-xs font-bold text-slate-500">{plano.nome}</p>
+              <p className="mt-3 break-words text-xl font-extrabold tracking-tight text-[#24184A] sm:text-2xl">{plano.preco}</p>
+              <p className="mt-1 text-xs text-slate-500">{plano.periodo === "único" ? "Pagamento único" : "Cobrança mensal"}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 min-w-0">
         <Card title="Total" value={metricas.total} hint="empresas" />
