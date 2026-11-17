@@ -120,6 +120,33 @@ export default function Configuracoes() {
     tipo_pessoa: "fisica", nome_titular: "", documento: "", email: "", telefone: "",
     cep: "", endereco: "", numero: "", bairro: "", cidade: "", estado: "",
   });
+  const [origemCadastroFinanceiro, setOrigemCadastroFinanceiro] = useState("");
+  const [carregandoCadastroFinanceiro, setCarregandoCadastroFinanceiro] = useState(false);
+  useEffect(() => {
+    if (!empresaId) return;
+    let ativo = true;
+    setCarregandoCadastroFinanceiro(true);
+    setAceiteFinanceiro(false);
+    setOrigemCadastroFinanceiro("");
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("asaas-cadastro-financeiro", {
+          method: "GET",
+          headers: { "x-empresa-id": empresaId },
+        });
+        if (error || !data?.dados || !ativo) return;
+        const d = data.dados as Record<string, string>;
+        setCadastroFinanceiro(prev => Object.fromEntries(
+          Object.keys(prev).map(key => [key, String(d[key] ?? "")])
+        ) as typeof prev);
+        setOrigemCadastroFinanceiro(data.origem === "rascunho" ? "Rascunho financeiro recuperado." : "Dados preenchidos a partir do cadastro do estabelecimento. Confira antes de salvar.");
+      } finally {
+        if (ativo) setCarregandoCadastroFinanceiro(false);
+      }
+    })();
+    return () => { ativo = false; };
+  }, [empresaId]);
+
   const [aceiteFinanceiro, setAceiteFinanceiro] = useState(false);
   const [salvandoCadastroFinanceiro, setSalvandoCadastroFinanceiro] = useState(false);
   const [resultadoCadastroFinanceiro, setResultadoCadastroFinanceiro] = useState("");
@@ -137,7 +164,7 @@ export default function Configuracoes() {
         setResultadoCadastroFinanceiro("Não foi possível salvar. Confira os dados e suas permissões administrativas.");
       } else {
         setResultadoCadastroFinanceiro("Cadastro financeiro salvo como rascunho no ambiente de testes. Nenhuma conta foi criada no Asaas.");
-        setCadastroFinanceiro(prev => ({ ...prev, documento: "" }));
+        setOrigemCadastroFinanceiro("Rascunho financeiro salvo.");
       }
     } catch {
       setResultadoCadastroFinanceiro("Erro ao salvar cadastro financeiro.");
@@ -393,7 +420,7 @@ export default function Configuracoes() {
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <h2 className="text-xl font-bold text-slate-900">Cadastro financeiro — Asaas Sandbox</h2>
         <p className="mt-1 text-sm text-slate-600">Preencha os dados do titular que receberá os pagamentos. Somente a superadministração pode salvar nesta etapa. Nenhuma conta será aberta agora.</p>
-        <form onSubmit={(e) => void salvarCadastroFinanceiro(e)} className="mt-5 space-y-4">
+        {carregandoCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">Carregando dados financeiros...</p>}\n        {origemCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">{origemCadastroFinanceiro}</p>}\n        <form onSubmit={(e) => void salvarCadastroFinanceiro(e)} className="mt-5 space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm font-semibold text-slate-700">Tipo de titular
               <select value={cadastroFinanceiro.tipo_pessoa} onChange={e => setCadastroFinanceiro(p => ({...p,tipo_pessoa:e.target.value,documento:""}))} className="mt-1 w-full rounded-xl border border-slate-300 p-3">
