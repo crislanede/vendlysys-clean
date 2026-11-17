@@ -204,10 +204,7 @@ export default function Configuracoes() {
         nome_fantasia,
         telefone,
         endereco,
-        whatsapp_comercial,
-        instagram,
-        facebook,
-        site,
+        whatsapp_numero,
         logo_url,
         cor_primaria,
         cor_secundaria,
@@ -239,7 +236,7 @@ export default function Configuracoes() {
     setNomeFantasia(data.nome_fantasia || "");
     setTelefone(data.telefone || "");
     setEndereco(data.endereco || "");
-    setWhatsappComercial(data.whatsapp_comercial || "");
+    setWhatsappComercial(data.whatsapp_numero || "");
     setInstagram(data.instagram || "");
     setFacebook(data.facebook || "");
     setSite(data.site || "");
@@ -285,10 +282,7 @@ export default function Configuracoes() {
         nome_fantasia: nomeFantasia || null,
         telefone: telefone || null,
         endereco: endereco || null,
-        whatsapp_comercial: whatsappComercial || null,
-        instagram: instagram || null,
-        facebook: facebook || null,
-        site: site || null,
+        whatsapp_numero: whatsappComercial || null,
         logo_url: logoUrl || null,
 
         cor_primaria: corPrimaria || null,
