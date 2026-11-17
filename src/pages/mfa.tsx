@@ -12,6 +12,7 @@ export default function MFA() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [showRecoveryInfo, setShowRecoveryInfo] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +87,16 @@ export default function MFA() {
           <input id="mfa-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} className="w-full border border-slate-300 rounded-xl p-3 tracking-widest text-center text-lg" />
           <button disabled={busy} type="submit" className="w-full rounded-xl bg-violet-700 text-white font-semibold py-3 disabled:opacity-50">{busy ? "Verificando..." : "Confirmar código"}</button>
         </form>}
+        {factorId && !qr && <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+          <button type="button" onClick={() => setShowRecoveryInfo((current) => !current)} aria-expanded={showRecoveryInfo} className="w-full text-left text-sm font-semibold text-violet-700 underline">
+            Perdi acesso ao aplicativo autenticador
+          </button>
+          {showRecoveryInfo && <div className="space-y-2 text-sm text-slate-700">
+            <p>A recuperação por e-mail com aprovação de um segundo administrador está sendo preparada. Ela ainda não está disponível.</p>
+            <p>Por segurança, o VendlySys não remove o MFA por meio de redefinição de senha ou somente pelo acesso ao e-mail.</p>
+            <p>Se você ainda possui outro autenticador cadastrado, utilize-o para entrar. Caso contrário, procure o responsável pela segurança da conta enquanto o fluxo de recuperação não estiver disponível.</p>
+          </div>}
+        </div>}
         {message && <p role="status" className="text-sm text-slate-700">{message}</p>}
         <button type="button" onClick={async () => { await supabase.auth.signOut(); navigate("/login", { replace: true }); }} className="w-full text-sm text-slate-600 underline">Sair da conta</button>
       </section>
