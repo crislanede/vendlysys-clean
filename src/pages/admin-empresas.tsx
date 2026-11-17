@@ -422,7 +422,7 @@ export default function AdminEmpresas() {
 
   function classeStatus(empresa: Empresa) {
     if (empresa.bloqueada || empresa.ativa === false) return "bg-red-100 text-red-700 ring-red-200";
-    if (empresa.licenca_vitalicia) return "bg-purple-100 text-purple-700 ring-purple-200";
+    if (empresa.licenca_vitalicia) return "bg-slate-100 text-slate-700 ring-slate-200";
     if (empresa.status_assinatura === "ativo") return "bg-green-100 text-green-700 ring-green-200";
     if (empresa.status_assinatura === "trial") return "bg-yellow-100 text-yellow-700 ring-yellow-200";
     return "bg-slate-100 text-slate-700 ring-slate-200";
@@ -431,7 +431,7 @@ export default function AdminEmpresas() {
   function classePagamento(empresa: Empresa) {
     if (empresa.status_pagamento === "pago") return "bg-green-50 text-green-700";
     if (empresa.status_pagamento === "pendente") return "bg-orange-50 text-orange-700";
-    if (empresa.status_pagamento === "dispensado") return "bg-purple-50 text-purple-700";
+    if (empresa.status_pagamento === "dispensado") return "bg-slate-50 text-slate-700";
     return "bg-slate-50 text-slate-600";
   }
 
@@ -460,16 +460,16 @@ export default function AdminEmpresas() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[1500px] mx-auto p-4 sm:p-7 lg:p-9 space-y-6 min-h-screen">
-      <div className="flex flex-col gap-5 border-b border-slate-200/80 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="w-full min-w-0 max-w-[1500px] mx-auto p-4 sm:p-5 lg:p-6 space-y-4 min-h-screen">
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.13em] text-violet-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> Gestão da plataforma
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-teal-100 bg-teal-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.13em] text-teal-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-teal-500" /> Gestão da plataforma
           </div>
-          <h1 className="text-[27px] font-extrabold leading-tight tracking-tight text-[#18172C] sm:text-4xl">Empresas</h1>
+          <h1 className="text-[25px] font-extrabold leading-tight tracking-tight text-[#20313A] sm:text-3xl">Empresas</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">Gerencie estabelecimentos, assinaturas e licenças em um só lugar.</p>
         </div>
-        <button onClick={() => setMostrarCadastro(true)} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#24184A] px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-violet-950/10 transition hover:bg-[#38236A] sm:w-auto">
+        <button onClick={() => setMostrarCadastro(true)} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#285963] px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-slate-950/10 transition hover:bg-[#34727B] sm:w-auto">
           <span className="text-lg leading-none">+</span> Nova empresa
         </button>
       </div>
@@ -486,16 +486,16 @@ export default function AdminEmpresas() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-[#E9E9F2] bg-white p-4 shadow-sm sm:p-6">
+      <section className="rounded-2xl border border-[#E9E9F2] bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-extrabold tracking-tight text-[#1D1937]">Planos VendlySys</h2><p className="mt-1 text-xs text-slate-500">Tabela de preços aprovada • integração de cobrança em preparação</p></div>
+          <div><h2 className="text-lg font-extrabold tracking-tight text-[#20313A]">Planos VendlySys</h2><p className="mt-1 text-xs text-slate-500">Tabela de preços aprovada • integração de cobrança em preparação</p></div>
           <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700">Sandbox • sem cobranças</span>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
           {PRECOS_PLANOS.map((plano) => (
-            <div key={plano.nome} className="min-w-0 rounded-2xl border border-slate-100 bg-[#FAFAFD] p-4">
+            <div key={plano.nome} className="min-w-0 rounded-2xl border border-slate-100 bg-[#F7F9FA] p-3">
               <p className="text-xs font-bold text-slate-500">{plano.nome}</p>
-              <p className="mt-3 break-words text-xl font-extrabold tracking-tight text-[#24184A] sm:text-2xl">{plano.preco}</p>
+              <p className="mt-1.5 break-words text-xl font-extrabold tracking-tight text-[#285963] sm:text-2xl">{plano.preco}</p>
               <p className="mt-1 text-xs text-slate-500">{plano.periodo === "único" ? "Pagamento único" : "Cobrança mensal"}</p>
             </div>
           ))}
@@ -833,7 +833,7 @@ function Card({ title, value, hint }: { title: string; value: string | number; h
   return (
     <div className="min-w-0 rounded-2xl border border-[#E9E9F2] bg-white p-4 sm:p-5 shadow-[0_4px_22px_rgba(27,26,57,0.035)]">
       <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 break-words">{title}</p>
-      <p className="text-3xl font-extrabold tracking-tight text-[#1D1937] mt-3">{value}</p>
+      <p className="text-3xl font-extrabold tracking-tight text-[#20313A] mt-3">{value}</p>
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
     </div>
   );
