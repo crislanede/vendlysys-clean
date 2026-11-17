@@ -64,6 +64,58 @@ export default function Configuracoes() {
     }
   }
 
+  type ContaAsaas = { empresa_id: string; ambiente: string; provedor: string; status: string; criado_em: string };
+  const [contaAsaas, setContaAsaas] = useState<ContaAsaas | null>(null);
+  const [carregandoConta, setCarregandoConta] = useState(false);
+  const [preparandoConta, setPreparandoConta] = useState(false);
+  const [mensagemConta, setMensagemConta] = useState("");
+
+  async function consultarContaAsaas() {
+    if (!empresaId) return;
+    setCarregandoConta(true);
+    setMensagemConta("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-conta-empresa", {
+        method: "GET",
+        // The Edge Function accepts empresa_id as a query parameter.
+        // supabase-js invoke uses its own URL; use the authenticated session explicitly.
+        headers: { "x-empresa-id": empresaId },
+      });
+      if (error) {
+        setMensagemConta("Consulta indisponível. Verifique as permissões de superadministrador.");
+        return;
+      }
+      setContaAsaas((data as { conta?: ContaAsaas | null })?.conta ?? null);
+    } catch {
+      setMensagemConta("Não foi possível consultar a conta.");
+    } finally {
+      setCarregandoConta(false);
+    }
+  }
+
+  async function prepararContaAsaas() {
+    if (!empresaId || preparandoConta) return;
+    setPreparandoConta(true);
+    setMensagemConta("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-conta-empresa", {
+        method: "POST",
+        body: { empresa_id: empresaId },
+      });
+      if (error) {
+        setMensagemConta("Não foi possível preparar a conta. Verifique suas permissões.");
+        return;
+      }
+      const result = data as { conta?: ContaAsaas | null };
+      setContaAsaas(result?.conta ?? null);
+      setMensagemConta("Registro de testes preparado. Nenhuma subconta ou cobrança foi criada.");
+    } catch {
+      setMensagemConta("Falha ao preparar o registro da conta.");
+    } finally {
+      setPreparandoConta(false);
+    }
+  }
+
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [enviandoBanner, setEnviandoBanner] = useState(false);
@@ -308,6 +360,27 @@ export default function Configuracoes() {
 
   return (
     <div className="space-y-8 p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Conta de pagamento do estabelecimento</h2>
+            <p className="mt-1 text-sm text-slate-600">Prepare o registro de recebimento desta empresa. Ambiente Asaas Sandbox, sem cobranças reais.</p>
+          </div>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">Somente testes</span>
+        </div>
+        <p className="mt-4 text-sm text-slate-700">Status: <strong>{contaAsaas?.status === "nao_vinculada" ? "Registro preparado, não vinculado ao Asaas" : contaAsaas?.status ?? "Não consultado"}</strong></p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" disabled={!empresaId || carregandoConta} onClick={() => void consultarContaAsaas()}
+            className="rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-800 disabled:opacity-50">
+            {carregandoConta ? "Consultando..." : "Consultar status"}
+          </button>
+          <button type="button" disabled={!empresaId || preparandoConta} onClick={() => void prepararContaAsaas()}
+            className="rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50">
+            {preparandoConta ? "Preparando..." : "Preparar registro de testes"}
+          </button>
+        </div>
+        {mensagemConta && <p role="status" className="mt-3 text-sm font-medium text-slate-700">{mensagemConta}</p>}
+      </section>
       <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
