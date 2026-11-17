@@ -67,7 +67,8 @@ export default function ProfissionaisPage() {
   }, [empresaId]);
 
   async function carregarTudo() {
-    await Promise.all([carregar(), carregarServicos(), carregarProfissionalServicos()]);
+    await Promise.all([carregar(), carregarServicos()]);
+    await carregarProfissionalServicos();
   }
 
   async function carregar() {
@@ -110,9 +111,34 @@ export default function ProfissionaisPage() {
   }
 
   async function carregarProfissionalServicos() {
+    if (!empresaId) {
+      setProfissionalServicos([]);
+      return;
+    }
+
+    // Primeiro identificamos os profissionais da empresa atual. Nunca carregamos
+    // todos os vínculos de todas as empresas no navegador.
+    const { data: profissionaisDaEmpresa, error: profissionaisError } = await supabase
+      .from("profissionais")
+      .select("id")
+      .eq("empresa_id", empresaId);
+
+    if (profissionaisError) {
+      console.warn("Erro ao identificar profissionais da empresa:", profissionaisError.message);
+      setProfissionalServicos([]);
+      return;
+    }
+
+    const ids = (profissionaisDaEmpresa || []).map((p) => p.id);
+    if (ids.length === 0) {
+      setProfissionalServicos([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("profissional_servicos")
-      .select("profissional_id,servico_id,comissao_percentual");
+      .select("profissional_id,servico_id,comissao_percentual")
+      .in("profissional_id", ids);
 
     if (error) {
       console.warn("Erro ao carregar vínculos de serviços:", error.message);
