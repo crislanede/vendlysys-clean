@@ -25,8 +25,10 @@ Deno.serve(async (req) => {
   if (scope === "company_admin" && (!empresaId || !/^[0-9a-f-]{36}$/i.test(empresaId))) return json({ error: "Invalid company" }, 400);
 
   const isSaasAdmin = async (userId: string, email: string) => {
+    const { data: authUser, error: authError } = await admin.auth.admin.getUserById(userId);
+    if (authError || authUser.user?.email?.toLowerCase() !== email.toLowerCase()) return false;
     const { data } = await admin.from("usuarios").select("id").ilike("email", email).in("perfil", ["super_admin", "admin_saas"]).eq("ativo", true).limit(1);
-    return !!data?.length;
+    return !!data?.length && userId.length > 0;
   };
   const isCompanyAdmin = async (userId: string) => {
     const { data: memberships } = await admin.from("usuarios_empresas").select("id").eq("user_id", userId).eq("empresa_id", empresaId).eq("ativo", true).in("perfil", ["admin", "administrador"]);
