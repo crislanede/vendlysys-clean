@@ -454,14 +454,14 @@ export default function AdminEmpresas() {
   }
 
   return (
-    <div className="p-3 md:p-6 space-y-5 bg-slate-50 min-h-screen">
-      <div className="rounded-3xl bg-gradient-to-r from-slate-950 via-purple-950 to-fuchsia-900 text-white p-5 md:p-7 shadow-sm">
+    <div className="w-full min-w-0 max-w-[1600px] mx-auto p-3 sm:p-5 lg:p-7 space-y-5 bg-slate-50 min-h-screen">
+      <div className="min-w-0 overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-purple-950 to-fuchsia-900 text-white p-5 sm:p-7 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
           <div>
             <p className="text-xs font-black tracking-[0.2em] uppercase text-fuchsia-200">
               Administração SaaS
             </p>
-            <h1 className="text-2xl md:text-4xl font-black mt-2">Empresas cadastradas</h1>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black mt-2 break-words">Empresas cadastradas</h1>
             <p className="text-sm md:text-base text-slate-200 mt-1">
               Gerencie trials, licenças, bloqueios, pagamentos e planos do VendlySys.
             </p>
@@ -469,7 +469,7 @@ export default function AdminEmpresas() {
 
           <button
             onClick={() => setMostrarCadastro(true)}
-            className="bg-white text-slate-950 px-5 py-3 rounded-2xl font-black hover:scale-[1.01] active:scale-[0.99] transition shadow-sm"
+            className="w-full sm:w-auto bg-white text-slate-950 px-5 py-3 rounded-2xl font-black hover:scale-[1.01] active:scale-[0.99] transition shadow-sm"
           >
             + Nova empresa
           </button>
@@ -488,7 +488,7 @@ export default function AdminEmpresas() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 min-w-0">
         <Card title="Total" value={metricas.total} hint="empresas" />
         <Card title="Ativas" value={metricas.ativas} hint="liberadas" />
         <Card title="Bloqueadas" value={metricas.bloqueadas} hint="sem acesso" />
