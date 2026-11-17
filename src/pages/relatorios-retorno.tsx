@@ -147,14 +147,14 @@ export default function RelatoriosRetorno() {
         </p>
       </div>
 
-      <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-4 items-end shadow-sm">
+      <div className="flex min-w-0 flex-wrap items-end gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <div>
           <label className="text-xs text-slate-500">Data inicial</label>
           <input
             type="date"
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}
-            className="block mt-1 border rounded-xl px-3 py-2"
+            className="mt-1 block w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
           />
         </div>
 
@@ -187,7 +187,7 @@ export default function RelatoriosRetorno() {
         <p>Carregando...</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Card title="Atendimentos" value={metricas.total} />
             <Card title="Finalizados" value={metricas.finalizados} />
             <Card title="Cancelados" value={metricas.cancelados} />
@@ -195,7 +195,7 @@ export default function RelatoriosRetorno() {
             <Card title="Ticket médio" value={formatarValor(metricas.ticketMedio)} />
           </div>
 
-          <div className="bg-white border rounded-2xl p-5 shadow-sm">
+          <div className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="font-bold text-slate-900">Taxa de cancelamento</h2>
@@ -230,7 +230,7 @@ export default function RelatoriosRetorno() {
             />
           </div>
 
-          <div className="bg-white rounded-2xl border shadow-sm">
+          <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
             <div className="p-4 border-b">
               <h2 className="font-semibold">Histórico de atendimentos</h2>
             </div>
@@ -283,9 +283,9 @@ export default function RelatoriosRetorno() {
 
 function Card({ title, value }: { title: string; value: string | number }) {
   return (
-    <div className="bg-white border rounded-2xl p-4 shadow-sm">
-      <p className="text-sm text-slate-500">{title}</p>
-      <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50">
+      <p className="text-sm font-medium text-slate-500">{title}</p>
+      <p className="mt-3 min-w-0 break-words text-[clamp(1.35rem,2vw,1.85rem)] font-bold leading-tight tracking-tight tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
