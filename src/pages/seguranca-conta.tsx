@@ -43,7 +43,7 @@ export default function SegurancaConta() {
   }
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 space-y-6">
-      <header className="space-y-2"><p className="text-xs font-bold uppercase tracking-widest text-violet-700">VendlySys • Segurança</p>
+      <header className="space-y-2"><p className="text-xs font-bold uppercase tracking-widest text-teal-700">VendlySys • Segurança</p>
         <h1 className="text-3xl font-extrabold text-slate-900">Segurança da conta</h1>
         <p className="text-slate-600">Cadastre até dois administradores secundários para uma futura recuperação do autenticador.</p>
       </header>
@@ -66,7 +66,7 @@ export default function SegurancaConta() {
             {candidates.filter((c) => !approvers.some((a) => a.approver_id === c.id)).map((c) => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
           </select>
           <p className="text-xs text-slate-500">Somente contas administrativas ativas aparecem aqui. A aprovação exigirá autenticação MFA do segundo administrador.</p>
-          <button disabled={busy || loading || approvers.length >= 2} type="submit" className="rounded-xl bg-violet-700 px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{busy ? "Salvando..." : "Cadastrar administrador secundário"}</button>
+          <button disabled={busy || loading || approvers.length >= 2} type="submit" className="rounded-xl bg-[#285963] px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{busy ? "Salvando..." : "Cadastrar administrador secundário"}</button>
         </form>
         {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
         {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
