@@ -59,7 +59,7 @@ export default function MFA() {
       const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code });
       if (error) throw error;
       const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (assurance.currentLevel !== "aal2") throw new Error("Sessão sem AAL2");
+      if (assurance?.currentLevel !== "aal2") throw new Error("Sessão sem AAL2");
       setVerified(true);
       setQr(""); setSecret(""); setCode("");
       setMessage("Autenticação em duas etapas confirmada!");
