@@ -7,6 +7,7 @@ export default function MFA() {
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
   const [factorId, setFactorId] = useState("");
+  const [verifiedFactors, setVerifiedFactors] = useState<{ id: string; friendly_name?: string | null }[]>([]);
   const [qr, setQr] = useState("");
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
@@ -24,7 +25,9 @@ export default function MFA() {
         const { data, error } = await supabase.auth.mfa.listFactors();
         if (error) setMessage("Não foi possível consultar os autenticadores.");
         else {
-          const factor = data.totp.find((f) => f.status === "verified");
+          const verified = data.totp.filter((f) => f.status === "verified");
+          setVerifiedFactors(verified);
+          const factor = verified[0];
           if (factor) setFactorId(factor.id);
         }
       }
@@ -82,6 +85,12 @@ export default function MFA() {
           <p className="text-xs text-slate-600">Não consegue escanear? Insira esta chave manualmente no aplicativo:</p>
           <code className="block break-all text-sm bg-slate-100 rounded-lg p-3 select-all">{secret}</code>
         </div>}
+        {verifiedFactors.length > 1 && !qr && <div className="space-y-2">
+          <label htmlFor="mfa-factor" className="block text-sm font-medium text-slate-700">Escolha o autenticador</label>
+          <select id="mfa-factor" value={factorId} onChange={(e) => setFactorId(e.target.value)} className="w-full border border-slate-300 rounded-xl p-3">
+            {verifiedFactors.map((factor, index) => <option key={factor.id} value={factor.id}>{factor.friendly_name || `Autenticador ${index + 1}`}</option>)}
+          </select>
+        </div>}
         {factorId && <form onSubmit={(e) => { e.preventDefault(); void verify(); }} className="space-y-3">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">Código de 6 dígitos</label>
           <input id="mfa-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} className="w-full border border-slate-300 rounded-xl p-3 tracking-widest text-center text-lg" />
@@ -94,7 +103,7 @@ export default function MFA() {
           {showRecoveryInfo && <div className="space-y-2 text-sm text-slate-700">
             <p>A recuperação por e-mail com aprovação de um segundo administrador está sendo preparada. Ela ainda não está disponível.</p>
             <p>Por segurança, o VendlySys não remove o MFA por meio de redefinição de senha ou somente pelo acesso ao e-mail.</p>
-            <p>Se você ainda possui outro autenticador cadastrado, utilize-o para entrar. Caso contrário, procure o responsável pela segurança da conta enquanto o fluxo de recuperação não estiver disponível.</p>
+            <p>Se você possui outro autenticador cadastrado, selecione-o acima para entrar. Caso contrário, procure o responsável pela segurança da conta enquanto o fluxo de recuperação não estiver disponível.</p>
           </div>}
         </div>}
         {message && <p role="status" className="text-sm text-slate-700">{message}</p>}
