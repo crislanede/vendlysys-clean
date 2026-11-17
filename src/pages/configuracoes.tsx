@@ -441,12 +441,12 @@ export default function Configuracoes() {
   }
 
   return (
-    <div className="space-y-8 p-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+    <div className="mx-auto w-full max-w-[1440px] min-w-0 space-y-6 pb-10">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/40 md:p-7">
         <h2 className="text-xl font-bold text-slate-900">Cadastro financeiro — Asaas Sandbox</h2>
         <p className="mt-1 text-sm text-slate-600">Preencha os dados do titular que receberá os pagamentos. Somente a superadministração pode salvar nesta etapa. Nenhuma conta será aberta agora.</p>
         {carregandoCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">Carregando dados financeiros...</p>}\n        {origemCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">{origemCadastroFinanceiro}</p>}\n        <form onSubmit={(e) => void salvarCadastroFinanceiro(e)} className="mt-5 space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-5 lg:grid-cols-2">
             <label className="text-sm font-semibold text-slate-700">Tipo de titular
               <select value={cadastroFinanceiro.tipo_pessoa} onChange={e => setCadastroFinanceiro(p => ({...p,tipo_pessoa:e.target.value,documento:""}))} className="mt-1 w-full rounded-xl border border-slate-300 p-3">
                 <option value="fisica">Pessoa física (CPF)</option><option value="juridica">Pessoa jurídica (CNPJ)</option>
@@ -483,7 +483,7 @@ export default function Configuracoes() {
           {resultadoCadastroFinanceiro && <p role="status" className="text-sm font-medium text-slate-700">{resultadoCadastroFinanceiro}</p>}
         </form>
       </section>
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/40 md:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Conta de pagamento do estabelecimento</h2>
