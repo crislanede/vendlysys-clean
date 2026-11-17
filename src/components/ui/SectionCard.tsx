@@ -12,12 +12,12 @@ export default function SectionCard({
   action,
 }: SectionCardProps) {
   return (
-    <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+    <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/40 md:p-6">
       {(title || description || action) && (
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             {title && (
-              <h2 className="text-xl font-extrabold text-slate-900">
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
                 {title}
               </h2>
             )}
