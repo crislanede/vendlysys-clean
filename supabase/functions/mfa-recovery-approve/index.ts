@@ -1,3 +1,4 @@
+import { resolveSingleCompanyAdmin } from "../_shared/recovery-authorization.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -54,17 +55,10 @@ Deno.serve(async (req) => {
   if (requesterMembershipError || requesterOwnedError || requesterSaasError) {
     return reply({ error: "Unable to validate requester authorization" }, 503);
   }
-  const requesterCompanies = new Set<string>();
-  for (const membership of requesterMemberships ?? []) {
-    if (membership.empresa_id) requesterCompanies.add(membership.empresa_id);
-  }
-  for (const company of requesterOwned ?? []) requesterCompanies.add(company.id);
-  const requesterAdmin = (requesterOwned ?? []).some((company) => company.id === recovery.empresa_id) ||
-    (requesterMemberships ?? []).some((membership) =>
-      membership.empresa_id === recovery.empresa_id &&
-      ["admin", "administrador"].includes(membership.perfil));
-  if (requesterSaas?.length || requesterCompanies.size !== 1 ||
-      !requesterCompanies.has(recovery.empresa_id) || !requesterAdmin) {
+  const requesterScope = resolveSingleCompanyAdmin(
+    requesterMemberships ?? [], requesterOwned ?? [], Boolean(requesterSaas?.length),
+  );
+  if (!requesterScope.allowed || requesterScope.empresaId !== recovery.empresa_id) {
     return reply({ error: "Requester authorization changed" }, 403);
   }
 
