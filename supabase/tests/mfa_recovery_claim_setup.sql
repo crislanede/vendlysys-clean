@@ -19,8 +19,7 @@ create table public.mfa_recovery_requests (
 do $$
 begin
  if has_function_privilege('anon', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE')
- or has_function_privilege('authenticated', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE')
- or has_function_privilege('public', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE') then
+ or has_function_privilege('authenticated', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE') then
   raise exception 'Unprivileged role can execute claim';
  end if;
  if not has_function_privilege('service_role', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE') then
