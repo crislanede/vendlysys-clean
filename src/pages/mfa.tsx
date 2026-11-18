@@ -14,6 +14,57 @@ export default function MFA() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [showRecoveryInfo, setShowRecoveryInfo] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryRequestId, setRecoveryRequestId] = useState("");
+  const [recoveryStatus, setRecoveryStatus] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  // Remains off until server-side tenant/role resolution and integration tests pass.
+  const recoveryEnabled = false;
+
+  async function requestRecovery() {
+    if (!recoveryEnabled || !recoveryPassword) return;
+    setRecoveryBusy(true); setMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("mfa-recovery-request", {
+        body: { password: recoveryPassword },
+      });
+      if (error || !data?.request_id) throw new Error("Não foi possível solicitar recuperação.");
+      setRecoveryRequestId(data.request_id);
+      setRecoveryStatus("pending_email");
+      setMessage("Enviamos um código para seu e-mail cadastrado.");
+    } catch {
+      setMessage("Não foi possível iniciar a recuperação. Tente novamente mais tarde.");
+    } finally { setRecoveryPassword(""); setRecoveryBusy(false); }
+  }
+
+  async function verifyRecoveryCode() {
+    if (!recoveryEnabled || !recoveryRequestId || !/^\\d{6}$/.test(recoveryCode)) return;
+    setRecoveryBusy(true); setMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("mfa-recovery-verify", {
+        body: { request_id: recoveryRequestId, code: recoveryCode },
+      });
+      if (error || data?.status !== "pending_approval") throw new Error("Falha na confirmação.");
+      setRecoveryStatus(data.status);
+      setMessage("E-mail confirmado. A recuperação ainda precisa de autorização adicional.");
+    } catch {
+      setMessage("Código inválido, expirado ou solicitação indisponível.");
+    } finally { setRecoveryCode(""); setRecoveryBusy(false); }
+  }
+
+  async function refreshRecoveryStatus() {
+    if (!recoveryEnabled || !recoveryRequestId) return;
+    setRecoveryBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("mfa-recovery-status", {
+        body: { request_id: recoveryRequestId },
+      });
+      if (error || !data?.recovery?.status) throw new Error("Status indisponível");
+      setRecoveryStatus(data.recovery.status);
+    } catch { setMessage("Não foi possível consultar a solicitação."); }
+    finally { setRecoveryBusy(false); }
+  }
 
   useEffect(() => {
     let active = true;
@@ -104,6 +155,21 @@ export default function MFA() {
             <p>A recuperação por e-mail com aprovação de um segundo administrador está sendo preparada. Ela ainda não está disponível.</p>
             <p>Por segurança, o VendlySys não remove o MFA por meio de redefinição de senha ou somente pelo acesso ao e-mail.</p>
             <p>Se você possui outro autenticador cadastrado, selecione-o acima para entrar. Caso contrário, procure o responsável pela segurança da conta enquanto o fluxo de recuperação não estiver disponível.</p>
+            {recoveryEnabled && <div className="space-y-3 border-t border-slate-200 pt-3">
+              {!recoveryRequestId ? <form onSubmit={(e) => { e.preventDefault(); void requestRecovery(); }} className="space-y-2">
+                <label htmlFor="recovery-password" className="block font-semibold">Confirme sua senha</label>
+                <input id="recovery-password" type="password" autoComplete="current-password" value={recoveryPassword} onChange={(e) => setRecoveryPassword(e.target.value)} required className="w-full rounded-lg border border-slate-300 p-3" />
+                <button disabled={recoveryBusy} className="w-full rounded-lg bg-[#285963] p-3 font-semibold text-white disabled:opacity-50">Solicitar código por e-mail</button>
+              </form> : <>
+                <p role="status">Situação da solicitação: {recoveryStatus === "pending_email" ? "Aguardando código" : recoveryStatus === "pending_approval" ? "Aguardando aprovação" : recoveryStatus}</p>
+                {recoveryStatus === "pending_email" && <form onSubmit={(e) => { e.preventDefault(); void verifyRecoveryCode(); }} className="space-y-2">
+                  <label htmlFor="recovery-code" className="block font-semibold">Código recebido por e-mail</label>
+                  <input id="recovery-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value.replace(/\\D/g, ""))} className="w-full rounded-lg border border-slate-300 p-3" />
+                  <button disabled={recoveryBusy} className="w-full rounded-lg bg-[#285963] p-3 font-semibold text-white disabled:opacity-50">Confirmar código</button>
+                </form>}
+                <button type="button" disabled={recoveryBusy} onClick={() => void refreshRecoveryStatus()} className="text-[#285963] underline disabled:opacity-50">Atualizar situação</button>
+              </>}
+            </div>}
           </div>}
         </div>}
         {message && <p role="status" className="text-sm text-slate-700">{message}</p>}
