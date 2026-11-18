@@ -39,7 +39,24 @@ Deno.serve(async (req) => {
   if (!authorized) return json({ error: "Forbidden" }, 403);
 
   if (input.action === "candidates") {
-    if (scope !== "saas_admin") return json({ error: "Unsupported scope" }, 400);
+    if (scope === "company_admin") {
+      const { data: memberships, error: membershipError } = await admin.from("usuarios_empresas")
+        .select("user_id").eq("empresa_id", empresaId!).eq("ativo", true)
+        .in("perfil", ["admin", "administrador"]).limit(200);
+      if (membershipError) return json({ error: "Unable to list candidates" }, 500);
+      const { data: company, error: companyError } = await admin.from("empresas")
+        .select("user_id").eq("id", empresaId!).single();
+      if (companyError) return json({ error: "Unable to list candidates" }, 500);
+      const ids = [...new Set([...(memberships || []).map((m) => m.user_id), company?.user_id].filter((id): id is string => !!id && id !== requester.id))];
+      const candidates: { id: string; name: string; email: string }[] = [];
+      for (const id of ids) {
+        const { data, error } = await admin.auth.admin.getUserById(id);
+        if (!error && data.user?.email && await isCompanyAdmin(id)) {
+          candidates.push({ id, name: data.user.email, email: data.user.email });
+        }
+      }
+      return json({ candidates });
+    }
     const { data: records, error: recordsError } = await admin.from("usuarios")
       .select("nome,email").in("perfil", ["super_admin", "admin_saas"]).eq("ativo", true).limit(100);
     if (recordsError) return json({ error: "Unable to list candidates" }, 500);
