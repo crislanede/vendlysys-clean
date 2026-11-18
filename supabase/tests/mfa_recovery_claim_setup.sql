@@ -13,9 +13,11 @@ create table public.mfa_recovery_requests (
  email_verified_at timestamptz,
  approved_at timestamptz,
  created_at timestamptz not null,
+ completed_at timestamptz,
  updated_at timestamptz not null default now()
 );
 \i supabase/migrations/20261118_mfa_recovery_atomic_execution_claim.sql
+\i supabase/migrations/20261118_mfa_recovery_finalize_execution.sql
 do $$
 begin
  if has_function_privilege('anon', 'public.mfa_recovery_claim_execution(uuid,uuid)', 'EXECUTE')
@@ -42,5 +44,35 @@ begin
  end if;
  if public.mfa_recovery_claim_execution('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000099') then
   raise exception 'Wrong requester claimed recovery';
+ end if;
+end $$;
+
+-- Terminal-state tests use independent fixtures, leaving the race fixture untouched.
+insert into public.mfa_recovery_requests
+(id,requester_id,empresa_id,scope,status,approved_by,email_verified_at,approved_at,created_at)
+values
+('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000014','00000000-0000-4000-8000-000000000024','company_admin','executing','00000000-0000-4000-8000-000000000034',now()-interval '2 minutes',now()-interval '1 minute',now()-interval '3 minutes'),
+('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000015','00000000-0000-4000-8000-000000000025','company_admin','executing','00000000-0000-4000-8000-000000000035',now()-interval '2 minutes',now()-interval '1 minute',now()-interval '3 minutes');
+do $$
+begin
+ if has_function_privilege('anon', 'public.mfa_recovery_finalize_execution(uuid,uuid,boolean)', 'EXECUTE')
+ or has_function_privilege('authenticated', 'public.mfa_recovery_finalize_execution(uuid,uuid,boolean)', 'EXECUTE') then
+  raise exception 'Unauthorized role may finalize';
+ end if;
+ if not public.mfa_recovery_finalize_execution('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000014',false) then
+  raise exception 'Expected terminal failure';
+ end if;
+ if public.mfa_recovery_finalize_execution('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000014',true) then
+  raise exception 'Failure was converted into success';
+ end if;
+ if not public.mfa_recovery_finalize_execution('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000015',true) then
+  raise exception 'Expected terminal success';
+ end if;
+ if public.mfa_recovery_finalize_execution('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000015',false) then
+  raise exception 'Success was converted into failure';
+ end if;
+ if (select status from public.mfa_recovery_requests where id='00000000-0000-4000-8000-000000000004') <> 'failed'
+ or (select status from public.mfa_recovery_requests where id='00000000-0000-4000-8000-000000000005') <> 'completed' then
+  raise exception 'Incorrect terminal statuses';
  end if;
 end $$;
