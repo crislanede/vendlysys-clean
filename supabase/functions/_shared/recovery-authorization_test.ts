@@ -24,3 +24,24 @@ Deno.test("SaaS administrator cannot be downgraded to company scope", () => {
 Deno.test("no company is rejected", () => {
   assertEquals(resolveSingleCompanyAdmin([], [], false), { allowed: false });
 });
+
+Deno.test("an administrator in one company cannot recover with a second owner tenant", () => {
+  assertEquals(resolveSingleCompanyAdmin([{ empresa_id: A, perfil: "admin" }], [{ id: B }], false),
+    { allowed: false });
+});
+Deno.test("an owner is eligible even with a non-admin membership in the same company", () => {
+  assertEquals(resolveSingleCompanyAdmin([{ empresa_id: A, perfil: "funcionario" }], [{ id: A }], false),
+    { allowed: true, empresaId: A });
+});
+Deno.test("inactive or unrelated role cannot be treated as an admin", () => {
+  assertEquals(resolveSingleCompanyAdmin([{ empresa_id: A, perfil: "cliente" }], [], false),
+    { allowed: false });
+});
+Deno.test("missing company identifier is rejected", () => {
+  assertEquals(resolveSingleCompanyAdmin([{ empresa_id: null, perfil: "admin" }], [], false),
+    { allowed: false });
+});
+Deno.test("unknown role does not receive administrative privileges", () => {
+  assertEquals(resolveSingleCompanyAdmin([{ empresa_id: A, perfil: null }], [], false),
+    { allowed: false });
+});
