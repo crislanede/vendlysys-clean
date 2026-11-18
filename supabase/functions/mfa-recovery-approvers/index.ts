@@ -43,10 +43,16 @@ Deno.serve(async (req) => {
     const { data: records, error: recordsError } = await admin.from("usuarios")
       .select("nome,email").in("perfil", ["super_admin", "admin_saas"]).eq("ativo", true).limit(100);
     if (recordsError) return json({ error: "Unable to list candidates" }, 500);
-    const { data: authUsers, error: authUsersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (authUsersError) return json({ error: "Unable to list candidates" }, 500);
+    const authUsers: { id: string; email?: string }[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) return json({ error: "Unable to list candidates" }, 500);
+      authUsers.push(...data.users);
+      if (data.users.length < 1000) break;
+      if (page === 20) return json({ error: "Candidate directory too large" }, 503);
+    }
     const candidates = (records || []).flatMap((record) => {
-      const match = authUsers.users.find((user) => user.email?.toLowerCase() === record.email?.toLowerCase() && user.id !== requester.id);
+      const match = authUsers.find((user) => user.email?.toLowerCase() === record.email?.toLowerCase() && user.id !== requester.id);
       return match ? [{ id: match.id, name: record.nome || "Administrador", email: record.email }] : [];
     });
     return json({ candidates });
@@ -63,8 +69,10 @@ Deno.serve(async (req) => {
   if (input.action === "remove") {
     let query = admin.from("mfa_recovery_approvers").delete().eq("requester_id", requester.id).eq("approver_id", input.approver_id).eq("scope", scope);
     query = scope === "saas_admin" ? query.is("empresa_id", null) : query.eq("empresa_id", empresaId!);
-    const { error } = await query;
-    return error ? json({ error: "Unable to remove approver" }, 500) : json({ ok: true });
+    const { data: removed, error } = await query.select("id");
+    if (error) return json({ error: "Unable to remove approver" }, 500);
+    if (removed?.length) await admin.from("mfa_recovery_audit").insert({ actor_id: requester.id, event: "approver_removed", details: { scope, empresa_id: empresaId, approver_id: input.approver_id } });
+    return json({ ok: true });
   }
 
   const { data: targetData, error: targetError } = await admin.auth.admin.getUserById(input.approver_id);
