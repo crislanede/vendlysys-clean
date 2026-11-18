@@ -79,14 +79,47 @@ Deno.serve(async (req) => {
   }
   const companyId = scope.empresaId;
 
+  // A sole administrator must never receive an automatically recoverable
+  // approval request. Require a different, predesignated administrator whose
+  // current membership belongs to the same tenant.
+  const { data: designated, error: designatedError } = await admin
+    .from("mfa_recovery_approvers")
+    .select("approver_id").eq("requester_id", user.id)
+    .eq("empresa_id", companyId).eq("scope", "company_admin");
+  if (designatedError) return response({ error: "Unable to verify recovery approvers" }, 503);
+  const candidates = [...new Set((designated ?? []).map((entry) => entry.approver_id))]
+    .filter((id) => id !== user.id);
+  if (!candidates.length) {
+    return response({ error: "Independent recovery approver not configured" }, 403);
+  }
+  const { data: adminMembers, error: adminMembersError } = await admin
+    .from("usuarios_empresas").select("user_id").eq("empresa_id", companyId)
+    .eq("ativo", true).in("perfil", ["admin", "administrador"]).in("user_id", candidates);
+  const { data: companyOwner, error: companyOwnerError } = await admin
+    .from("empresas").select("user_id").eq("id", companyId).maybeSingle();
+  if (adminMembersError || companyOwnerError) {
+    return response({ error: "Unable to verify recovery approvers" }, 503);
+  }
+  const activeApprovers = new Set((adminMembers ?? []).map((member) => member.user_id));
+  if (companyOwner?.user_id && candidates.includes(companyOwner.user_id)) {
+    activeApprovers.add(companyOwner.user_id);
+  }
+  if (!activeApprovers.size) {
+    return response({ error: "No eligible independent recovery approver" }, 403);
+  }
+  const { data: tenant, error: tenantError } = await admin.from("empresas")
+    .select("ativa,bloqueada").eq("id", companyId).maybeSingle();
+  if (tenantError) return response({ error: "Unable to validate company" }, 503);
+  if (!tenant || tenant.ativa !== true || tenant.bloqueada === true) {
+    return response({ error: "Company is not eligible for recovery" }, 403);
+  }
+
   const code = generateRecoveryCode();
   const requestId = crypto.randomUUID();
   let digest: string;
   try { digest = await recoveryCodeDigest(requestId, code); }
   catch { return response({ error: "Service unavailable" }, 503); }
   const expires = new Date(Date.now() + 10 * 60_000).toISOString();
-  // Fail closed: scope='regular' is only a provisional holding state. It is NOT
-  // evidence that the user is regular, and must never authorize factor deletion.
   const { error: insertError } = await admin.from("mfa_recovery_requests").insert({
     id: requestId, requester_id: user.id, empresa_id: companyId, scope: "company_admin", status: "pending_email",
     token_hash: digest, token_expires_at: expires,
