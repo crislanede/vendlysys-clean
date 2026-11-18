@@ -68,6 +68,20 @@ Deno.serve(async (req) => {
     return reply({ error: "Requester authorization changed" }, 403);
   }
 
+  // A company suspended or blocked after the request must not approve recovery.
+  const { data: tenant, error: tenantError } = await admin.from("empresas")
+    .select("id,ativa,bloqueada").eq("id", recovery.empresa_id).maybeSingle();
+  if (tenantError) return reply({ error: "Unable to validate company" }, 503);
+  if (!tenant || tenant.ativa !== true || tenant.bloqueada === true) {
+    return reply({ error: "Company is not eligible for recovery" }, 403);
+  }
+  // A verified email timestamp must be after creation and not in the future.
+  const createdAt = Date.parse(recovery.created_at);
+  const verifiedAt = Date.parse(recovery.email_verified_at);
+  if (!Number.isFinite(verifiedAt) || verifiedAt < createdAt || verifiedAt > Date.now()) {
+    return reply({ error: "Invalid email verification state" }, 403);
+  }
+
   // Explicit pre-registration is mandatory, before the recovery was requested.
   const { data: registration, error: registrationError } = await admin.from("mfa_recovery_approvers")
     .select("id").eq("requester_id", recovery.requester_id)
