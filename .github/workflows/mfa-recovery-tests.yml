@@ -22,9 +22,9 @@ jobs:
         with:
           deno-version: v2.x
       - name: Run actual Deno recovery security tests
-        run: deno test --allow-env supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts
+        run: deno test --allow-env supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts
       - name: Type check recovery security tests
-        run: deno check supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts
+        run: deno check supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts
 
   postgres-atomic-claim:
     runs-on: ubuntu-latest
