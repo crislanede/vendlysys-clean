@@ -1,3 +1,4 @@
+import { resolveSingleCompanyAdmin } from "../_shared/recovery-authorization.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { sendRecoveryEmail } from "../_shared/recovery-email.ts";
 import { generateRecoveryCode, recoveryCodeDigest } from "../_shared/recovery-crypto.ts";
@@ -72,22 +73,11 @@ Deno.serve(async (req) => {
   if (membershipError || ownedError || profileError) {
     return response({ error: "Unable to resolve account authorization" }, 503);
   }
-  const companyIds = new Set<string>();
-  for (const membership of memberships ?? []) {
-    if (membership.empresa_id) companyIds.add(membership.empresa_id);
-  }
-  for (const company of owned ?? []) companyIds.add(company.id);
-  // Multiple tenants and SaaS admins require a dedicated authorization process.
-  if (saasProfile?.length || companyIds.size !== 1) {
+  const scope = resolveSingleCompanyAdmin(memberships ?? [], owned ?? [], Boolean(saasProfile?.length));
+  if (!scope.allowed) {
     return response({ error: "Recovery requires a dedicated authorization process" }, 403);
   }
-  const companyId = [...companyIds][0];
-  const isCompanyAdmin = (owned ?? []).some((company) => company.id === companyId) ||
-    (memberships ?? []).some((membership) => membership.empresa_id === companyId &&
-      ["admin", "administrador"].includes(membership.perfil));
-  if (!isCompanyAdmin) {
-    return response({ error: "Recovery approval for this account type is not enabled" }, 403);
-  }
+  const companyId = scope.empresaId;
 
   const code = generateRecoveryCode();
   const requestId = crypto.randomUUID();
