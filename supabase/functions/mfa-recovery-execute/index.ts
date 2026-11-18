@@ -1,16 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { resolveSingleCompanyAdmin } from "../_shared/recovery-authorization.ts";
-import { canExecuteRecovery, selectSingleVerifiedTotpFactor } from "../_shared/recovery-execution.ts";
+import { canExecuteRecovery } from "../_shared/recovery-execution.ts";
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store" },
 });
 const uuid = (value: unknown): value is string => typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-
-// Deliberate safety switch: no Auth Admin factor deletion is permitted until
-// staging has verified reconciliation, audit persistence and session handling.
-const FACTOR_DELETION_ENABLED = false;
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return reply({ error: "Method not allowed" }, 405);
@@ -69,14 +65,13 @@ Deno.serve(async (req) => {
     return reply({ error: "Approver no longer authorized" }, 403);
   }
 
-  // No factor is selected or deleted until Auth Admin factor listing is
-  // integration-tested. The policy helper rejects absent/multiple factors.
-  // It is intentionally not enough to authorize a destructive Auth Admin call.
-  if (!FACTOR_DELETION_ENABLED) {
-    return reply({ error: "Factor replacement awaiting staging validation" }, 503);
-  }
-  // Never claim execution without a fully tested factor-deletion and
-  // reconciliation implementation. This endpoint currently has no mutation.
-  void selectSingleVerifiedTotpFactor;
-  return reply({ error: "Factor replacement unavailable" }, 503);
+  // Dry-run only. This endpoint never consumes approval or deletes a factor.
+  // Production reset requires a separately tested, auditable reconciliation
+  // strategy for ambiguous Auth Admin outcomes and forced session revocation.
+  return reply({
+    status: "ready_for_staging",
+    request_id: recovery.id,
+    factor_deleted: false,
+    approval_consumed: false,
+  });
 });
