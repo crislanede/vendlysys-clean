@@ -20,6 +20,25 @@ Deno.serve(async (req) => {
   const user = userData.user;
   if (userError || !user?.email || !user.email_confirmed_at) return response({ error: "Unauthorized" }, 401);
 
+  // Revalidate the password independently of the existing AAL1 session.
+  // This endpoint is intentionally unavailable to accounts using passwordless-only auth.
+  let input: { password?: unknown };
+  try { input = await req.json(); } catch { return response({ error: "Invalid request" }, 400); }
+  if (typeof input.password !== "string" || input.password.length < 1 || input.password.length > 1024) {
+    return response({ error: "Password confirmation required" }, 400);
+  }
+  const passwordClient = createClient(url, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: passwordData, error: passwordError } = await passwordClient.auth.signInWithPassword({
+    email: user.email, password: input.password,
+  });
+  if (passwordError || passwordData.user?.id !== user.id) {
+    return response({ error: "Unable to verify credentials" }, 403);
+  }
+  // Avoid retaining a second authenticated session on this server request.
+  await passwordClient.auth.signOut();
+
   // Scope is deliberately server-derived. Until the account/tenant role schema is
   // verified, only a pending-email request can be created; no approval or reset.
   const { data: existing, error: lookupError } = await admin.from("mfa_recovery_requests")
