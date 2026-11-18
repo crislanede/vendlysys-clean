@@ -61,6 +61,34 @@ Deno.serve(async (req) => {
     return response({ error: "Too many recovery requests; try again later" }, 429);
   }
 
+  // Resolve authorization by Auth UUID, never by email.
+  const { data: memberships, error: membershipError } = await admin.from("usuarios_empresas")
+    .select("empresa_id,perfil").eq("user_id", user.id).eq("ativo", true);
+  const { data: owned, error: ownedError } = await admin.from("empresas")
+    .select("id").eq("user_id", user.id);
+  const { data: saasProfile, error: profileError } = await admin.from("usuarios")
+    .select("perfil").eq("id", user.id).eq("ativo", true)
+    .in("perfil", ["super_admin", "admin_saas"]).limit(1);
+  if (membershipError || ownedError || profileError) {
+    return response({ error: "Unable to resolve account authorization" }, 503);
+  }
+  const companyIds = new Set<string>();
+  for (const membership of memberships ?? []) {
+    if (membership.empresa_id) companyIds.add(membership.empresa_id);
+  }
+  for (const company of owned ?? []) companyIds.add(company.id);
+  // Multiple tenants and SaaS admins require a dedicated authorization process.
+  if (saasProfile?.length || companyIds.size !== 1) {
+    return response({ error: "Recovery requires a dedicated authorization process" }, 403);
+  }
+  const companyId = [...companyIds][0];
+  const isCompanyAdmin = (owned ?? []).some((company) => company.id === companyId) ||
+    (memberships ?? []).some((membership) => membership.empresa_id === companyId &&
+      ["admin", "administrador"].includes(membership.perfil));
+  if (!isCompanyAdmin) {
+    return response({ error: "Recovery approval for this account type is not enabled" }, 403);
+  }
+
   const code = generateRecoveryCode();
   const requestId = crypto.randomUUID();
   let digest: string;
@@ -70,7 +98,7 @@ Deno.serve(async (req) => {
   // Fail closed: scope='regular' is only a provisional holding state. It is NOT
   // evidence that the user is regular, and must never authorize factor deletion.
   const { error: insertError } = await admin.from("mfa_recovery_requests").insert({
-    id: requestId, requester_id: user.id, scope: "regular", status: "pending_email",
+    id: requestId, requester_id: user.id, empresa_id: companyId, scope: "company_admin", status: "pending_email",
     token_hash: digest, token_expires_at: expires,
   });
   if (insertError) return response({ error: "Unable to create recovery request" }, 409);
