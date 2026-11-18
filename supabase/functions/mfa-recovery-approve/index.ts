@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
   if (recovery.scope !== "company_admin" || !uuid(recovery.empresa_id)) {
     return reply({ error: "Approval workflow not enabled for this scope" }, 403);
   }
-  if (Date.now() - Date.parse(recovery.created_at) > 30 * 60_000) {
+  if (!Number.isFinite(Date.parse(recovery.created_at)) || Date.now() - Date.parse(recovery.created_at) > 30 * 60_000) {
     return reply({ error: "Request expired" }, 410);
   }
   // Explicit pre-registration is mandatory, before the recovery was requested.
@@ -62,7 +62,9 @@ Deno.serve(async (req) => {
       approved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", recovery.id).eq("requester_id", recovery.requester_id)
     .eq("empresa_id", recovery.empresa_id).eq("scope", "company_admin")
-    .eq("status", "pending_approval").is("approved_by", null).select("id");
+    .eq("status", "pending_approval").is("approved_by", null)
+    .gt("created_at", new Date(Date.now() - 30 * 60_000).toISOString())
+    .select("id");
   if (updateError || changed?.length !== 1) return reply({ error: "Request changed" }, 409);
   await admin.from("mfa_recovery_audit").insert({
     request_id: recovery.id, actor_id: approverId,
