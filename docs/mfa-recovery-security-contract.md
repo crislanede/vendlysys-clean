@@ -38,3 +38,13 @@ Referências:
 - https://supabase.com/docs/guides/auth/auth-mfa
 - https://supabase.com/docs/reference/javascript/auth-admin-deletefactor
 - https://cheatsheetseries.owasp.org/cheatsheets/Multi-Factor_Authentication_Cheat_Sheet.html
+
+## Isolamento e autonomia de empresas (decisão de produto)
+- Cada empresa é um tenant independente: o administrador da empresa gerencia solicitações de recuperação dos seus funcionários, sem depender do Super Admin SaaS.
+- Para funcionários, o administrador aprovador deve possuir vínculo ativo e permissão explícita de recuperação **na mesma empresa**. Aprovação administrativa é um mecanismo adicional à verificação de titularidade; não substitui reautenticação nem os demais controles.
+- Para administradores de empresa, é obrigatória aprovação de **outro** administrador da mesma empresa, previamente designado e com MFA AAL2 válido. Nunca permitir autoaprovação.
+- Se houver um único administrador, não liberar bypass automático: estabelecer fluxo excepcional com verificação reforçada de titularidade, auditável, antes de habilitar recuperação.
+- Administradores SaaS não são aprovadores rotineiros de contas de empresas. Acesso excepcional de suporte deve ser explícito, limitado, autorizado e auditado.
+- Em toda consulta e mutação, derivar e validar `empresa_id` no servidor a partir do vínculo do ator e da conta-alvo. Impedir referências cruzadas (IDOR), inclusive para usuários associados a múltiplas empresas.
+- Nunca usar e-mail, nome, perfil enviado pelo cliente ou somente filtragem da interface como prova de autorização.
+- Esta seção documenta regras; não habilita endpoints nem modifica dados de produção.
