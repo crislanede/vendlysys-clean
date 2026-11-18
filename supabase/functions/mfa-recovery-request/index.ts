@@ -48,6 +48,19 @@ Deno.serve(async (req) => {
   if (lookupError) return response({ error: "Service unavailable" }, 503);
   if (existing?.length) return response({ error: "An active recovery request already exists" }, 429);
 
+  // Bound request volume even when a previous email delivery failed or a
+  // previous request expired. This is per-account defense in depth; enforce
+  // per-IP throttling at the gateway before enabling this endpoint publicly.
+  const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString();
+  const { count: recentCount, error: rateError } = await admin
+    .from("mfa_recovery_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("requester_id", user.id).gte("created_at", hourAgo);
+  if (rateError) return response({ error: "Service unavailable" }, 503);
+  if ((recentCount ?? 0) >= 3) {
+    return response({ error: "Too many recovery requests; try again later" }, 429);
+  }
+
   const code = generateRecoveryCode();
   const requestId = crypto.randomUUID();
   let digest: string;
