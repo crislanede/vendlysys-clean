@@ -41,6 +41,33 @@ Deno.serve(async (req) => {
   if (!Number.isFinite(Date.parse(recovery.created_at)) || Date.now() - Date.parse(recovery.created_at) > 30 * 60_000) {
     return reply({ error: "Request expired" }, 410);
   }
+  // Re-evaluate the REQUESTER at approval time. Their company access may
+  // have been revoked or changed since the email challenge was created.
+  const { data: requesterMemberships, error: requesterMembershipError } = await admin
+    .from("usuarios_empresas").select("empresa_id,perfil")
+    .eq("user_id", recovery.requester_id).eq("ativo", true);
+  const { data: requesterOwned, error: requesterOwnedError } = await admin
+    .from("empresas").select("id").eq("user_id", recovery.requester_id);
+  const { data: requesterSaas, error: requesterSaasError } = await admin
+    .from("usuarios").select("id").eq("id", recovery.requester_id)
+    .eq("ativo", true).in("perfil", ["super_admin", "admin_saas"]).limit(1);
+  if (requesterMembershipError || requesterOwnedError || requesterSaasError) {
+    return reply({ error: "Unable to validate requester authorization" }, 503);
+  }
+  const requesterCompanies = new Set<string>();
+  for (const membership of requesterMemberships ?? []) {
+    if (membership.empresa_id) requesterCompanies.add(membership.empresa_id);
+  }
+  for (const company of requesterOwned ?? []) requesterCompanies.add(company.id);
+  const requesterAdmin = (requesterOwned ?? []).some((company) => company.id === recovery.empresa_id) ||
+    (requesterMemberships ?? []).some((membership) =>
+      membership.empresa_id === recovery.empresa_id &&
+      ["admin", "administrador"].includes(membership.perfil));
+  if (requesterSaas?.length || requesterCompanies.size !== 1 ||
+      !requesterCompanies.has(recovery.empresa_id) || !requesterAdmin) {
+    return reply({ error: "Requester authorization changed" }, 403);
+  }
+
   // Explicit pre-registration is mandatory, before the recovery was requested.
   const { data: registration, error: registrationError } = await admin.from("mfa_recovery_approvers")
     .select("id").eq("requester_id", recovery.requester_id)
