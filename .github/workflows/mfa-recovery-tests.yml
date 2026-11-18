@@ -23,6 +23,8 @@ jobs:
           deno-version: v2.x
       - name: Run actual Deno recovery security tests
         run: deno test --allow-env supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts
+      - name: Type check recovery Edge Functions
+        run: deno check supabase/functions/mfa-recovery-request/index.ts supabase/functions/mfa-recovery-verify/index.ts supabase/functions/mfa-recovery-approve/index.ts supabase/functions/mfa-recovery-status/index.ts supabase/functions/mfa-recovery-execute/index.ts supabase/functions/mfa-recovery-approvers/index.ts
       - name: Type check recovery security tests
         run: deno check supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts
 
