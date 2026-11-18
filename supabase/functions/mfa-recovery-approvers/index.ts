@@ -15,6 +15,8 @@ Deno.serve(async (req) => {
   const { data: userData, error: userError } = await client.auth.getUser(jwt);
   if (userError || !userData.user?.email) return json({ error: "Unauthorized" }, 401);
   const requester = userData.user;
+  const requesterEmail = requester.email;
+  if (!requesterEmail) return json({ error: "Unauthorized" }, 401);
   const { data: claimsData, error: claimsError } = await client.auth.getClaims(jwt);
   if (claimsError || claimsData?.claims?.aal !== "aal2") return json({ error: "MFA AAL2 required" }, 403);
   let input: { action?: string; scope?: string; empresa_id?: string; approver_id?: string };
@@ -35,7 +37,7 @@ Deno.serve(async (req) => {
     const { data: owner } = await admin.from("empresas").select("id").eq("id", empresaId).eq("user_id", userId).limit(1);
     return !!memberships?.length || !!owner?.length;
   };
-  const authorized = scope === "saas_admin" ? await isSaasAdmin(requester.id, requester.email) : await isCompanyAdmin(requester.id);
+  const authorized = scope === "saas_admin" ? await isSaasAdmin(requester.id, requesterEmail) : await isCompanyAdmin(requester.id);
   if (!authorized) return json({ error: "Forbidden" }, 403);
 
   if (input.action === "candidates") {
