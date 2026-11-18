@@ -57,3 +57,33 @@ Deno.test("audit failure before claim blocks mutation", async () => {
   assertEquals(events.includes("claim"), false);
   assertEquals(events.includes("delete"), false);
 });
+
+Deno.test("audit failure after deletion requires manual review", async () => {
+  const { deps, events } = fixture();
+  deps.audit = async (event) => {
+    events.push("audit:" + event);
+    if (event === "reset_factor_deleted") throw Error("audit unavailable");
+  };
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "finalize_failed" });
+  assertEquals(events.filter((event) => event === "delete").length, 1);
+  assertEquals(events.some((event) => event.startsWith("finalize:")), false);
+});
+Deno.test("finalization exception after deletion requires manual review", async () => {
+  const { deps, events } = fixture();
+  deps.finalize = async () => { events.push("finalize:throws"); throw Error("database unavailable"); };
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "finalize_failed" });
+  assertEquals(events.filter((event) => event === "delete").length, 1);
+});
+Deno.test("explicit ambiguous provider response is never retried", async () => {
+  const { deps, events } = fixture();
+  deps.deleteFactor = async () => { events.push("delete"); return "ambiguous"; };
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "delete_ambiguous" });
+  assertEquals(events.filter((event) => event === "delete").length, 1);
+});
+Deno.test("failed deletion with unavailable finalization stays in manual review", async () => {
+  const { deps, events } = fixture();
+  deps.deleteFactor = async () => { events.push("delete"); return "failed"; };
+  deps.finalize = async () => { throw Error("database unavailable"); };
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "delete_failed" });
+  assertEquals(events.filter((event) => event === "delete").length, 1);
+});
