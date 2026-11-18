@@ -74,12 +74,12 @@ export default function MFA() {
   if (!loggedIn) return <Navigate to="/login" replace />;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-12 flex justify-center items-start">
+    <main className="min-h-screen bg-[#F5F7F8] px-4 py-12 flex justify-center items-start">
       <section className="w-full max-w-md rounded-2xl bg-white shadow-lg border border-slate-200 p-6 sm:p-8 space-y-5">
-        <div className="text-xs uppercase tracking-widest font-bold text-violet-700">VendlySys • Segurança</div>
+        <div className="text-xs uppercase tracking-widest font-bold text-[#285963]">VendlySys • Segurança</div>
         <h1 className="text-2xl font-bold text-slate-900">Verificação em duas etapas</h1>
         <p className="text-sm text-slate-600">Proteja seu acesso usando um aplicativo autenticador. Nunca compartilhe seu código.</p>
-        {!factorId && <button disabled={busy} onClick={enroll} className="w-full rounded-xl bg-violet-700 text-white font-semibold py-3 disabled:opacity-50">Configurar autenticador</button>}
+        {!factorId && <button disabled={busy} onClick={enroll} className="w-full rounded-xl bg-[#285963] text-white font-semibold py-3 disabled:opacity-50">Configurar autenticador</button>}
         {qr && <div className="space-y-3">
           <img src={qr} alt="QR Code para configurar aplicativo autenticador" className="w-48 h-48 mx-auto" />
           <p className="text-xs text-slate-600">Não consegue escanear? Insira esta chave manualmente no aplicativo:</p>
@@ -94,10 +94,10 @@ export default function MFA() {
         {factorId && <form onSubmit={(e) => { e.preventDefault(); void verify(); }} className="space-y-3">
           <label htmlFor="mfa-code" className="block text-sm font-medium text-slate-700">Código de 6 dígitos</label>
           <input id="mfa-code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} className="w-full border border-slate-300 rounded-xl p-3 tracking-widest text-center text-lg" />
-          <button disabled={busy} type="submit" className="w-full rounded-xl bg-violet-700 text-white font-semibold py-3 disabled:opacity-50">{busy ? "Verificando..." : "Confirmar código"}</button>
+          <button disabled={busy} type="submit" className="w-full rounded-xl bg-[#285963] text-white font-semibold py-3 disabled:opacity-50">{busy ? "Verificando..." : "Confirmar código"}</button>
         </form>}
         {factorId && !qr && <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
-          <button type="button" onClick={() => setShowRecoveryInfo((current) => !current)} aria-expanded={showRecoveryInfo} className="w-full text-left text-sm font-semibold text-violet-700 underline">
+          <button type="button" onClick={() => setShowRecoveryInfo((current) => !current)} aria-expanded={showRecoveryInfo} className="w-full text-left text-sm font-semibold text-[#285963] underline">
             Perdi acesso ao aplicativo autenticador
           </button>
           {showRecoveryInfo && <div className="space-y-2 text-sm text-slate-700">
