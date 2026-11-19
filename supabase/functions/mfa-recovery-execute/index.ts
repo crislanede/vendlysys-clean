@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { resolveSingleCompanyAdmin } from "../_shared/recovery-authorization.ts";
 import { canExecuteRecovery } from "../_shared/recovery-execution.ts";
+import { findRecoverableFactor } from "../_shared/recovery-auth-provider.ts";
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store" },
@@ -65,12 +66,23 @@ Deno.serve(async (req) => {
     return reply({ error: "Approver no longer authorized" }, 403);
   }
 
+  // Read-only provider preflight: fail closed if no single verified TOTP exists.
+  // Never return the factor identifier to the client.
+  let factorId: string | null = null;
+  try {
+    factorId = await findRecoverableFactor(admin.auth.admin, identity.user.id);
+  } catch {
+    return reply({ error: "Authenticator verification unavailable" }, 503);
+  }
+  if (!factorId) return reply({ error: "Authenticator unavailable or not uniquely verified" }, 409);
+
   // Dry-run only. This endpoint never consumes approval or deletes a factor.
   // Production reset requires a separately tested, auditable reconciliation
   // strategy for ambiguous Auth Admin outcomes and forced session revocation.
   return reply({
-    status: "ready_for_staging",
+    status: "authorization_and_factor_preflight_passed",
     request_id: recovery.id,
+    factor_verified: true,
     factor_deleted: false,
     approval_consumed: false,
   });
