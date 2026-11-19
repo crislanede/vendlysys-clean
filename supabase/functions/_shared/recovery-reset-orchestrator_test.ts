@@ -16,7 +16,7 @@ function fixture() {
 Deno.test("successful reset is claimed once and finalized after deletion", async () => {
   const { deps, events } = fixture();
   assertEquals(await orchestrateReset(deps), { status: "completed" });
-  assertEquals(events, ["select", "audit:reset_preflight_passed", "claim", "delete", "audit:reset_factor_deleted", "finalize:true"]);
+  assertEquals(events, ["select", "audit:reset_preflight_passed", "claim", "audit:reset_deletion_started", "delete", "audit:reset_factor_deleted", "finalize:true"]);
 });
 Deno.test("no factor blocks claim and deletion", async () => {
   const { deps, events } = fixture();
@@ -42,7 +42,7 @@ Deno.test("ambiguous deletion response never retries", async () => {
   deps.deleteFactor = async () => { events.push("delete"); throw Error("timeout"); };
   assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "delete_ambiguous" });
   assertEquals(events.filter((event) => event === "delete").length, 1);
-  assertEquals(events.includes("finalize:false"), true);
+  assertEquals(events.includes("finalize:false"), false);
 });
 Deno.test("finalization failure requires manual reconciliation", async () => {
   const { deps, events } = fixture();
@@ -86,4 +86,21 @@ Deno.test("failed deletion with unavailable finalization stays in manual review"
   deps.finalize = async () => { throw Error("database unavailable"); };
   assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "delete_failed" });
   assertEquals(events.filter((event) => event === "delete").length, 1);
+});
+
+Deno.test("audit failure after claim prevents destructive Auth Admin call", async () => {
+  const { deps, events } = fixture();
+  deps.audit = async (event) => {
+    events.push("audit:" + event);
+    if (event === "reset_deletion_started") throw Error("audit unavailable");
+  };
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "finalize_failed" });
+  assertEquals(events.includes("claim"), true);
+  assertEquals(events.includes("delete"), false);
+});
+Deno.test("ambiguous deletion stays executing for human reconciliation", async () => {
+  const { deps, events } = fixture();
+  deps.deleteFactor = async () => "ambiguous";
+  assertEquals(await orchestrateReset(deps), { status: "manual_review", reason: "delete_ambiguous" });
+  assertEquals(events.some((event) => event.startsWith("finalize:")), false);
 });
