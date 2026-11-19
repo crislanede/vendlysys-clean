@@ -21,6 +21,13 @@ export async function orchestrateReset(deps: ResetDependencies): Promise<ResetOu
   await deps.audit("reset_preflight_passed");
   const claimed = await deps.claim();
   if (!claimed) return { status: "blocked", reason: "claim_rejected" };
+  // Record the irreversible boundary before invoking Auth Admin.
+  // If audit fails, keep the claim in "executing" for manual reconciliation.
+  try {
+    await deps.audit("reset_deletion_started");
+  } catch {
+    return { status: "manual_review", reason: "finalize_failed" };
+  }
   // After claim, never retry deletion: network errors may mean the provider
   // deleted the factor despite the caller not receiving the response.
   let deletion: "deleted" | "failed" | "ambiguous" = "ambiguous";
@@ -34,7 +41,10 @@ export async function orchestrateReset(deps: ResetDependencies): Promise<ResetOu
     // automatically. Preserve terminal state and flag human reconciliation.
     try {
       await deps.audit(deletion === "failed" ? "reset_delete_failed" : "reset_delete_ambiguous");
-      await deps.finalize(false);
+      // An ambiguous provider outcome is NOT a confirmed failure.
+      // Leave it executing for human reconciliation rather than falsely
+      // asserting the factor still exists.
+      if (deletion === "failed") await deps.finalize(false);
     } catch { /* manual reconciliation still mandatory */ }
     return { status: "manual_review", reason: deletion === "failed" ? "delete_failed" : "delete_ambiguous" };
   }
