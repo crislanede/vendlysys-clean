@@ -9,6 +9,7 @@ type Props = {
 export default function AdminRoute({ children }: Props) {
   const [loading, setLoading] = useState(true);
   const [liberado, setLiberado] = useState(false);
+  const [precisaMfa, setPrecisaMfa] = useState(false);
 
   useEffect(() => {
     verificarAcesso();
@@ -41,6 +42,10 @@ export default function AdminRoute({ children }: Props) {
       setLiberado(false);
     } else {
       setLiberado(!!usuario);
+      if (usuario) {
+        const { data: assurance, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        setPrecisaMfa(!!mfaError || assurance?.currentLevel !== "aal2");
+      }
     }
 
     setLoading(false);
@@ -53,6 +58,8 @@ export default function AdminRoute({ children }: Props) {
   if (!liberado) {
     return <Navigate to="/login" replace />;
   }
+
+  if (precisaMfa) return <Navigate to="/mfa" replace />;
 
   return <>{children}</>;
 }

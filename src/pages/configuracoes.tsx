@@ -34,6 +34,176 @@ export default function Configuracoes() {
   const [bannerPosY, setBannerPosY] = useState(50);
   const [bannerZoom, setBannerZoom] = useState(100);
 
+  const [testandoAsaas, setTestandoAsaas] = useState(false);
+  const [resultadoAsaas, setResultadoAsaas] = useState("");
+
+  async function testarConexaoAsaas() {
+    setTestandoAsaas(true);
+    setResultadoAsaas("");
+    try {
+      const { data: { session }, error: sessaoErro } = await supabase.auth.getSession();
+      if (sessaoErro || !session) {
+        setResultadoAsaas("Faça login com sua conta administrativa para executar o teste.");
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("asaas-test-connection", {
+        method: "GET",
+      });
+      if (error) {
+        setResultadoAsaas("Não foi possível validar a conexão. Verifique a sessão, as permissões administrativas e os logs da função.");
+        return;
+      }
+      const result = data as { connected?: boolean; environment?: string; provider_status?: number; error?: string } | null;
+      setResultadoAsaas(result?.connected && result.environment === "sandbox"
+        ? "Conexão com Asaas Sandbox validada! Nenhuma cobrança foi criada."
+        : "Teste não confirmado. Verifique as configurações de sandbox e os logs da função.");
+    } catch {
+      setResultadoAsaas("Falha ao executar o teste. Confira os logs da Edge Function.");
+    } finally {
+      setTestandoAsaas(false);
+    }
+  }
+
+  type ContaAsaas = { empresa_id: string; ambiente: string; provedor: string; status: string; criado_em: string };
+  const [contaAsaas, setContaAsaas] = useState<ContaAsaas | null>(null);
+  const [carregandoConta, setCarregandoConta] = useState(false);
+  const [preparandoConta, setPreparandoConta] = useState(false);
+  const [mensagemConta, setMensagemConta] = useState("");
+
+  async function consultarContaAsaas() {
+    if (!empresaId) return;
+    setCarregandoConta(true);
+    setMensagemConta("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-conta-empresa", {
+        method: "GET",
+        // The Edge Function accepts empresa_id as a query parameter.
+        // supabase-js invoke uses its own URL; use the authenticated session explicitly.
+        headers: { "x-empresa-id": empresaId },
+      });
+      if (error) {
+        setMensagemConta("Consulta indisponível. Verifique as permissões de superadministrador.");
+        return;
+      }
+      setContaAsaas((data as { conta?: ContaAsaas | null })?.conta ?? null);
+    } catch {
+      setMensagemConta("Não foi possível consultar a conta.");
+    } finally {
+      setCarregandoConta(false);
+    }
+  }
+
+  async function prepararContaAsaas() {
+    if (!empresaId || preparandoConta) return;
+    setPreparandoConta(true);
+    setMensagemConta("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-conta-empresa", {
+        method: "POST",
+        body: { empresa_id: empresaId },
+      });
+      if (error) {
+        setMensagemConta("Não foi possível preparar a conta. Verifique suas permissões.");
+        return;
+      }
+      const result = data as { conta?: ContaAsaas | null };
+      setContaAsaas(result?.conta ?? null);
+      setMensagemConta("Registro de testes preparado. Nenhuma subconta ou cobrança foi criada.");
+    } catch {
+      setMensagemConta("Falha ao preparar o registro da conta.");
+    } finally {
+      setPreparandoConta(false);
+    }
+  }
+
+  const [cadastroFinanceiro, setCadastroFinanceiro] = useState({
+    tipo_pessoa: "fisica", nome_titular: "", documento: "", email: "", telefone: "",
+    cep: "", endereco: "", numero: "", bairro: "", cidade: "", estado: "",
+  });
+  const [origemCadastroFinanceiro, setOrigemCadastroFinanceiro] = useState("");
+  const [carregandoCadastroFinanceiro, setCarregandoCadastroFinanceiro] = useState(false);
+  useEffect(() => {
+    if (!empresaId) return;
+    let ativo = true;
+    setCarregandoCadastroFinanceiro(true);
+    setAceiteFinanceiro(false);
+    setOrigemCadastroFinanceiro("");
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("asaas-cadastro-financeiro", {
+          method: "GET",
+          headers: { "x-empresa-id": empresaId },
+        });
+        if (error || !data?.dados || !ativo) return;
+        const d = data.dados as Record<string, string>;
+        setCadastroFinanceiro(prev => Object.fromEntries(
+          Object.keys(prev).map(key => [key, String(d[key] ?? "")])
+        ) as typeof prev);
+        setOrigemCadastroFinanceiro(data.origem === "rascunho" ? "Rascunho financeiro recuperado." : "Dados preenchidos a partir do cadastro do estabelecimento. Confira antes de salvar.");
+      } finally {
+        if (ativo) setCarregandoCadastroFinanceiro(false);
+      }
+    })();
+    return () => { ativo = false; };
+  }, [empresaId]);
+
+  const [aceiteFinanceiro, setAceiteFinanceiro] = useState(false);
+  const [salvandoCadastroFinanceiro, setSalvandoCadastroFinanceiro] = useState(false);
+  const [resultadoCadastroFinanceiro, setResultadoCadastroFinanceiro] = useState("");
+  function documentoValido(valor: string, tipo: string): boolean {
+    const d = valor.replace(/\D/g, "");
+    if (tipo === "fisica") {
+      if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+      for (let n = 9; n <= 10; n++) {
+        const soma = [...d.slice(0, n)].reduce((a, x, i) => a + Number(x) * (n + 1 - i), 0);
+        if (Number(d[n]) !== (soma * 10) % 11 % 10) return false;
+      }
+      return true;
+    }
+    if (tipo !== "juridica" || d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+    for (const pesos of [[5,4,3,2,9,8,7,6,5,4,3,2],[6,5,4,3,2,9,8,7,6,5,4,3,2]]) {
+      const soma = pesos.reduce((a, peso, i) => a + Number(d[i]) * peso, 0);
+      const resto = soma % 11;
+      if (Number(d[pesos.length]) !== (resto < 2 ? 0 : 11 - resto)) return false;
+    }
+    return true;
+  }
+  async function salvarCadastroFinanceiro(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!empresaId || !aceiteFinanceiro) return;
+    if (!documentoValido(cadastroFinanceiro.documento, cadastroFinanceiro.tipo_pessoa)) {
+      setResultadoCadastroFinanceiro("CPF/CNPJ inválido. Confira os dígitos do documento antes de salvar.");
+      return;
+    }
+    if (cadastroFinanceiro.cep.replace(/\D/g, "").length !== 8) {
+      setResultadoCadastroFinanceiro("CEP inválido: informe 8 dígitos.");
+      return;
+    }
+    const telefoneDigitos = cadastroFinanceiro.telefone.replace(/\D/g, "");
+    if (telefoneDigitos.length < 10 || telefoneDigitos.length > 13) {
+      setResultadoCadastroFinanceiro("Telefone inválido: informe DDD e número.");
+      return;
+    }
+    setSalvandoCadastroFinanceiro(true);
+    setResultadoCadastroFinanceiro("");
+    try {
+      const { data, error } = await supabase.functions.invoke("asaas-cadastro-financeiro", {
+        method: "POST",
+        body: { empresa_id: empresaId, dados: cadastroFinanceiro, consentimento: aceiteFinanceiro },
+      });
+      if (error || !(data as { salvo?: boolean } | null)?.salvo) {
+        setResultadoCadastroFinanceiro("Não foi possível salvar. Confira os dados e suas permissões administrativas.");
+      } else {
+        setResultadoCadastroFinanceiro("Cadastro financeiro salvo como rascunho no ambiente de testes. Nenhuma conta foi criada no Asaas.");
+        setOrigemCadastroFinanceiro("Rascunho financeiro salvo.");
+      }
+    } catch {
+      setResultadoCadastroFinanceiro("Erro ao salvar cadastro financeiro.");
+    } finally {
+      setSalvandoCadastroFinanceiro(false);
+    }
+  }
+
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [enviandoBanner, setEnviandoBanner] = useState(false);
@@ -65,10 +235,7 @@ export default function Configuracoes() {
         nome_fantasia,
         telefone,
         endereco,
-        whatsapp_comercial,
-        instagram,
-        facebook,
-        site,
+        whatsapp_numero,
         logo_url,
         cor_primaria,
         cor_secundaria,
@@ -100,10 +267,10 @@ export default function Configuracoes() {
     setNomeFantasia(data.nome_fantasia || "");
     setTelefone(data.telefone || "");
     setEndereco(data.endereco || "");
-    setWhatsappComercial(data.whatsapp_comercial || "");
-    setInstagram(data.instagram || "");
-    setFacebook(data.facebook || "");
-    setSite(data.site || "");
+    setWhatsappComercial(data.whatsapp_numero || "");
+    setInstagram("");
+    setFacebook("");
+    setSite("");
     setLogoUrl(data.logo_url || "");
 
     setCorPrimaria(data.cor_primaria || "#4f46e5");
@@ -146,10 +313,7 @@ export default function Configuracoes() {
         nome_fantasia: nomeFantasia || null,
         telefone: telefone || null,
         endereco: endereco || null,
-        whatsapp_comercial: whatsappComercial || null,
-        instagram: instagram || null,
-        facebook: facebook || null,
-        site: site || null,
+        whatsapp_numero: whatsappComercial || null,
         logo_url: logoUrl || null,
 
         cor_primaria: corPrimaria || null,
@@ -277,7 +441,83 @@ export default function Configuracoes() {
   }
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="mx-auto w-full max-w-[1440px] min-w-0 space-y-6 pb-10">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/40 md:p-7">
+        <h2 className="text-xl font-bold text-slate-900">Cadastro financeiro — Asaas Sandbox</h2>
+        <p className="mt-1 text-sm text-slate-600">Preencha os dados do titular que receberá os pagamentos. Somente a superadministração pode salvar nesta etapa. Nenhuma conta será aberta agora.</p>
+        {carregandoCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">Carregando dados financeiros...</p>}\n        {origemCadastroFinanceiro && <p className="mt-2 text-sm text-slate-600">{origemCadastroFinanceiro}</p>}\n        <form onSubmit={(e) => void salvarCadastroFinanceiro(e)} className="mt-5 space-y-4">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-700">Tipo de titular
+              <select value={cadastroFinanceiro.tipo_pessoa} onChange={e => setCadastroFinanceiro(p => ({...p,tipo_pessoa:e.target.value,documento:""}))} className="mt-1 w-full rounded-xl border border-slate-300 p-3">
+                <option value="fisica">Pessoa física (CPF)</option><option value="juridica">Pessoa jurídica (CNPJ)</option>
+              </select>
+            </label>
+            {([
+              ["nome_titular","Nome completo ou razão social","text"],
+              ["documento",cadastroFinanceiro.tipo_pessoa === "fisica" ? "CPF" : "CNPJ","text"],
+              ["email","E-mail do titular","email"],
+              ["telefone","Telefone com DDD","tel"],
+              ["cep","CEP","text"],
+              ["endereco","Logradouro","text"],
+              ["numero","Número","text"],
+              ["bairro","Bairro","text"],
+              ["cidade","Cidade","text"],
+              ["estado","UF (ex.: SP)","text"],
+            ] as const).map(([field,label,type]) => (
+              <label key={field} className="text-sm font-semibold text-slate-700">{label}
+                <input required type={type} autoComplete="off" maxLength={field === "estado" ? 2 : 250}
+                  value={cadastroFinanceiro[field]}
+                  onChange={e => setCadastroFinanceiro(p => ({...p,[field]:e.target.value}))}
+                  className="mt-1 w-full rounded-xl border border-slate-300 p-3" />
+              </label>
+            ))}
+          </div>
+          <label className="flex items-start gap-3 text-sm text-slate-700">
+            <input type="checkbox" required checked={aceiteFinanceiro} onChange={e => setAceiteFinanceiro(e.target.checked)} className="mt-1" />
+            <span>Confirmo que tenho autorização para cadastrar estes dados do titular para a futura abertura de conta de pagamentos em ambiente de testes.</span>
+          </label>
+          <button type="submit" disabled={!empresaId || !aceiteFinanceiro || salvandoCadastroFinanceiro}
+            className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-50">
+            {salvandoCadastroFinanceiro ? "Salvando..." : "Salvar cadastro financeiro (rascunho)"}
+          </button>
+          {resultadoCadastroFinanceiro && <p role="status" className="text-sm font-medium text-slate-700">{resultadoCadastroFinanceiro}</p>}
+        </form>
+      </section>
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/40 md:p-7">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Conta de pagamento do estabelecimento</h2>
+            <p className="mt-1 text-sm text-slate-600">Prepare o registro de recebimento desta empresa. Ambiente Asaas Sandbox, sem cobranças reais.</p>
+          </div>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">Somente testes</span>
+        </div>
+        <p className="mt-4 text-sm text-slate-700">Status: <strong>{contaAsaas?.status === "nao_vinculada" ? "Registro preparado, não vinculado ao Asaas" : contaAsaas?.status ?? "Não consultado"}</strong></p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" disabled={!empresaId || carregandoConta} onClick={() => void consultarContaAsaas()}
+            className="rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-800 disabled:opacity-50">
+            {carregandoConta ? "Consultando..." : "Consultar status"}
+          </button>
+          <button type="button" disabled={!empresaId || preparandoConta} onClick={() => void prepararContaAsaas()}
+            className="rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50">
+            {preparandoConta ? "Preparando..." : "Preparar registro de testes"}
+          </button>
+        </div>
+        {mensagemConta && <p role="status" className="mt-3 text-sm font-medium text-slate-700">{mensagemConta}</p>}
+      </section>
+      <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Asaas — conexão de testes</h2>
+            <p className="mt-1 text-sm text-slate-700">Consulta segura ao Asaas Sandbox. Não cria cobranças, subcontas ou pagamentos reais.</p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-800">Sandbox somente</span>
+        </div>
+        <button type="button" onClick={() => void testarConexaoAsaas()} disabled={testandoAsaas}
+          className="mt-4 rounded-xl bg-emerald-700 px-5 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+          {testandoAsaas ? "Testando conexão..." : "Testar conexão com Asaas"}
+        </button>
+        {resultadoAsaas && <p role="status" className="mt-3 text-sm font-medium text-slate-800">{resultadoAsaas}</p>}
+      </section>
       <div>
         <p
           style={{ color: "var(--cor-primaria, #4f46e5)" }}

@@ -21,6 +21,37 @@ export default function Login() {
       return;
     }
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) {
+      await supabase.auth.signOut();
+      alert("Não foi possível validar sua sessão. Entre novamente.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: admin, error: adminError } = await supabase
+      .from("usuarios")
+      .select("id")
+      .ilike("email", user.email.trim().toLowerCase())
+      .in("perfil", ["super_admin", "admin_saas"])
+      .limit(1)
+      .maybeSingle();
+
+    if (adminError) {
+      alert("Não foi possível validar suas permissões. Tente novamente.");
+      setLoading(false);
+      return;
+    }
+
+    if (admin) {
+      const { data: assurance, error: assuranceError } =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      window.location.href = assuranceError || assurance?.currentLevel !== "aal2"
+        ? "/mfa"
+        : "/admin/empresas";
+      return;
+    }
+
     window.location.href = "/dashboard";
   }
 

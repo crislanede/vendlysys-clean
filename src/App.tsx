@@ -8,11 +8,14 @@ import {
 import AppLayout from "./components/layout/AppLayout";
 import AdminSaasLayout from "./components/AdminSaasLayout";
 import AdminRoute from "./components/AdminRoute";
+import PrivilegedMfaGate from "./components/PrivilegedMfaGate";
 import ThemeLoader from "./components/theme/ThemeLoader";
 import Whatsapp from "./pages/whatsapp";
 import WhatsappFila from "./pages/whatsapp-fila";
 
 import Login from "./pages/login";
+import MFA from "./pages/mfa";
+import SegurancaConta from "./pages/seguranca-conta";
 import ResetarSenha from "./pages/resetar-senha";
 import CadastroEmpresa from "./pages/CadastroEmpresa";
 
@@ -62,6 +65,7 @@ function App() {
       <Routes>
         {/* ROTAS PÚBLICAS */}
         <Route path="/login" element={<Login />} />
+        <Route path="/mfa" element={<MFA />} />
         <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
         <Route path="/meu-espaco" element={<MeuEspaco />} />
@@ -77,13 +81,14 @@ function App() {
         >
           <Route path="empresas" element={<AdminEmpresas />} />
           <Route path="usuarios" element={<AdminUsuarios />} />
+          <Route path="seguranca" element={<SegurancaConta />} />
           <Route path="nova-empresa" element={<NovaEmpresa />} />
           <Route path="usuarios-empresa" element={<UsuariosEmpresa />} />
           <Route path="licencas" element={<Licencas />} />
         </Route>
 
         {/* SISTEMA INTERNO */}
-        <Route path="/" element={<AppLayout />}>
+        <Route path="/" element={<PrivilegedMfaGate><AppLayout /></PrivilegedMfaGate>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           <Route path="dashboard" element={<Dashboard />} />

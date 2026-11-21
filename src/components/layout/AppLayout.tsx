@@ -132,24 +132,24 @@ export default function AppLayout() {
 
   return (
     <div
-      className="min-h-screen flex"
+      className="min-h-screen min-w-0 flex bg-slate-50"
       style={{ backgroundColor: "var(--cor-fundo)" }}
     >
       <Sidebar mobileOpen={menuMobileAberto} onCloseMobile={() => setMenuMobileAberto(false)} />
 
-      <div className="min-w-0 flex-1 flex flex-col min-h-screen">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header
-          className="min-h-14 flex flex-wrap items-center justify-between gap-2 px-3 py-2 shadow sm:px-6"
+          className="relative z-10 flex min-h-[76px] flex-wrap items-center justify-between gap-3 border-b border-white/15 px-4 py-3 shadow-sm sm:px-6 xl:px-8"
           style={{ backgroundColor: corPrimaria }}
         >
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <button type="button" aria-label={menuMobileAberto ? "Fechar menu" : "Abrir menu"} aria-expanded={menuMobileAberto} onClick={() => setMenuMobileAberto((aberto) => !aberto)} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white hover:bg-white/20 lg:hidden">
               {menuMobileAberto ? <X size={22} /> : <Menu size={22} />}
             </button>
-            <div className="min-w-0 truncate text-sm font-semibold text-white sm:text-base">{empresaNome}</div>
+            <div className="min-w-0 truncate text-base font-bold tracking-tight text-white sm:text-lg">{empresaNome}</div>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-4">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 lg:gap-3">
             <div className="hidden md:block text-right text-white leading-tight">
               <div className="text-xs opacity-75">Usuário logado</div>
               <div className="font-bold">{usuarioLogado}</div>
@@ -177,8 +177,8 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 lg:p-6">
-          <Outlet />
+        <main className="min-w-0 flex-1 overflow-x-hidden bg-slate-50/90 px-3 py-5 sm:px-5 lg:px-7 lg:py-7 2xl:px-10">
+          <div className="mx-auto w-full max-w-[1680px] min-w-0"><Outlet /></div>
         </main>
       </div>
     </div>
