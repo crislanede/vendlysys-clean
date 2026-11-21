@@ -23,9 +23,32 @@ Deno.serve(async (req) => {
   const { data: identity, error: identityError } = await userClient.auth.getUser(bearer.slice(7));
   if (identityError || !identity.user) return reply({ error: "Unauthorized" }, 401);
 
-  let input: { request_id?: unknown };
+  let input: { request_id?: unknown; password?: unknown };
   try { input = await req.json(); } catch { return reply({ error: "Invalid request" }, 400); }
-  if (!uuid(input.request_id)) return reply({ error: "Invalid request" }, 400);
+  if (!uuid(input.request_id) || typeof input.password !== "string" ||
+    input.password.length === 0 || input.password.length > 1024) {
+    return reply({ error: "Invalid request" }, 400);
+  }
+  // Fresh password proof at execution: a bearer token alone is insufficient.
+  if (!identity.user.email || !identity.user.email_confirmed_at) {
+    return reply({ error: "Confirmed email required" }, 403);
+  }
+  const passwordClient = createClient(url, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  let passwordVerified = false;
+  try {
+    const { data: proof, error: proofError } = await passwordClient.auth.signInWithPassword({
+      email: identity.user.email,
+      password: input.password,
+    });
+    passwordVerified = !proofError && proof.user?.id === identity.user.id;
+  } catch {
+    return reply({ error: "Password verification unavailable" }, 503);
+  } finally {
+    try { await passwordClient.auth.signOut(); } catch { /* ephemeral client */ }
+  }
+  if (!passwordVerified) return reply({ error: "Password verification failed" }, 403);
 
   const { data: recovery, error: recoveryError } = await admin.from("mfa_recovery_requests")
     .select("id,requester_id,empresa_id,scope,status,created_at,email_verified_at,approved_at,approved_by")
