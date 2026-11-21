@@ -2,9 +2,12 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Building2, ChevronRight, LayoutDashboard, LogOut, Menu, ShieldCheck, UsersRound, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 export default function AdminSaasLayout() {
   const navigate = useNavigate();
+  const { empresas, empresaId, trocarEmpresa, carregandoEmpresa } = useEmpresa();
+  const [empresaDestino, setEmpresaDestino] = useState("");
   const [email, setEmail] = useState("");
   const [perfil, setPerfil] = useState("");
   const [menuAberto, setMenuAberto] = useState(false);
@@ -23,6 +26,21 @@ export default function AdminSaasLayout() {
     })();
     return () => { mounted = false; };
   }, []);
+
+  const empresaSelecionada = empresas.find((item) => item.id === empresaDestino)
+    || empresas.find((item) => item.id === empresaId)
+    || empresas[0];
+
+  function acessarMinhaEmpresa() {
+    if (carregandoEmpresa || !empresaSelecionada) return;
+    // A seleção é limitada às empresas retornadas por useEmpresa, a partir
+    // dos vínculos ativos do usuário ou de sua titularidade.
+    if (empresaSelecionada.id !== empresaId) {
+      trocarEmpresa(empresaSelecionada.id);
+    }
+    navigate("/agenda");
+    setMenuAberto(false);
+  }
 
   async function sair() {
     await supabase.auth.signOut();
@@ -63,6 +81,32 @@ export default function AdminSaasLayout() {
                 </NavLink>
               ))}
             </nav>
+          </div>
+          <div className="mx-3 mt-5 rounded-2xl border border-white/15 bg-white/5 p-3">
+            <p className="px-1 text-xs font-semibold text-white">Acessar minha empresa</p>
+            {empresas.length > 1 && (
+              <select
+                aria-label="Selecione sua empresa"
+                value={empresaSelecionada?.id || ""}
+                onChange={(event) => setEmpresaDestino(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-white/20 bg-[#203943] px-2 py-2 text-xs text-white"
+              >
+                {empresas.map((item) => (
+                  <option key={item.id} value={item.id}>{item.nome}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={acessarMinhaEmpresa}
+              disabled={carregandoEmpresa || !empresaSelecionada}
+              className="mt-2 w-full rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {carregandoEmpresa ? "Verificando vínculo..." : empresaSelecionada ? `Abrir ${empresaSelecionada.nome}` : "Sem empresa vinculada"}
+            </button>
+            {!carregandoEmpresa && empresas.length === 0 && (
+              <p className="mt-2 text-xs text-amber-200">Sua conta não possui vínculo ativo com uma empresa. Solicite o vínculo antes de acessar a agenda.</p>
+            )}
           </div>
           <div className="mx-3 mt-5 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300"><ShieldCheck size={16}/> Área administrativa</div>
