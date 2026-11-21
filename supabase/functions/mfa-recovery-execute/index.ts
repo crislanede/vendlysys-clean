@@ -33,6 +33,16 @@ Deno.serve(async (req) => {
   if (!identity.user.email || !identity.user.email_confirmed_at) {
     return reply({ error: "Confirmed email required" }, 403);
   }
+  // Gate password checks behind a valid, recently approved recovery.
+  // Prevents using this endpoint as an unrestricted password oracle.
+  const { data: candidate, error: candidateError } = await admin.from("mfa_candidate_requests")
+    .select("id,requester_id,empresa_id,scope,status,created_at,email_verified_at,approved_at,approved_by")
+    .eq("id", input.request_id).eq("requester_id", identity.user.id).maybeSingle();
+  if (candidateError) return reply({ error: "Service unavailable" }, 503);
+  if (!candidate || !canExecuteRecovery(candidate, identity.user.id, Date.now())) {
+    return reply({ error: "Recovery unavailable or expired" }, 403);
+  }
+
   const passwordClient = createClient(url, anon, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -50,6 +60,7 @@ Deno.serve(async (req) => {
   }
   if (!passwordVerified) return reply({ error: "Password verification failed" }, 403);
 
+  // Revalidate approval after the password round trip.
   const { data: recovery, error: recoveryError } = await admin.from("mfa_recovery_requests")
     .select("id,requester_id,empresa_id,scope,status,created_at,email_verified_at,approved_at,approved_by")
     .eq("id", input.request_id).eq("requester_id", identity.user.id).maybeSingle();
