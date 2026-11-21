@@ -1,0 +1,72 @@
+name: MFA recovery security tests
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/_shared/recovery-*.ts'
+      - 'supabase/functions/mfa-recovery-*/**'
+      - 'supabase/migrations/*mfa_recovery*.sql'
+      - 'supabase/tests/mfa_recovery_*.sql'
+      - '.github/workflows/mfa-recovery-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deno-security-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run actual Deno recovery security tests
+        run: deno test --allow-env supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts supabase/functions/_shared/recovery-reset-orchestrator_test.ts supabase/functions/_shared/recovery-auth-provider_test.ts
+      - name: Type check recovery Edge Functions
+        run: deno check supabase/functions/mfa-recovery-request/index.ts supabase/functions/mfa-recovery-verify/index.ts supabase/functions/mfa-recovery-approve/index.ts supabase/functions/mfa-recovery-status/index.ts supabase/functions/mfa-recovery-execute/index.ts supabase/functions/mfa-recovery-approvers/index.ts
+      - name: Type check recovery security tests
+        run: deno check supabase/functions/_shared/recovery-authorization_test.ts supabase/functions/_shared/recovery-crypto_test.ts supabase/functions/_shared/recovery-execution_test.ts supabase/functions/_shared/recovery-reset-orchestrator_test.ts supabase/functions/_shared/recovery-auth-provider_test.ts
+
+  postgres-atomic-claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: mfa_recovery_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ci-only-password
+      PGDATABASE: mfa_recovery_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install migration and test authorization guards
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/mfa_recovery_claim_setup.sql
+      - name: Race two independent database sessions for the same approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mfa-claim
+          for n in 1 2; do
+            (
+              psql -v ON_ERROR_STOP=1 -At -c "select public.mfa_recovery_claim_execution('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000011');" > "/tmp/mfa-claim/${n}.txt"
+            ) &
+          done
+          wait
+          cat /tmp/mfa-claim/1.txt /tmp/mfa-claim/2.txt
+          test "$(grep -hxc t /tmp/mfa-claim/*.txt | awk '{s+=$1} END {print s+0}')" -eq 1
+          test "$(grep -hxc f /tmp/mfa-claim/*.txt | awk '{s+=$1} END {print s+0}')" -eq 1
+          test "$(psql -At -c "select status from public.mfa_recovery_requests where id='00000000-0000-4000-8000-000000000001'")" = executing

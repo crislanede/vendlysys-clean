@@ -747,7 +747,7 @@ export default function FinanceiroPage() {
         title="Financeiro"
         description="Controle receitas, saídas, despesas, pagamentos vindos da agenda e lucro líquido."
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SecondaryButton type="button" onClick={exportarExcelFinanceiro}>
               Exportar Excel
             </SecondaryButton>
@@ -775,7 +775,7 @@ export default function FinanceiroPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3">
         <ResumoCard
           title="Receita bruta"
           value={formatarMoeda(totalReceitas)}
@@ -814,7 +814,7 @@ export default function FinanceiroPage() {
         title="Filtros"
         description="Refine a visualização por período, tipo e status"
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <input
             type="date"
             value={filtroDataInicio}
@@ -1299,10 +1299,10 @@ function ResumoCard({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-500">{title}</p>
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50 transition-shadow hover:shadow-md">
+      <p className="text-sm font-medium tracking-tight text-slate-500">{title}</p>
       <p
-        className={`mt-2 text-3xl font-extrabold ${valueClassName || "text-slate-800"}`}
+        className={`mt-3 min-w-0 break-words text-[clamp(1.35rem,2vw,2rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName || "text-slate-800"}`}
       >
         {value}
       </p>

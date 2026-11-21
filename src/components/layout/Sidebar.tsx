@@ -193,17 +193,17 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
       {mobileOpen && (
         <button type="button" aria-label="Fechar menu de navegação" className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" onClick={onCloseMobile} />
       )}
-      <aside aria-label="Navegação principal" className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-[#3d1d78] text-white shadow-xl transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:min-h-screen lg:shrink-0 lg:translate-x-0 lg:shadow-none ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
-      <div className="flex items-start justify-between gap-2 px-6 py-8">
-        <div><h1 className="text-2xl font-black">VendlySys</h1>
+      <aside aria-label="Navegação principal" className={`fixed inset-y-0 left-0 z-50 flex w-[272px] max-w-[85vw] flex-col border-r border-white/10 bg-[#11142b] text-white shadow-2xl transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:min-h-screen lg:shrink-0 lg:translate-x-0 lg:shadow-none ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className="flex items-start justify-between gap-2 border-b border-white/10 px-6 py-7">
+        <div><h1 className="text-[25px] font-black tracking-tight"><span className="text-violet-300">Vendly</span>Sys</h1>
         <p className="text-sm text-slate-300 mt-1">Gestão inteligente</p></div>
         <button type="button" aria-label="Fechar menu" onClick={onCloseMobile} className="rounded-lg px-2 py-1 text-xl text-white hover:bg-white/10 lg:hidden">×</button>
       </div>
 
-      <nav className="flex-1 px-4 pb-10 overflow-y-auto">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5 [scrollbar-width:thin] [scrollbar-color:#4c4b6b_transparent]">
         {menuAdmin.map((secao) => (
-          <div key={secao.titulo} className="mb-8">
-            <h2 className="px-3 mb-3 text-xs uppercase tracking-wider text-slate-300">
+          <div key={secao.titulo} className="mb-6">
+            <h2 className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
               {secao.titulo}
             </h2>
 
@@ -217,14 +217,14 @@ export default function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarPr
                     to={item.rota}
                     onClick={onCloseMobile}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-2xl px-4 py-3 transition-all ${
+                      `flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150 ${
                         isActive
-                          ? "bg-violet-500 text-white font-bold"
-                          : "text-slate-200 hover:bg-white/10"
+                          ? "bg-violet-500/20 text-white font-semibold ring-1 ring-violet-400/30 shadow-sm"
+                          : "text-slate-300 hover:bg-white/10 hover:text-white"
                       }`
                     }
                   >
-                    {Icone && <Icone size={20} />}
+                    {Icone && <Icone size={18} className="shrink-0" />}
                     <span className="flex-1">{item.nome}</span>
 
                     {!!item.badge && item.badge > 0 && (

@@ -910,66 +910,14 @@ export default function MeuEspaco() {
   async function carregarOpcoesAgendamento(empresaId: string | null) {
     if (!empresaId) return;
 
-    let empresaConsultaId = empresaId;
-
-    let servicosRes = await supabase
+    // Nunca trocar automaticamente a empresa de um cliente com base em
+    // localStorage ou nos serviços de outras empresas.
+    const empresaConsultaId = empresaId;
+    const servicosRes = await supabase
       .from("servicos")
       .select("*")
       .eq("empresa_id", empresaConsultaId)
       .order("nome", { ascending: true });
-
-    // Se o cliente novo foi cadastrado em uma empresa sem serviços, tentamos
-    // localizar a empresa correta a partir do navegador/serviços existentes.
-    if (!servicosRes.error && (servicosRes.data || []).length === 0) {
-      const empresaSalvaId = localStorage.getItem("empresa_id");
-      if (empresaSalvaId && empresaSalvaId !== empresaConsultaId) {
-        const tentativa = await supabase
-          .from("servicos")
-          .select("*")
-          .eq("empresa_id", empresaSalvaId)
-          .order("nome", { ascending: true });
-
-        if (!tentativa.error && (tentativa.data || []).length > 0) {
-          empresaConsultaId = empresaSalvaId;
-          servicosRes = tentativa;
-
-          if (cliente?.id) {
-            await supabase
-              .from("clientes")
-              .update({ empresa_id: empresaConsultaId })
-              .eq("id", cliente.id);
-
-            setCliente((atual: any) =>
-              atual ? { ...atual, empresa_id: empresaConsultaId } : atual,
-            );
-          }
-        }
-      }
-    }
-
-    if (!servicosRes.error && (servicosRes.data || []).length === 0) {
-      const todosServicos = await supabase
-        .from("servicos")
-        .select("*")
-        .order("nome", { ascending: true });
-
-      if (!todosServicos.error && (todosServicos.data || []).length > 0) {
-        empresaConsultaId =
-          todosServicos.data?.[0]?.empresa_id || empresaConsultaId;
-        servicosRes = todosServicos;
-
-        if (cliente?.id && empresaConsultaId) {
-          await supabase
-            .from("clientes")
-            .update({ empresa_id: empresaConsultaId })
-            .eq("id", cliente.id);
-
-          setCliente((atual: any) =>
-            atual ? { ...atual, empresa_id: empresaConsultaId } : atual,
-          );
-        }
-      }
-    }
 
     const profissionaisRes = await supabase
       .from("profissionais")

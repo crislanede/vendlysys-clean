@@ -10,7 +10,7 @@ export default function PrimaryButton({
   return (
     <button
       {...props}
-      className={`rounded-2xl px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex min-h-10 max-w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold tracking-tight text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       style={{
         backgroundColor: "var(--color-primary)",
         ...(props.style || {}),
