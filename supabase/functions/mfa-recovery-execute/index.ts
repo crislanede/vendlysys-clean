@@ -125,6 +125,7 @@ Deno.serve(async (req) => {
 
   // The database claim is a compare-and-swap: exactly one concurrent
   // execution may consume an approval. The migration grants RPC to service_role.
+  const recoveryId = recovery.id;
   const outcome = await orchestrateReset({
     selectFactor: async () => {
       // Recheck immediately before claiming; no cached factor is trusted.
@@ -132,7 +133,7 @@ Deno.serve(async (req) => {
     },
     claim: async () => {
       const { data, error } = await admin.rpc("mfa_recovery_claim_execution", {
-        p_request_id: recovery.id,
+        p_request_id: recoveryId,
         p_requester_id: identity.user.id,
       });
       if (error) throw error;
@@ -142,7 +143,7 @@ Deno.serve(async (req) => {
       await deleteRecoverableFactor(admin.auth.admin, identity.user.id, id),
     finalize: async (success) => {
       const { data, error } = await admin.rpc("mfa_recovery_finalize_execution", {
-        p_request_id: recovery.id,
+        p_request_id: recoveryId,
         p_requester_id: identity.user.id,
         p_success: success,
       });
@@ -151,7 +152,7 @@ Deno.serve(async (req) => {
     },
     audit: async (event) => {
       const { error } = await admin.from("mfa_recovery_audit").insert({
-        request_id: recovery.id,
+        request_id: recoveryId,
         actor_id: identity.user.id,
         event,
       });
@@ -173,7 +174,7 @@ Deno.serve(async (req) => {
   // strategy for ambiguous Auth Admin outcomes and forced session revocation.
   return reply({
     status: "authorization_and_factor_preflight_passed",
-    request_id: recovery.id,
+    request_id: recoveryId,
     factor_verified: true,
     factor_deleted: false,
     approval_consumed: false,
