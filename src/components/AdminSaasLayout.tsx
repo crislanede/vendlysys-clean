@@ -35,11 +35,12 @@ export default function AdminSaasLayout() {
     if (carregandoEmpresa || !empresaSelecionada) return;
     // A seleção é limitada às empresas retornadas por useEmpresa, a partir
     // dos vínculos ativos do usuário ou de sua titularidade.
-    if (empresaSelecionada.id !== empresaId) {
-      trocarEmpresa(empresaSelecionada.id);
-    }
     navigate("/agenda");
     setMenuAberto(false);
+    if (empresaSelecionada.id !== empresaId) {
+      // trocarEmpresa recarrega a página; navegue antes para manter /agenda.
+      trocarEmpresa(empresaSelecionada.id);
+    }
   }
 
   async function sair() {
