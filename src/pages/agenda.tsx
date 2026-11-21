@@ -2067,6 +2067,28 @@ ${linkMeuEspaco}`;
       .filter(Boolean) as Servico[];
   }, [servico, servicosExtras, servicos]);
 
+  const duracaoServicosFormulario = useMemo(
+    () =>
+      servicosSelecionadosFormulario.reduce(
+        (total, item) =>
+          total + Number(item.duracao_padrao_minutos || item.duracao || 60),
+        0,
+      ),
+    [servicosSelecionadosFormulario],
+  );
+
+  // Mantém a mesma margem de 10 minutos usada ao salvar o agendamento.
+  const duracaoTotalFormulario = servicosSelecionadosFormulario.length
+    ? duracaoServicosFormulario + 10
+    : 0;
+  const formatarDuracaoFormulario = (minutos: number) => {
+    const horas = Math.floor(minutos / 60);
+    const restantes = minutos % 60;
+    return horas > 0
+      ? `${horas}h${String(restantes).padStart(2, "0")}`
+      : `${restantes} min`;
+  };
+
   const valorBaseFormulario = useMemo(() => {
     const valorManual = Number(valorAgendamentoManual || 0);
 
@@ -2809,6 +2831,12 @@ ${linkMeuEspaco}`;
                     style: "currency",
                     currency: "BRL",
                   })}
+                  <div className="mt-2 text-slate-700" aria-live="polite">
+                    Tempo total: {formatarDuracaoFormulario(duracaoTotalFormulario)}
+                    <span className="ml-1 text-xs font-normal text-slate-500">
+                      (serviços: {formatarDuracaoFormulario(duracaoServicosFormulario)} + 10 min de intervalo)
+                    </span>
+                  </div>
                   {atendimentoResidencial && (
                     <span className="ml-2 text-emerald-700">
                       • Residencial: {valorFinalFormulario.toLocaleString("pt-BR", {
