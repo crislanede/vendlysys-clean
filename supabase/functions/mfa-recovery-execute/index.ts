@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
   }
   // Gate password checks behind a valid, recently approved recovery.
   // Prevents using this endpoint as an unrestricted password oracle.
-  const { data: candidate, error: candidateError } = await admin.from("mfa_candidate_requests")
+  const { data: candidate, error: candidateError } = await admin.from("mfa_recovery_requests")
     .select("id,requester_id,empresa_id,scope,status,created_at,email_verified_at,approved_at,approved_by")
     .eq("id", input.request_id).eq("requester_id", identity.user.id).maybeSingle();
   if (candidateError) return reply({ error: "Service unavailable" }, 503);
