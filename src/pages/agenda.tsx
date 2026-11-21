@@ -5,6 +5,13 @@ import PageHeader from "../components/ui/PageHeader";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
 import ModalReagendamento from "./agenda/components/ModalReagendamento";
+import {
+  calcularDuracaoServicos,
+  formatarDuracao,
+  INTERVALO_ATENDIMENTO_MINUTOS,
+  obterNomesServicosAgendados,
+  somarMinutos,
+} from "./agenda/utils";
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 // import { substituirVariaveisMensagemAgenda } from "../utils/mensagens";
 import {
@@ -192,16 +199,6 @@ function parseTimeToMinutes(value?: string | null) {
   if (!value || !value.includes(":")) return 0;
   const [hours, minutes] = value.split(":").map(Number);
   return hours * 60 + minutes;
-}
-
-function somarMinutos(horario: string, minutos: number) {
-  const [hours, minutes] = horario.split(":").map(Number);
-  const date = new Date();
-  date.setHours(hours, minutes + minutos, 0, 0);
-
-  return `${String(date.getHours()).padStart(2, "0")}:${String(
-    date.getMinutes(),
-  ).padStart(2, "0")}`;
 }
 
 function formatDisplayDate(dateValue: string) {
@@ -764,11 +761,8 @@ export default function AgendaPage() {
 
     const servicoPrincipal = servicosSelecionados[0];
 
-    const duracaoServicos = servicosSelecionados.reduce((total, item) => {
-      return total + Number(item.duracao_padrao_minutos || item.duracao || 60);
-    }, 0);
-
-    const duracaoTotal = duracaoServicos + 10;
+    const duracaoTotal =
+      calcularDuracaoServicos(servicosSelecionados) + INTERVALO_ATENDIMENTO_MINUTOS;
     const horarioFim = somarMinutos(hora, duracaoTotal);
 
     const conflito = agendamentos.some((item) => {
@@ -934,19 +928,12 @@ export default function AgendaPage() {
   function abrirModalReagendar(agendamento: Agendamento) {
     setAgendamentoReagendar(agendamento);
     setDataReagendamento(agendamento.data || selectedDate);
-    setHoraReagendamento(agendamento.horario || "09:00");
+    setHoraReagendamento(agendamento.horario?.slice(0, 5) || "09:00");
 
-    const nomesServicos = String(agendamento.servico || "")
-      .split(" + ")
-      .map((nome) => nome.trim())
-      .filter(Boolean);
-
-    const servicoPrincipalNome =
-      nomesServicos[0] ||
-      servicos.find((item) => item.id === agendamento.servico_id)?.nome ||
-      "";
-
-    const extras = nomesServicos.slice(1);
+    const [servicoPrincipalNome = "", ...extras] = obterNomesServicosAgendados(
+      agendamento,
+      servicos,
+    );
 
     const valoresIniciais = [servicoPrincipalNome, ...extras]
       .filter(Boolean)
@@ -1001,29 +988,13 @@ export default function AgendaPage() {
       return;
     }
 
-    const servicosSelecionadosNomes = [
-      servicoReagendamento,
-      ...servicosExtrasReagendamento,
-    ]
-      .map((nome) => nome.trim())
-      .filter(Boolean);
-
-    const servicosSelecionados = servicosSelecionadosNomes
-      .map((nome) => servicos.find((item) => item.nome === nome))
-      .filter(Boolean) as Servico[];
-
-    if (servicosSelecionados.length !== servicosSelecionadosNomes.length) {
+    if (!duracaoTotalReagendamento) {
       alert("Selecione serviços válidos para o reagendamento.");
       return;
     }
 
-    const servicoPrincipal = servicosSelecionados[0];
-
-    const duracaoServicos = servicosSelecionados.reduce((total, item) => {
-      return total + Number(item.duracao_padrao_minutos || item.duracao || 60);
-    }, 0);
-
-    const duracaoTotal = duracaoServicos + 10;
+    const servicoPrincipal = servicosSelecionadosReagendamento[0];
+    const duracaoTotal = duracaoTotalReagendamento;
     const horarioFim = somarMinutos(horaReagendamento, duracaoTotal);
 
     const conflito = agendamentos.some((item) => {
@@ -1049,20 +1020,11 @@ export default function AgendaPage() {
       return;
     }
 
-    const valorBase = servicosSelecionadosNomes.reduce(
-      (total, nomeServico) =>
-        total + obterValorServicoReagendamentoEditavel(nomeServico),
-      0,
-    );
     const percentualResidencialAplicado = atendimentoResidencialReagendamento
       ? percentualResidencialReagendamento
       : 0;
-    const valorFinal = atendimentoResidencialReagendamento
-      ? Number(
-          (valorBase + (valorBase * percentualResidencialAplicado) / 100).toFixed(2),
-        )
-      : Number(valorBase.toFixed(2));
-    const nomeServicos = servicosSelecionados.map((item) => item.nome).join(" + ");
+    const valorFinal = valorFinalReagendamento;
+    const nomeServicos = servicosSelecionadosReagendamento.map((item) => item.nome).join(" + ");
 
     setLoadingReagendar(true);
 
@@ -2067,27 +2029,10 @@ ${linkMeuEspaco}`;
       .filter(Boolean) as Servico[];
   }, [servico, servicosExtras, servicos]);
 
-  const duracaoServicosFormulario = useMemo(
-    () =>
-      servicosSelecionadosFormulario.reduce(
-        (total, item) =>
-          total + Number(item.duracao_padrao_minutos || item.duracao || 60),
-        0,
-      ),
-    [servicosSelecionadosFormulario],
-  );
-
-  // Mantém a mesma margem de 10 minutos usada ao salvar o agendamento.
+  const duracaoServicosFormulario = calcularDuracaoServicos(servicosSelecionadosFormulario);
   const duracaoTotalFormulario = servicosSelecionadosFormulario.length
-    ? duracaoServicosFormulario + 10
+    ? duracaoServicosFormulario + INTERVALO_ATENDIMENTO_MINUTOS
     : 0;
-  const formatarDuracaoFormulario = (minutos: number) => {
-    const horas = Math.floor(minutos / 60);
-    const restantes = minutos % 60;
-    return horas > 0
-      ? `${horas}h${String(restantes).padStart(2, "0")}`
-      : `${restantes} min`;
-  };
 
   const valorBaseFormulario = useMemo(() => {
     const valorManual = Number(valorAgendamentoManual || 0);
@@ -2117,15 +2062,18 @@ ${linkMeuEspaco}`;
       )
     : Number(valorBaseFormulario.toFixed(2));
 
-  const servicosSelecionadosReagendamento = useMemo(() => {
-    const nomes = [servicoReagendamento, ...servicosExtrasReagendamento]
-      .map((nome) => nome.trim())
-      .filter(Boolean);
-
-    return nomes
-      .map((nome) => servicos.find((item) => item.nome === nome))
-      .filter(Boolean) as Servico[];
-  }, [servicoReagendamento, servicosExtrasReagendamento, servicos]);
+  const nomesServicosReagendamento = [servicoReagendamento, ...servicosExtrasReagendamento]
+    .map((nome) => nome.trim())
+    .filter(Boolean);
+  const servicosSelecionadosReagendamento = nomesServicosReagendamento
+    .map((nome) => servicos.find((item) => item.nome === nome))
+    .filter((item): item is Servico => Boolean(item));
+  const duracaoServicosReagendamento = calcularDuracaoServicos(servicosSelecionadosReagendamento);
+  const duracaoTotalReagendamento =
+    Boolean(servicoReagendamento.trim()) &&
+    servicosSelecionadosReagendamento.length === nomesServicosReagendamento.length
+      ? duracaoServicosReagendamento + INTERVALO_ATENDIMENTO_MINUTOS
+      : 0;
 
   function obterValorServicoReagendamentoEditavel(nomeServico: string) {
     const nome = nomeServico.trim();
@@ -2143,22 +2091,10 @@ ${linkMeuEspaco}`;
     return obterValorServico(servicoEncontrado);
   }
 
-  const valorBaseReagendamento = useMemo(() => {
-    const nomes = [servicoReagendamento, ...servicosExtrasReagendamento]
-      .map((nome) => nome.trim())
-      .filter(Boolean);
-
-    return nomes.reduce(
-      (total, nomeServico) =>
-        total + obterValorServicoReagendamentoEditavel(nomeServico),
-      0,
-    );
-  }, [
-    servicoReagendamento,
-    servicosExtrasReagendamento,
-    valoresServicosReagendamento,
-    servicos,
-  ]);
+  const valorBaseReagendamento = nomesServicosReagendamento.reduce(
+    (total, nomeServico) => total + obterValorServicoReagendamentoEditavel(nomeServico),
+    0,
+  );
 
   const percentualResidencialReagendamento = (() => {
     const percentuaisDosServicos = servicosSelecionadosReagendamento.map((item) =>
@@ -2832,9 +2768,9 @@ ${linkMeuEspaco}`;
                     currency: "BRL",
                   })}
                   <div className="mt-2 text-slate-700" aria-live="polite">
-                    Tempo total: {formatarDuracaoFormulario(duracaoTotalFormulario)}
+                    Tempo total: {formatarDuracao(duracaoTotalFormulario)}
                     <span className="ml-1 text-xs font-normal text-slate-500">
-                      (serviços: {formatarDuracaoFormulario(duracaoServicosFormulario)} + 10 min de intervalo)
+                      (serviços: {formatarDuracao(duracaoServicosFormulario)} + {INTERVALO_ATENDIMENTO_MINUTOS} min de intervalo)
                     </span>
                   </div>
                   {atendimentoResidencial && (
@@ -2998,6 +2934,8 @@ ${linkMeuEspaco}`;
         percentualResidencialReagendamento={percentualResidencialReagendamento}
         valorBaseReagendamento={valorBaseReagendamento}
         valorFinalReagendamento={valorFinalReagendamento}
+        duracaoServicosReagendamento={duracaoServicosReagendamento}
+        duracaoTotalReagendamento={duracaoTotalReagendamento}
         localAtendimento={localAtendimentoAgenda}
         onChangeData={setDataReagendamento}
         onChangeHora={setHoraReagendamento}

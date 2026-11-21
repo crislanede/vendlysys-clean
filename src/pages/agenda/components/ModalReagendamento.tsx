@@ -1,6 +1,7 @@
 import SecondaryButton from "../../../components/ui/SecondaryButton";
 import PrimaryButton from "../../../components/ui/PrimaryButton";
 import type { Agendamento, Servico } from "../types";
+import { formatarDuracao, INTERVALO_ATENDIMENTO_MINUTOS, somarMinutos } from "../utils";
 
 type Props = {
   aberto: boolean;
@@ -20,6 +21,8 @@ type Props = {
   percentualResidencialReagendamento: number;
   valorBaseReagendamento: number;
   valorFinalReagendamento: number;
+  duracaoServicosReagendamento: number;
+  duracaoTotalReagendamento: number;
   localAtendimento?: string;
 
   onChangeData: (value: string) => void;
@@ -50,6 +53,8 @@ export default function ModalReagendamento({
   percentualResidencialReagendamento,
   valorBaseReagendamento,
   valorFinalReagendamento,
+  duracaoServicosReagendamento,
+  duracaoTotalReagendamento,
   localAtendimento,
 
   onChangeData,
@@ -75,6 +80,7 @@ export default function ModalReagendamento({
     return Number(servicoEncontrado?.preco ?? servicoEncontrado?.valor ?? 0);
   }
 
+  const duracaoAtual = Number(agendamento.duracao_minutos);
   const nomesServicosSelecionados = [
     servicoReagendamento,
     ...servicosExtrasReagendamento,
@@ -119,6 +125,15 @@ export default function ModalReagendamento({
           <p>
             <strong>Atual:</strong> {agendamento.data} às {agendamento.horario}
           </p>
+          {duracaoAtual > 0 && (
+            <p>
+              <strong>Duração atual:</strong>{" "}
+              {formatarDuracao(duracaoAtual)}
+              {agendamento.horario && (
+                <> · Término às {somarMinutos(agendamento.horario, duracaoAtual)}</>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -165,6 +180,9 @@ export default function ModalReagendamento({
               className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
             >
               <option value="">Selecione o serviço</option>
+              {servicoReagendamento && !servicos.some((item) => item.nome === servicoReagendamento) && (
+                <option value={servicoReagendamento}>{servicoReagendamento} (fora do catálogo)</option>
+              )}
               {servicos.map((item) => (
                 <option key={item.id} value={item.nome}>
                   {item.nome}
@@ -184,9 +202,12 @@ export default function ModalReagendamento({
                   novos[index] = e.target.value;
                   onChangeServicosExtras(novos);
                 }}
-                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
+                className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-300"
               >
                 <option value="">Selecione outro serviço</option>
+                {servicoExtra && !servicos.some((item) => item.nome === servicoExtra) && (
+                  <option value={servicoExtra}>{servicoExtra} (fora do catálogo)</option>
+                )}
                 {servicos.map((item) => (
                   <option key={item.id} value={item.nome}>
                     {item.nome}
@@ -220,6 +241,16 @@ export default function ModalReagendamento({
             + Adicionar outro serviço
           </button>
         </div>
+
+        {duracaoTotalReagendamento > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" aria-live="polite">
+            <p className="font-bold">Tempo total: {formatarDuracao(duracaoTotalReagendamento)}</p>
+            <p>Serviços: {formatarDuracao(duracaoServicosReagendamento)} + {INTERVALO_ATENDIMENTO_MINUTOS} min de intervalo</p>
+            {horaReagendamento && (
+              <p>Término previsto às {somarMinutos(horaReagendamento, duracaoTotalReagendamento)}</p>
+            )}
+          </div>
+        )}
 
         {nomesServicosSelecionados.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">

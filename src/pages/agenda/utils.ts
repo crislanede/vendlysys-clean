@@ -1,5 +1,5 @@
 import type { AlertaAnamneseItem } from "../../lib/anamneseAlerta";
-import type { Cliente, FotoAtendimento } from "./types";
+import type { Agendamento, Cliente, FotoAtendimento, Servico } from "./types";
 
 const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
   weekday: "long",
@@ -60,6 +60,53 @@ export function somarMinutos(horario: string, minutos: number) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(
     date.getMinutes(),
   ).padStart(2, "0")}`;
+}
+
+export const INTERVALO_ATENDIMENTO_MINUTOS = 10;
+
+export function calcularDuracaoServicos(servicos: Servico[]) {
+  return servicos.reduce(
+    (total, item) => total + Number(item.duracao_padrao_minutos || item.duracao || 60),
+    0,
+  );
+}
+
+export function formatarDuracao(minutos: number) {
+  const horas = Math.floor(minutos / 60);
+  const restantes = minutos % 60;
+  return horas > 0
+    ? `${horas}h${String(restantes).padStart(2, "0")}`
+    : `${restantes} min`;
+}
+
+export function obterNomesServicosAgendados(agendamento: Agendamento, servicos: Servico[]) {
+  const normalizarSeparador = (nome: string) => nome.replace(/\s*\+\s*/g, " + ").trim();
+  const servicoPrincipal = servicos.find((item) => item.id === agendamento.servico_id);
+  let restante = normalizarSeparador(agendamento.servico || "");
+
+  if (!restante) return servicoPrincipal ? [servicoPrincipal.nome] : [];
+
+  const catalogo = servicos
+    .map((item) => ({ id: item.id, nome: item.nome, normalizado: normalizarSeparador(item.nome) }))
+    .filter((item) => item.normalizado)
+    .sort((a, b) => b.normalizado.length - a.normalizado.length);
+  const nomes: string[] = [];
+  const separador = " + ";
+
+  while (restante) {
+    const corresponde = (item: (typeof catalogo)[number]) =>
+      restante === item.normalizado || restante.startsWith(item.normalizado + separador);
+    const principal = nomes.length === 0
+      ? catalogo.find((item) => item.id === servicoPrincipal?.id && corresponde(item))
+      : undefined;
+    const escolhido = principal ?? catalogo.find(corresponde);
+    const nome = escolhido?.normalizado ?? restante.split(separador, 1)[0];
+
+    if (nome) nomes.push(escolhido?.nome ?? nome);
+    restante = restante.slice(nome.length + separador.length).trim();
+  }
+
+  return nomes;
 }
 
 export function formatDisplayDate(dateValue: string) {
