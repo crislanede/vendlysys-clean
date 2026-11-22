@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato } from "../lib/email";
 import { useEmpresa } from "../hooks/useEmpresa";
 
 type LancamentoComissao = {
@@ -64,7 +65,7 @@ export default function Comissoes() {
       const { data: usuario } = await supabase
         .from("usuarios")
         .select("email, profissional_id, perfil")
-        .eq("email", user.email)
+        .filter("email", "imatch", filtroEmailExato(user.email))
         .maybeSingle();
 
       idProfissional = usuario?.profissional_id || null;

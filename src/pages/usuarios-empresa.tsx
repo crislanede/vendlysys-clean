@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato, normalizarEmail } from "../lib/email";
 import { useEmpresa } from "../hooks/useEmpresa";
 
 type Usuario = {
@@ -66,12 +67,12 @@ export default function UsuariosEmpresa() {
   }
 
   async function salvar() {
-    if (!email) return;
+    if (!normalizarEmail(email)) return;
 
     const { data: user } = await supabase
       .from("usuarios")
       .select("*")
-      .eq("email", email)
+      .filter("email", "imatch", filtroEmailExato(email))
       .single();
 
     if (!user) {
@@ -111,9 +112,10 @@ export default function UsuariosEmpresa() {
   }
 
   async function resetarSenha(email: string | null) {
-    if (!email) return;
+    const emailNormalizado = normalizarEmail(email || "");
+    if (!emailNormalizado) return;
 
-    await supabase.auth.resetPasswordForEmail(email, {
+    await supabase.auth.resetPasswordForEmail(emailNormalizado, {
       redirectTo: "http://localhost:5173/resetar-senha",
     });
 

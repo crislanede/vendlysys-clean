@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato } from "../lib/email";
 
 type Empresa = {
   id: string;
@@ -108,12 +109,10 @@ export default function AdminEmpresas() {
     usuario = usuarioPorId || null;
 
     if (!usuario && email) {
-      const emailNormalizado = email.trim().toLowerCase();
-
       const { data: usuarioPorEmail, error: erroPorEmail } = await supabase
         .from("usuarios")
         .select("perfil")
-        .ilike("email", emailNormalizado)
+        .filter("email", "imatch", filtroEmailExato(email))
         .in("perfil", ["super_admin", "admin_saas"])
         .limit(1)
         .maybeSingle<PerfilUsuario>();

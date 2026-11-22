@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Building2, ChevronRight, LayoutDashboard, LogOut, Menu, ShieldCheck, UsersRound, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato } from "../lib/email";
 import { useEmpresa } from "../hooks/useEmpresa";
 
 export default function AdminSaasLayout() {
@@ -20,7 +21,11 @@ export default function AdminSaasLayout() {
       const currentEmail = user?.email || "";
       setEmail(currentEmail);
       if (currentEmail) {
-        const { data } = await supabase.from("usuarios").select("perfil").eq("email", currentEmail).maybeSingle();
+        const { data } = await supabase
+          .from("usuarios")
+          .select("perfil")
+          .filter("email", "imatch", filtroEmailExato(currentEmail))
+          .maybeSingle();
         if (mounted) setPerfil(data?.perfil || "");
       }
     })();

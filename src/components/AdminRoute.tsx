@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato } from "../lib/email";
 
 type Props = {
   children: React.ReactNode;
@@ -27,12 +28,10 @@ export default function AdminRoute({ children }: Props) {
       return;
     }
 
-    const emailNormalizado = user.email.trim().toLowerCase();
-
     const { data: usuario, error } = await supabase
       .from("usuarios")
       .select("id, email, perfil")
-      .ilike("email", emailNormalizado)
+      .filter("email", "imatch", filtroEmailExato(user.email))
       .in("perfil", ["super_admin", "admin_saas"])
       .limit(1)
       .maybeSingle();

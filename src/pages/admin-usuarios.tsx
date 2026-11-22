@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { normalizarEmail } from "../lib/email";
 
 type Usuario = {
   id: string;
@@ -115,7 +116,8 @@ export default function AdminUsuarios() {
     setErro(null);
     setSucesso(null);
 
-    if (!form.email.trim()) {
+    const emailNormalizado = normalizarEmail(form.email);
+    if (!emailNormalizado) {
       setErro("E-mail é obrigatório.");
       return;
     }
@@ -124,7 +126,7 @@ export default function AdminUsuarios() {
 
     const payload = {
       nome: form.nome.trim() || null,
-      email: form.email.trim().toLowerCase(),
+      email: emailNormalizado,
       perfil: form.perfil,
       empresa_id: form.empresa_id || null,
       ativo: form.ativo,

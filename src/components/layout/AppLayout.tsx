@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar";
 import EmpresaSwitcher from "./EmpresaSwitcher";
 import { useEmpresa } from "../../hooks/useEmpresa";
 import { supabase } from "../../lib/supabase";
+import { filtroEmailExato } from "../../lib/email";
 
 export default function AppLayout() {
   const navigate = useNavigate();
@@ -50,7 +51,7 @@ export default function AppLayout() {
       const { data: usuario } = await supabase
         .from("usuarios")
         .select("nome, perfil")
-        .eq("email", email)
+        .filter("email", "imatch", filtroEmailExato(email))
         .maybeSingle();
 
       nomeEncontrado = usuario?.nome || "";

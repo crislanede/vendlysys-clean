@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato, normalizarEmail } from "../lib/email";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -11,7 +12,7 @@ export default function Login() {
     setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: normalizarEmail(email),
       password: senha,
     });
 
@@ -32,7 +33,7 @@ export default function Login() {
     const { data: admin, error: adminError } = await supabase
       .from("usuarios")
       .select("id")
-      .ilike("email", user.email.trim().toLowerCase())
+      .filter("email", "imatch", filtroEmailExato(user.email))
       .in("perfil", ["super_admin", "admin_saas"])
       .limit(1)
       .maybeSingle();
@@ -56,12 +57,13 @@ export default function Login() {
   }
 
   async function handleResetPassword() {
-    if (!email) {
+    const emailNormalizado = normalizarEmail(email);
+    if (!emailNormalizado) {
       alert("Digite seu e-mail primeiro");
       return;
     }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(emailNormalizado, {
       redirectTo: window.location.origin + "/resetar-senha",
     });
 
@@ -100,6 +102,8 @@ export default function Login() {
 
         <input
           type="email"
+          autoComplete="username"
+          autoCapitalize="none"
           placeholder="E-mail"
           value={email}
           onChange={(e) => setEmail(e.target.value)}

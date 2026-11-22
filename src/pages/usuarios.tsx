@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { normalizarEmail } from "../lib/email";
 
 import PageHeader from "../components/ui/PageHeader";
 import SectionCard from "../components/ui/SectionCard";
@@ -62,14 +63,15 @@ export default function UsuariosPage() {
   async function salvarUsuario(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!nome || !email) {
+    const emailNormalizado = normalizarEmail(email);
+    if (!nome || !emailNormalizado) {
       alert("Preencha nome e email.");
       return;
     }
 
     const payload = {
       nome,
-      email,
+      email: emailNormalizado,
       perfil,
       ativo,
     };

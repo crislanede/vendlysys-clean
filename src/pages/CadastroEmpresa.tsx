@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import { normalizarEmail } from "../lib/email";
 
 export default function CadastroEmpresa() {
   const [nome, setNome] = useState("");
@@ -10,7 +11,8 @@ export default function CadastroEmpresa() {
   const [carregando, setCarregando] = useState(false);
 
   async function cadastrar() {
-    if (!nome || !responsavel || !email || !senha) {
+    const emailNormalizado = normalizarEmail(email);
+    if (!nome || !responsavel || !emailNormalizado || !senha) {
       alert("Preencha os campos obrigatórios.");
       return;
     }
@@ -21,7 +23,7 @@ export default function CadastroEmpresa() {
       // 🔹 1. Criar usuário no Supabase Auth
       const { data: userData, error: userError } =
         await supabase.auth.signUp({
-          email,
+          email: emailNormalizado,
           password: senha,
         });
 
@@ -62,7 +64,7 @@ export default function CadastroEmpresa() {
       // 🔹 4. Inserir também na tabela usuarios (opcional, se usar)
       await supabase.from("usuarios").upsert({
         id: userId,
-        email,
+        email: emailNormalizado,
         perfil: "admin",
         empresa_id: empresaCriada.id,
       });

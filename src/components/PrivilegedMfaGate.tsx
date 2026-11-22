@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { filtroEmailExato } from "../lib/email";
 
 export default function PrivilegedMfaGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<"loading" | "allowed" | "mfa" | "login">("loading");
@@ -13,7 +14,7 @@ export default function PrivilegedMfaGate({ children }: { children: React.ReactN
         if (!active) return;
         if (userError || !user?.email) { setStatus("login"); return; }
         const { data: admin, error } = await supabase.from("usuarios")
-          .select("id").ilike("email", user.email.trim().toLowerCase())
+          .select("id").filter("email", "imatch", filtroEmailExato(user.email))
           .in("perfil", ["super_admin", "admin_saas"]).limit(1).maybeSingle();
         if (!active) return;
         if (error) { setStatus("login"); return; }
