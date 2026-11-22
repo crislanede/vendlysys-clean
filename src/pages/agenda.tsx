@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useEmpresa } from "../hooks/useEmpresa";
 import PageHeader from "../components/ui/PageHeader";
@@ -16,6 +16,7 @@ import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 // import { substituirVariaveisMensagemAgenda } from "../utils/mensagens";
 import {
   montarLinkMeuEspaco,
+  montarLinkWhatsapp,
   montarMensagemAgradecimento,
   normalizarTelefoneWhatsapp,
 } from "../lib/whatsapp";
@@ -87,6 +88,13 @@ type Agendamento = {
   atendimento_residencial?: boolean | null;
   percentual_residencial?: number | null;
   created_at?: string | null;
+};
+
+type MensagemWhatsapp = {
+  titulo: string;
+  cliente?: string | null;
+  link: string | null;
+  aviso?: string;
 };
 
 type PacoteDisponivel = {
@@ -566,6 +574,8 @@ export default function AgendaPage() {
   const [atendimentoResidencialReagendamento, setAtendimentoResidencialReagendamento] =
     useState(false);
   const [loadingReagendar, setLoadingReagendar] = useState(false);
+  const [mensagemWhatsapp, setMensagemWhatsapp] = useState<MensagemWhatsapp | null>(null);
+  const dialogoWhatsapp = useRef<HTMLDialogElement>(null);
   const [nomeEmpresaAgenda, setNomeEmpresaAgenda] = useState("");
   const [enderecoEmpresaAgenda, setEnderecoEmpresaAgenda] = useState("");
 
@@ -580,6 +590,11 @@ export default function AgendaPage() {
       void carregarTudo();
     }
   }, [empresaId]);
+
+  useEffect(() => {
+    const dialogo = dialogoWhatsapp.current;
+    if (mensagemWhatsapp && dialogo && !dialogo.open) dialogo.showModal();
+  }, [mensagemWhatsapp]);
 
   async function carregarTudo() {
     if (!empresaId) return;
@@ -851,28 +866,32 @@ export default function AgendaPage() {
   }
 
   async function confirmarAgendamento(agendamento: Agendamento) {
-    const { error } = await supabase
+    if (!empresaId) return;
+
+    const { data: confirmado, error } = await supabase
       .from("agendamentos")
       .update({ status: "confirmado" })
-      .eq("id", agendamento.id);
+      .eq("id", agendamento.id)
+      .eq("empresa_id", empresaId)
+      .select("id")
+      .maybeSingle();
 
-    if (error) {
-      alert(`Erro ao confirmar: ${error.message}`);
+    if (error || !confirmado) {
+      alert(error ? `Erro ao confirmar: ${error.message}` : "O agendamento não foi confirmado.");
       return;
     }
 
     await carregarTudo();
 
-    const enviarWhatsapp = window.confirm(
-      "Agendamento confirmado. Deseja abrir o WhatsApp para enviar a confirmação ao cliente?",
+    await prepararConfirmacaoWhatsapp(
+      { ...agendamento, status: "confirmado" },
+      "Agendamento confirmado",
     );
-
-    if (enviarWhatsapp) {
-      await enviarConfirmacaoWhatsapp({ ...agendamento, status: "confirmado" });
-    }
   }
 
   async function cancelarAgendamento(agendamento: Agendamento) {
+    if (!empresaId) return;
+
     const confirmarCancelamento = window.confirm(
       "Deseja cancelar este agendamento? Ao cancelar, o horário será liberado para novo agendamento.",
     );
@@ -891,7 +910,10 @@ export default function AgendaPage() {
     let resultado = await supabase
       .from("agendamentos")
       .update(payloadCompleto)
-      .eq("id", agendamento.id);
+      .eq("id", agendamento.id)
+      .eq("empresa_id", empresaId)
+      .select("id")
+      .maybeSingle();
 
     if (resultado.error) {
       const mensagemErro = String(resultado.error.message || "").toLowerCase();
@@ -905,24 +927,21 @@ export default function AgendaPage() {
         resultado = await supabase
           .from("agendamentos")
           .update(payloadMinimo)
-          .eq("id", agendamento.id);
+          .eq("id", agendamento.id)
+          .eq("empresa_id", empresaId)
+          .select("id")
+          .maybeSingle();
       }
     }
 
-    if (resultado.error) {
-      alert(`Erro ao cancelar: ${resultado.error.message}`);
+    if (resultado.error || !resultado.data) {
+      alert(resultado.error ? `Erro ao cancelar: ${resultado.error.message}` : "O agendamento não foi cancelado.");
       return;
     }
 
     await carregarTudo();
 
-    const enviarWhatsapp = window.confirm(
-      "Agendamento cancelado e horário liberado. Deseja abrir o WhatsApp para avisar o cliente?",
-    );
-
-    if (enviarWhatsapp) {
-      await enviarCancelamentoWhatsapp({ ...agendamento, status: "cancelado" });
-    }
+    prepararCancelamentoWhatsapp({ ...agendamento, status: "cancelado" });
   }
 
   function abrirModalReagendar(agendamento: Agendamento) {
@@ -1078,13 +1097,7 @@ export default function AgendaPage() {
     setData(dataReagendamento);
     await carregarTudo();
 
-    const enviarWhatsapp = window.confirm(
-      "Reagendamento salvo. Deseja abrir o WhatsApp para enviar a mensagem manualmente ao cliente?",
-    );
-
-    if (enviarWhatsapp) {
-      await enviarReagendamentoWhatsapp(agendamentoAtualizado);
-    }
+    await prepararReagendamentoWhatsapp(agendamentoAtualizado);
   }
 
   function obterValorServico(servicoItem: Servico | null | undefined) {
@@ -1338,15 +1351,8 @@ export default function AgendaPage() {
     }
   }
 
-  async function enviarFotoWhatsAppCliente(foto?: FotoAtendimento | null) {
+  async function prepararFotoWhatsapp(foto?: FotoAtendimento | null) {
     if (!agendamentoFotos) return;
-
-    const telefone = telefoneDoAgendamento(agendamentoFotos);
-
-    if (!telefone) {
-      alert("Cliente sem telefone cadastrado para envio pelo WhatsApp.");
-      return;
-    }
 
     let linkFoto = foto?.signedUrl || "";
 
@@ -1373,12 +1379,7 @@ ${linkFoto}` : "As fotos do atendimento já estão registradas no sistema."}
 
 Obrigada pela preferência! 💜`;
 
-    const numero = normalizarTelefoneWhatsapp(telefone);
-    window.open(
-      `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    mostrarMensagemWhatsapp(agendamentoFotos, "Foto do atendimento", mensagem);
   }
 
   async function buscarPacotesDisponiveis(
@@ -1476,56 +1477,70 @@ Obrigada pela preferência! 💜`;
   function telefoneDoAgendamento(agendamento: Agendamento) {
     if (agendamento.telefone) return agendamento.telefone;
 
-    const clienteBanco = clientes.find((item) => {
-      if (agendamento.cliente_id && item.id === agendamento.cliente_id)
-        return true;
-      return item.nome === agendamento.cliente;
+    if (agendamento.cliente_id) {
+      return clientes.find((item) => item.id === agendamento.cliente_id)?.telefone || "";
+    }
+
+    const correspondencias = clientes.filter((item) => item.nome === agendamento.cliente);
+    return correspondencias.length === 1 ? correspondencias[0].telefone || "" : "";
+  }
+
+  function mostrarMensagemWhatsapp(
+    agendamento: Agendamento,
+    titulo: string,
+    mensagem: string,
+    aviso?: string,
+  ) {
+    const link = montarLinkWhatsapp(telefoneDoAgendamento(agendamento), mensagem);
+    setMensagemWhatsapp({
+      titulo,
+      cliente: agendamento.cliente,
+      link,
+      aviso: link ? aviso : "Não foi encontrado um telefone válido para este cliente.",
     });
-
-    return clienteBanco?.telefone || "";
   }
 
-  async function garantirTokenReagendamento(agendamento: Agendamento) {
-    const tokenExistente = agendamento.token_cliente || agendamento.token || "";
+  async function obterLinkMeuEspacoAgendamento(agendamento: Agendamento) {
+    if (!agendamento.cliente_id || !empresaId) return null;
+    if (agendamento.token_cliente) return montarLinkMeuEspaco(agendamento.token_cliente);
 
-    if (tokenExistente) return tokenExistente;
+    try {
+      const novoToken = crypto.randomUUID();
+      const consulta = supabase
+        .from("agendamentos")
+        .update({ token_cliente: novoToken })
+        .eq("id", agendamento.id)
+        .eq("empresa_id", empresaId);
+      const { data: atualizado, error } = await (agendamento.token_cliente === ""
+        ? consulta.eq("token_cliente", "")
+        : consulta.is("token_cliente", null))
+        .select("token_cliente")
+        .maybeSingle();
 
-    const novoToken =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      if (error) throw error;
+      if (atualizado?.token_cliente) return montarLinkMeuEspaco(atualizado.token_cliente);
 
-    const { error } = await supabase
-      .from("agendamentos")
-      .update({ token_cliente: novoToken })
-      .eq("id", agendamento.id);
+      const { data: existente, error: erroConsulta } = await supabase
+        .from("agendamentos")
+        .select("token_cliente")
+        .eq("id", agendamento.id)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Erro ao gerar token de reagendamento:", error);
-      alert(
-        "Reagendamento salvo, mas não foi possível gerar o link do Meu Espaço para WhatsApp.",
-      );
-      return "";
+      if (erroConsulta) throw erroConsulta;
+      return existente?.token_cliente ? montarLinkMeuEspaco(existente.token_cliente) : null;
+    } catch (error) {
+      console.warn("Não foi possível gerar o link do Meu Espaço para o WhatsApp:", error);
+      return null;
     }
-
-    return novoToken;
   }
 
-  async function enviarConfirmacaoWhatsapp(agendamento: Agendamento) {
-    const telefone = telefoneDoAgendamento(agendamento);
-
-    if (!telefone) {
-      alert(
-        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
-      );
-      return;
-    }
-
-    const token = await garantirTokenReagendamento(agendamento);
-
-    if (!token) return;
-
-    const linkMeuEspaco = montarLinkMeuEspaco(token);
+  async function prepararConfirmacaoWhatsapp(
+    agendamento: Agendamento,
+    titulo = "Informações do agendamento",
+  ) {
+    const linkMeuEspaco = await obterLinkMeuEspacoAgendamento(agendamento);
+    const confirmado = agendamento.status === "confirmado";
     const horaInicio = agendamento.horario || "não informado";
     const horaFim = agendamento.horario
       ? somarMinutos(
@@ -1538,11 +1553,11 @@ Obrigada pela preferência! 💜`;
       agendamento.valor ?? agendamento.valor_pago,
     );
 
-    const mensagem = `✨ Agendamento confirmado!
+    const mensagem = `${confirmado ? "✨ Agendamento confirmado!" : "✨ Informações do seu agendamento"}
 
 Olá, ${agendamento.cliente || "cliente"} 😊
 
-Seu horário foi confirmado com sucesso.
+${confirmado ? "Seu horário foi confirmado com sucesso." : "Confira os dados do seu atendimento."}
 
 📅 Data: ${formatarData(agendamento.data)}
 🕒 Horário: ${horaInicio}
@@ -1552,33 +1567,22 @@ Seu horário foi confirmado com sucesso.
 💰 Valor: ${valorConfirmacao}${localAtendimentoAgenda ? `
 
 📍 Local:
-${localAtendimentoAgenda}` : ""}
+${localAtendimentoAgenda}` : ""}${linkMeuEspaco ? `
 
 📲 Acesse seu espaço do cliente:
-${linkMeuEspaco}
+${linkMeuEspaco}` : ""}
 
 Aguardamos você! 💜`;
 
-    const numero = normalizarTelefoneWhatsapp(telefone);
-    const texto = encodeURIComponent(mensagem);
-
-    window.open(
-      `https://wa.me/${numero}?text=${texto}`,
-      "_blank",
-      "noopener,noreferrer",
+    mostrarMensagemWhatsapp(
+      agendamento,
+      titulo,
+      mensagem,
+      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link do Meu Espaço.",
     );
   }
 
-  async function enviarCancelamentoWhatsapp(agendamento: Agendamento) {
-    const telefone = telefoneDoAgendamento(agendamento);
-
-    if (!telefone) {
-      alert(
-        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
-      );
-      return;
-    }
-
+  function prepararCancelamentoWhatsapp(agendamento: Agendamento) {
     const mensagem = `Olá, ${agendamento.cliente || "cliente"}! Seu agendamento foi cancelado.
 
 Serviço: ${agendamento.servico || "não informado"}
@@ -1588,31 +1592,11 @@ Profissional: ${agendamento.profissional || "não informado"}
 
 Caso queira remarcar, entre em contato conosco.`;
 
-    const numero = normalizarTelefoneWhatsapp(telefone);
-    const texto = encodeURIComponent(mensagem);
-
-    window.open(
-      `https://wa.me/${numero}?text=${texto}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    mostrarMensagemWhatsapp(agendamento, "Agendamento cancelado", mensagem);
   }
 
-  async function enviarReagendamentoWhatsapp(agendamento: Agendamento) {
-    const telefone = telefoneDoAgendamento(agendamento);
-
-    if (!telefone) {
-      alert(
-        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
-      );
-      return;
-    }
-
-    const token = await garantirTokenReagendamento(agendamento);
-
-    if (!token) return;
-
-    const linkMeuEspaco = montarLinkMeuEspaco(token);
+  async function prepararReagendamentoWhatsapp(agendamento: Agendamento) {
+    const linkMeuEspaco = await obterLinkMeuEspacoAgendamento(agendamento);
     const horaInicio = agendamento.horario || "não informado";
     const horaFim = agendamento.horario
       ? somarMinutos(
@@ -1627,31 +1611,20 @@ Serviço: ${agendamento.servico || "não informado"}
 Data: ${formatarData(agendamento.data)}
 Início: ${horaInicio}
 Término previsto: ${horaFim}
-Profissional: ${agendamento.profissional || "não informado"}
+Profissional: ${agendamento.profissional || "não informado"}${linkMeuEspaco ? `
 
 Para confirmar ou acompanhar seu agendamento, acesse:
-${linkMeuEspaco}`;
+${linkMeuEspaco}` : ""}`;
 
-    const numero = normalizarTelefoneWhatsapp(telefone);
-    const texto = encodeURIComponent(mensagem);
-
-    window.open(
-      `https://wa.me/${numero}?text=${texto}`,
-      "_blank",
-      "noopener,noreferrer",
+    mostrarMensagemWhatsapp(
+      agendamento,
+      "Reagendamento salvo",
+      mensagem,
+      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link do Meu Espaço.",
     );
   }
 
-  async function enviarAgradecimentoWhatsapp(agendamento: Agendamento) {
-    const telefone = telefoneDoAgendamento(agendamento);
-
-    if (!telefone) {
-      alert(
-        "Não foi possível abrir o WhatsApp: este cliente não possui telefone cadastrado.",
-      );
-      return;
-    }
-
+  function prepararAgradecimentoWhatsapp(agendamento: Agendamento) {
     const token = agendamento.token_cliente || agendamento.token || "";
 
     const mensagem = montarMensagemAgradecimento({
@@ -1665,15 +1638,7 @@ ${linkMeuEspaco}`;
       linkMeuEspaco: montarLinkMeuEspaco(token),
     });
 
-    const numero = normalizarTelefoneWhatsapp(telefone);
-    const texto = encodeURIComponent(mensagem);
-
-    // Usar href evita bloqueio de pop-up depois que a finalização salva no banco.
-    window.open(
-      `https://wa.me/${numero}?text=${texto}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    mostrarMensagemWhatsapp(agendamento, "Atendimento finalizado", mensagem);
   }
 
   async function finalizarComPagamento() {
@@ -1992,11 +1957,7 @@ ${linkMeuEspaco}`;
         }
       }
 
-      alert(
-        "Atendimento finalizado com sucesso! O WhatsApp de agradecimento será aberto agora.",
-      );
-
-      await enviarAgradecimentoWhatsapp(agendamentoSelecionado);
+      prepararAgradecimentoWhatsapp(agendamentoSelecionado);
 
       setModalFinalizarAberto(false);
       setAgendamentoSelecionado(null);
@@ -2595,7 +2556,7 @@ ${linkMeuEspaco}`;
                           {item.status !== "finalizado" &&
                             item.status !== "cancelado" && (
                               <SecondaryButton
-                                onClick={() => void enviarConfirmacaoWhatsapp(item)}
+                                onClick={() => void prepararConfirmacaoWhatsapp(item)}
                               >
                                 WhatsApp
                               </SecondaryButton>
@@ -2645,6 +2606,41 @@ ${linkMeuEspaco}`;
           </div>
         </section>
       </div>
+
+      {mensagemWhatsapp && (
+        <dialog
+          ref={dialogoWhatsapp}
+          aria-labelledby="titulo-whatsapp-agenda"
+          aria-describedby="descricao-whatsapp-agenda"
+          onClose={() => setMensagemWhatsapp(null)}
+          className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-3xl bg-white p-5 shadow-xl backdrop:bg-slate-950/50"
+        >
+          <h2 id="titulo-whatsapp-agenda" className="text-lg font-bold text-slate-900">
+            {mensagemWhatsapp.titulo}
+          </h2>
+          <p id="descricao-whatsapp-agenda" className="mt-2 text-sm text-slate-700">
+            {mensagemWhatsapp.link && mensagemWhatsapp.cliente && (
+              <span className="mb-1 block font-semibold">Mensagem para {mensagemWhatsapp.cliente}</span>
+            )}
+            {mensagemWhatsapp.aviso || "Confira a mensagem no WhatsApp antes de enviar."}
+          </p>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <SecondaryButton type="button" onClick={() => dialogoWhatsapp.current?.close()}>
+              Fechar
+            </SecondaryButton>
+            {mensagemWhatsapp.link && (
+              <a
+                className="inline-flex min-h-10 items-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white"
+                href={mensagemWhatsapp.link}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Abrir WhatsApp
+              </a>
+            )}
+          </div>
+        </dialog>
+      )}
 
       {modalNovoAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
@@ -3022,7 +3018,7 @@ ${linkMeuEspaco}`;
                 </span>
                 <button
                   type="button"
-                  onClick={() => void enviarFotoWhatsAppCliente(fotosAtendimento.find((foto) => !!foto.signedUrl) || null)}
+                  onClick={() => void prepararFotoWhatsapp(fotosAtendimento.find((foto) => !!foto.signedUrl) || null)}
                   className="rounded-2xl bg-green-500 px-4 py-2 text-sm font-black text-white hover:bg-green-600"
                 >
                   WhatsApp
@@ -3258,7 +3254,7 @@ ${linkMeuEspaco}`;
                           {foto.signedUrl && (
                             <button
                               type="button"
-                              onClick={() => void enviarFotoWhatsAppCliente(foto)}
+                              onClick={() => void prepararFotoWhatsapp(foto)}
                               className="flex-1 rounded-2xl bg-green-50 px-3 py-2 text-xs font-black text-green-700 hover:bg-green-100"
                             >
                               WhatsApp
@@ -3327,7 +3323,7 @@ ${linkMeuEspaco}`;
                 )}
                 <button
                   type="button"
-                  onClick={() => void enviarFotoWhatsAppCliente(fotoAmpliada)}
+                  onClick={() => void prepararFotoWhatsapp(fotoAmpliada)}
                   className="rounded-2xl bg-green-600 px-4 py-2 text-sm font-black text-white"
                 >
                   Enviar WhatsApp

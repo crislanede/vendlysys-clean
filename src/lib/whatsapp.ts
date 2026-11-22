@@ -41,28 +41,36 @@ export const mensagensWhatsappPadrao: Record<
 
 // 📱 NORMALIZA TELEFONE
 export function normalizarTelefoneWhatsapp(telefone: string) {
-  const numeroLimpo = String(telefone || "").replace(/\D/g, "");
+  const telefoneTexto = String(telefone || "").trim();
+  const numeroLimpo = telefoneTexto.replace(/\D/g, "");
 
   if (!numeroLimpo) return "";
 
-  if (numeroLimpo.startsWith("55")) {
-    return numeroLimpo;
+  if (telefoneTexto.startsWith("+")) return numeroLimpo;
+  if (numeroLimpo.length === 10 || numeroLimpo.length === 11) {
+    return `55${numeroLimpo}`;
   }
 
-  return `55${numeroLimpo}`;
+  return numeroLimpo.startsWith("55") ? numeroLimpo : `55${numeroLimpo}`;
+}
+
+export function montarLinkWhatsapp(telefone: string, mensagem: string) {
+  const numero = normalizarTelefoneWhatsapp(telefone);
+  if (!/^[1-9][0-9]{7,14}$/.test(numero)) return null;
+
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
 }
 
 // 🚀 ABRIR WHATSAPP
 export function abrirWhatsapp(telefone: string, mensagem: string) {
-  const numeroFinal = normalizarTelefoneWhatsapp(telefone);
-  const texto = encodeURIComponent(mensagem || "");
+  const link = montarLinkWhatsapp(telefone, mensagem);
 
-  if (!numeroFinal) {
+  if (!link) {
     alert("Telefone inválido para WhatsApp.");
     return;
   }
 
-  window.open(`https://wa.me/${numeroFinal}?text=${texto}`, "_blank");
+  window.open(link, "_blank", "noopener,noreferrer");
 }
 
 // 🔗 LINK MEU ESPAÇO
