@@ -9,7 +9,6 @@ type Props = {
   dataReagendamento: string;
   horaReagendamento: string;
   horarios: string[];
-  minData?: string;
   loading: boolean;
 
   servicos: Servico[];
@@ -42,7 +41,6 @@ export default function ModalReagendamento({
   dataReagendamento,
   horaReagendamento,
   horarios,
-  minData,
   loading,
 
   servicos,
@@ -144,7 +142,6 @@ export default function ModalReagendamento({
             <input
               type="date"
               value={dataReagendamento}
-              min={minData}
               onChange={(e) => onChangeData(e.target.value)}
               className="mt-2 h-[44px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-orange-300"
             />
@@ -334,7 +331,7 @@ export default function ModalReagendamento({
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <SecondaryButton onClick={onFechar}>Cancelar</SecondaryButton>
-          <PrimaryButton onClick={onSalvar}>
+          <PrimaryButton onClick={onSalvar} disabled={loading}>
             {loading ? "Salvando..." : "Salvar reagendamento"}
           </PrimaryButton>
         </div>

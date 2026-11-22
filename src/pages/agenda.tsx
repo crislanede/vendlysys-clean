@@ -976,15 +976,10 @@ export default function AgendaPage() {
   }
 
   async function salvarReagendamento() {
-    if (!agendamentoReagendar) return;
+    if (!agendamentoReagendar || !empresaId || loadingReagendar) return;
 
     if (!dataReagendamento || !horaReagendamento || !servicoReagendamento) {
       alert("Informe serviço, nova data e novo horário.");
-      return;
-    }
-
-    if (!podeEditarData(dataReagendamento)) {
-      alert("Somente administradores podem reagendar para datas anteriores.");
       return;
     }
 
@@ -1028,7 +1023,7 @@ export default function AgendaPage() {
 
     setLoadingReagendar(true);
 
-    const { error } = await supabase
+    const { data: registroAtualizado, error } = await supabase
       .from("agendamentos")
       .update({
         data: dataReagendamento,
@@ -1044,12 +1039,20 @@ export default function AgendaPage() {
             ? "confirmado"
             : "agendado",
       })
-      .eq("id", agendamentoReagendar.id);
+      .eq("id", agendamentoReagendar.id)
+      .eq("empresa_id", empresaId)
+      .select("id")
+      .maybeSingle();
 
     setLoadingReagendar(false);
 
     if (error) {
       alert(`Erro ao reagendar: ${error.message}`);
+      return;
+    }
+
+    if (!registroAtualizado) {
+      alert("O reagendamento não foi salvo. Confira se você ainda tem acesso a esse agendamento.");
       return;
     }
 
@@ -2923,7 +2926,6 @@ ${linkMeuEspaco}`;
         dataReagendamento={dataReagendamento}
         horaReagendamento={horaReagendamento}
         horarios={HORARIOS}
-        minData={usuarioEhAdmin() ? undefined : getTodayString()}
         loading={loadingReagendar}
         servicos={servicos}
         servicoReagendamento={servicoReagendamento}
