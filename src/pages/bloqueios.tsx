@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useEmpresa } from "../hooks/useEmpresa";
 
 type Profissional = {
   id: string;
@@ -9,7 +10,8 @@ type Profissional = {
 
 type Bloqueio = {
   id: string;
-  profissional: string;
+  profissional_id: string | null;
+  profissionais?: { nome: string } | null;
   data: string;
   hora_inicio: string;
   hora_fim: string;
@@ -22,6 +24,7 @@ function horaParaMinutos(hora: string) {
 }
 
 export default function BloqueiosPage() {
+  const { empresaId } = useEmpresa();
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [bloqueios, setBloqueios] = useState<Bloqueio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +38,8 @@ export default function BloqueiosPage() {
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
-    void carregarTudo();
-  }, []);
+    if (empresaId) void carregarTudo();
+  }, [empresaId]);
 
   async function carregarTudo() {
     setLoading(true);
@@ -48,6 +51,7 @@ export default function BloqueiosPage() {
     const { data, error } = await supabase
       .from("profissionais")
       .select("id, nome, ativo")
+      .eq("empresa_id", empresaId)
       .eq("ativo", true)
       .order("nome", { ascending: true });
 
@@ -62,8 +66,9 @@ export default function BloqueiosPage() {
 
   async function carregarBloqueios() {
     const { data, error } = await supabase
-      .from("bloqueios")
-      .select("*")
+      .from("bloqueios_agenda")
+      .select("id, profissional_id, data, hora_inicio, hora_fim, motivo, profissionais(nome)")
+      .eq("empresa_id", empresaId)
       .order("data", { ascending: false })
       .order("hora_inicio", { ascending: true });
 
@@ -73,7 +78,7 @@ export default function BloqueiosPage() {
       return;
     }
 
-    setBloqueios((data || []) as Bloqueio[]);
+    setBloqueios((data || []) as unknown as Bloqueio[]);
   }
 
   function limparFormulario() {
@@ -101,13 +106,15 @@ export default function BloqueiosPage() {
   async function salvarBloqueio(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!validarFormulario()) return;
+    if (!empresaId || !validarFormulario()) return;
 
     setSalvando(true);
 
-    const { error } = await supabase.from("bloqueios").insert([
+    const { error } = await supabase.from("bloqueios_agenda").insert([
       {
-        profissional,
+        empresa_id: empresaId,
+        profissional_id: profissional === "todos" ? null : profissional,
+        ativo: true,
         data,
         hora_inicio: horaInicio,
         hora_fim: horaFim,
@@ -132,7 +139,7 @@ export default function BloqueiosPage() {
     const confirmar = window.confirm("Deseja excluir este bloqueio?");
     if (!confirmar) return;
 
-    const { error } = await supabase.from("bloqueios").delete().eq("id", id);
+    const { error } = await supabase.from("bloqueios_agenda").delete().eq("id", id).eq("empresa_id", empresaId);
 
     if (error) {
       console.error("Erro ao excluir bloqueio:", error);
@@ -150,7 +157,7 @@ export default function BloqueiosPage() {
 
     return bloqueios.filter((item) => {
       return (
-        item.profissional?.toLowerCase().includes(termo) ||
+        (item.profissionais?.nome || "Todo o estabelecimento").toLowerCase().includes(termo) ||
         item.motivo?.toLowerCase().includes(termo) ||
         item.data?.toLowerCase().includes(termo)
       );
@@ -182,8 +189,9 @@ export default function BloqueiosPage() {
               className="w-full rounded-lg border p-2"
             >
               <option value="">Selecione</option>
+              <option value="todos">Todo o estabelecimento</option>
               {profissionais.map((item) => (
-                <option key={item.id} value={item.nome}>
+                <option key={item.id} value={item.id}>
                   {item.nome}
                 </option>
               ))}
@@ -280,7 +288,7 @@ export default function BloqueiosPage() {
               >
                 <div>
                   <p className="text-lg font-semibold text-slate-900">
-                    {item.profissional}
+                    {item.profissional_id ? item.profissionais?.nome || "Profissional" : "Todo o estabelecimento"}
                   </p>
                   <p className="text-sm text-slate-500">
                     {new Date(`${item.data}T00:00:00`).toLocaleDateString("pt-BR")}

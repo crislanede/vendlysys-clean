@@ -40,7 +40,7 @@ import Comissoes from "./pages/comissoes";
 import Pagamentos from "./pages/pagamentos";
 import Despesas from "./pages/despesas";
 
-import MeuEspaco from "./pages/meu-espaco";
+import AgendamentoPublico, { AcessoMeuEspacoPublico } from "./pages/agendamento-publico";
 
 import MarketingPacotes from "./pages/marketing-pacotes";
 import PacotesClientesPage from "./pages/marketing-pacotes";
@@ -68,7 +68,8 @@ function App() {
         <Route path="/mfa" element={<MFA />} />
         <Route path="/resetar-senha" element={<ResetarSenha />} />
         <Route path="/cadastro-empresa" element={<CadastroEmpresa />} />
-        <Route path="/meu-espaco" element={<MeuEspaco />} />
+        <Route path="/meu-espaco" element={<AcessoMeuEspacoPublico />} />
+        <Route path="/agendar/:slug" element={<AgendamentoPublico />} />
 
         {/* ADMIN SAAS */}
         <Route

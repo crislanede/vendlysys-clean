@@ -5,6 +5,7 @@ import PageHeader from "../components/ui/PageHeader";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import SecondaryButton from "../components/ui/SecondaryButton";
 import ModalReagendamento from "./agenda/components/ModalReagendamento";
+import SolicitacoesAgenda from "./agenda/components/SolicitacoesAgenda";
 import {
   calcularDuracaoServicos,
   formatarDuracao,
@@ -15,7 +16,6 @@ import {
 import AlertaAnamneseAgenda from "../components/agenda/AlertaAnamneseAgenda";
 // import { substituirVariaveisMensagemAgenda } from "../utils/mensagens";
 import {
-  montarLinkMeuEspaco,
   montarLinkWhatsapp,
   montarMensagemAgradecimento,
   normalizarTelefoneWhatsapp,
@@ -503,7 +503,7 @@ function rotuloAlertaAgenda(alerta: AlertaAnamneseItem) {
 }
 
 export default function AgendaPage() {
-  const { empresaId, carregandoEmpresa } = useEmpresa();
+  const { empresa, empresaId, carregandoEmpresa } = useEmpresa();
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [aniversariantes, setAniversariantes] = useState<Cliente[]>([]);
@@ -1500,46 +1500,16 @@ Obrigada pela preferência! 💜`;
     });
   }
 
-  async function obterLinkMeuEspacoAgendamento(agendamento: Agendamento) {
-    if (!agendamento.cliente_id || !empresaId) return null;
-    if (agendamento.token_cliente) return montarLinkMeuEspaco(agendamento.token_cliente);
-
-    try {
-      const novoToken = crypto.randomUUID();
-      const consulta = supabase
-        .from("agendamentos")
-        .update({ token_cliente: novoToken })
-        .eq("id", agendamento.id)
-        .eq("empresa_id", empresaId);
-      const { data: atualizado, error } = await (agendamento.token_cliente === ""
-        ? consulta.eq("token_cliente", "")
-        : consulta.is("token_cliente", null))
-        .select("token_cliente")
-        .maybeSingle();
-
-      if (error) throw error;
-      if (atualizado?.token_cliente) return montarLinkMeuEspaco(atualizado.token_cliente);
-
-      const { data: existente, error: erroConsulta } = await supabase
-        .from("agendamentos")
-        .select("token_cliente")
-        .eq("id", agendamento.id)
-        .eq("empresa_id", empresaId)
-        .maybeSingle();
-
-      if (erroConsulta) throw erroConsulta;
-      return existente?.token_cliente ? montarLinkMeuEspaco(existente.token_cliente) : null;
-    } catch (error) {
-      console.warn("Não foi possível gerar o link do Meu Espaço para o WhatsApp:", error);
-      return null;
-    }
+  function linkSolicitacaoOnline() {
+    if (!empresa?.slug) return null;
+    return new URL(`/agendar/${encodeURIComponent(empresa.slug)}`, window.location.origin).href;
   }
 
   async function prepararConfirmacaoWhatsapp(
     agendamento: Agendamento,
     titulo = "Informações do agendamento",
   ) {
-    const linkMeuEspaco = await obterLinkMeuEspacoAgendamento(agendamento);
+    const linkMeuEspaco = linkSolicitacaoOnline();
     const confirmado = agendamento.status === "confirmado";
     const horaInicio = agendamento.horario || "não informado";
     const horaFim = agendamento.horario
@@ -1569,7 +1539,7 @@ ${confirmado ? "Seu horário foi confirmado com sucesso." : "Confira os dados do
 📍 Local:
 ${localAtendimentoAgenda}` : ""}${linkMeuEspaco ? `
 
-📲 Acesse seu espaço do cliente:
+📲 Para solicitar um novo horário:
 ${linkMeuEspaco}` : ""}
 
 Aguardamos você! 💜`;
@@ -1578,7 +1548,7 @@ Aguardamos você! 💜`;
       agendamento,
       titulo,
       mensagem,
-      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link do Meu Espaço.",
+      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link de solicitação online.",
     );
   }
 
@@ -1596,7 +1566,7 @@ Caso queira remarcar, entre em contato conosco.`;
   }
 
   async function prepararReagendamentoWhatsapp(agendamento: Agendamento) {
-    const linkMeuEspaco = await obterLinkMeuEspacoAgendamento(agendamento);
+    const linkMeuEspaco = linkSolicitacaoOnline();
     const horaInicio = agendamento.horario || "não informado";
     const horaFim = agendamento.horario
       ? somarMinutos(
@@ -1613,20 +1583,18 @@ Início: ${horaInicio}
 Término previsto: ${horaFim}
 Profissional: ${agendamento.profissional || "não informado"}${linkMeuEspaco ? `
 
-Para confirmar ou acompanhar seu agendamento, acesse:
+Para solicitar outro horário, acesse:
 ${linkMeuEspaco}` : ""}`;
 
     mostrarMensagemWhatsapp(
       agendamento,
       "Reagendamento salvo",
       mensagem,
-      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link do Meu Espaço.",
+      linkMeuEspaco ? undefined : "A mensagem está pronta sem o link de solicitação online.",
     );
   }
 
   function prepararAgradecimentoWhatsapp(agendamento: Agendamento) {
-    const token = agendamento.token_cliente || agendamento.token || "";
-
     const mensagem = montarMensagemAgradecimento({
       empresa: "Seu estabelecimento",
       cliente: agendamento.cliente || "",
@@ -1635,7 +1603,7 @@ ${linkMeuEspaco}` : ""}`;
       data: agendamento.data,
       horario: agendamento.horario,
       valor: usarPacote ? 0 : Number(valorPagamento || 0),
-      linkMeuEspaco: montarLinkMeuEspaco(token),
+      linkMeuEspaco: linkSolicitacaoOnline() || undefined,
     });
 
     mostrarMensagemWhatsapp(agendamento, "Atendimento finalizado", mensagem);
@@ -2207,6 +2175,17 @@ ${linkMeuEspaco}` : ""}`;
             + Agendar
           </PrimaryButton>
         }
+      />
+
+      <SolicitacoesAgenda
+        key={empresaId}
+        empresaId={empresaId}
+        slug={empresa?.slug}
+        aoAprovar={(dataAprovada) => {
+          setSelectedDate(dataAprovada);
+          setData(dataAprovada);
+          void carregarTudo();
+        }}
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { criarUrlPdfPrivado } from "../../lib/uploadAnamnese";
 import {
   abrirWhatsapp,
   montarMensagemPdfAnamnese,
@@ -49,6 +50,20 @@ export default function HistoricoAnamnese({
   const [anamneses, setAnamneses] = useState<AnamneseCliente[]>([]);
   const [anamneseSelecionadaId, setAnamneseSelecionadaId] = useState<string | null>(null);
   const [respostas, setRespostas] = useState<RespostaItem[]>([]);
+  const [pdfPrivado, setPdfPrivado] = useState<{ referencia: string; link: string } | null>(null);
+  const anamneseAtual =
+    anamneses.find((item) => item.id === anamneseSelecionadaId) || null;
+  const referenciaPdf = anamneseAtual?.pdf_url;
+  const linkPdf = pdfPrivado?.referencia === referenciaPdf ? pdfPrivado?.link : null;
+
+  useEffect(() => {
+    if (!referenciaPdf) return;
+    let vigente = true;
+    void criarUrlPdfPrivado(referenciaPdf).then((link) => {
+      if (vigente) setPdfPrivado(link ? { referencia: referenciaPdf, link } : null);
+    }).catch(() => { if (vigente) setPdfPrivado(null); });
+    return () => { vigente = false; };
+  }, [referenciaPdf]);
 
   useEffect(() => {
     if (!clienteId && !clienteNome) {
@@ -119,7 +134,7 @@ export default function HistoricoAnamnese({
   }
 
   function reenviarWhatsapp() {
-    if (!anamneseAtual?.pdf_url) {
+    if (!anamneseAtual || !linkPdf) {
       alert("PDF não encontrado para esta anamnese.");
       return;
     }
@@ -132,7 +147,7 @@ export default function HistoricoAnamnese({
     const mensagem = montarMensagemPdfAnamnese({
       cliente: clienteNome || anamneseAtual.cliente_nome || "cliente",
       empresa: empresaNome,
-      pdfUrl: anamneseAtual.pdf_url,
+      pdfUrl: linkPdf,
     });
 
     abrirWhatsapp(telefoneCliente, mensagem);
@@ -157,8 +172,7 @@ export default function HistoricoAnamnese({
     );
   }
 
-  const anamneseAtual =
-    anamneses.find((item) => item.id === anamneseSelecionadaId) || null;
+
 
   return (
     <div className="space-y-4">
@@ -227,9 +241,9 @@ export default function HistoricoAnamnese({
               </p>
 
               <div className="flex flex-wrap gap-3 pt-3">
-                {anamneseAtual.pdf_url && (
+                {linkPdf && (
                   <a
-                    href={anamneseAtual.pdf_url}
+                    href={linkPdf}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -238,7 +252,7 @@ export default function HistoricoAnamnese({
                   </a>
                 )}
 
-                {anamneseAtual.pdf_url && (
+                {linkPdf && (
                   <button
                     type="button"
                     onClick={reenviarWhatsapp}

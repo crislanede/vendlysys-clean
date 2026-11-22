@@ -32,3 +32,13 @@ export async function uploadPdfAnamnese(
 
   return data.publicUrl;
 }
+export async function criarUrlPdfPrivado(referencia: string) {
+  const url = new URL(referencia, import.meta.env.VITE_SUPABASE_URL);
+  const projeto = new URL(import.meta.env.VITE_SUPABASE_URL);
+  const arquivo = url.pathname.match(/^\/storage\/v1\/object\/(?:public|sign)\/(anamnese|anamneses)\/(.+)$/);
+  if (url.origin !== projeto.origin || !arquivo) return null;
+
+  const { data, error } = await supabase.storage.from(arquivo[1]).createSignedUrl(decodeURIComponent(arquivo[2]), 900);
+  if (error) return null;
+  return data.signedUrl;
+}
