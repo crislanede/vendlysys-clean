@@ -1,0 +1,2 @@
+[functions.processar-alertas-agenda]
+verify_jwt = false

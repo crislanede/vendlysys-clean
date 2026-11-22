@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../../../lib/supabase";
 import { montarLinkWhatsapp } from "../../../lib/whatsapp";
 import PrimaryButton from "../../../components/ui/PrimaryButton";
@@ -29,6 +29,10 @@ export default function SolicitacoesAgenda({ empresaId, slug, aoAprovar }: Props
   const [erro, setErro] = useState("");
   const [resposta, setResposta] = useState<{ texto: string; link: string | null } | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [email, setEmail] = useState("");
+  const [podeConfigurarAlerta, setPodeConfigurarAlerta] = useState(false);
+  const [salvandoAlerta, setSalvandoAlerta] = useState(false);
+  const [statusAlerta, setStatusAlerta] = useState("");
   const linkPublico = slug && new URL(`/agendar/${encodeURIComponent(slug)}`, window.location.origin).href;
 
   useEffect(() => {
@@ -44,6 +48,11 @@ export default function SolicitacoesAgenda({ empresaId, slug, aoAprovar }: Props
       setLista((data || []) as Solicitacao[]);
     }
     void atualizarPendentes();
+    void supabase.rpc("agendamento_publico_alerta_config", { p_empresa: empresaId }).then(({ data, error }) => {
+      if (!vigente) return;
+      setPodeConfigurarAlerta(!error);
+      if (!error) setEmail(typeof data === "string" ? data : "");
+    });
     const timer = window.setInterval(() => void atualizarPendentes(), 25_000);
     return () => { vigente = false; window.clearInterval(timer); };
   }, [empresaId]);
@@ -80,6 +89,28 @@ export default function SolicitacoesAgenda({ empresaId, slug, aoAprovar }: Props
     }
   }
 
+  async function salvarAlerta(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    if (salvandoAlerta) return;
+    setSalvandoAlerta(true);
+    setStatusAlerta("");
+    try {
+      const { data, error } = await supabase.rpc("agendamento_publico_alerta_salvar", {
+        p_empresa: empresaId, p_email: email,
+      });
+      if (error || typeof data !== "string") {
+        setStatusAlerta(error?.code === "22023" ? error.message : "Não foi possível salvar a configuração.");
+        return;
+      }
+      setEmail(data);
+      setStatusAlerta(data ? "E-mail de alerta salvo." : "Alertas por e-mail desativados.");
+    } catch {
+      setStatusAlerta("Não foi possível salvar a configuração.");
+    } finally {
+      setSalvandoAlerta(false);
+    }
+  }
+
   async function copiarLink() {
     if (!linkPublico) return;
     try {
@@ -107,6 +138,22 @@ export default function SolicitacoesAgenda({ empresaId, slug, aoAprovar }: Props
           <p>{resposta.texto}</p>
           {resposta.link && <a href={resposta.link} target="_blank" rel="noopener noreferrer" className="font-bold underline">Responder pelo WhatsApp</a>}
         </div>
+      )}
+      {podeConfigurarAlerta && (
+        <details className="mt-3 rounded-2xl border border-slate-200 px-3 py-2">
+          <summary className="cursor-pointer text-sm font-semibold">Alertas por e-mail</summary>
+          <form onSubmit={salvarAlerta} className="mt-3">
+            <label htmlFor="solicitacoes-email-alerta" className="block text-sm font-semibold">E-mail para receber novas solicitações</label>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <input id="solicitacoes-email-alerta" type="email" maxLength={254} value={email}
+                onChange={(evento) => { setEmail(evento.target.value); setStatusAlerta(""); }}
+                className="min-h-10 min-w-40 flex-1 rounded-xl border border-slate-300 px-3 text-sm" />
+              <SecondaryButton type="submit" disabled={salvandoAlerta}>{salvandoAlerta ? "Salvando..." : "Salvar alerta"}</SecondaryButton>
+            </div>
+            <p className="mt-1 text-xs text-slate-600">Deixe em branco para desativar os alertas.</p>
+            {statusAlerta && <p role="status" className="mt-2 text-sm text-slate-800">{statusAlerta}</p>}
+          </form>
+        </details>
       )}
       {pronto && !lista.length && <p className="mt-2 text-sm text-slate-600">Nenhuma solicitação pendente.</p>}
       {lista.length > 0 && (
