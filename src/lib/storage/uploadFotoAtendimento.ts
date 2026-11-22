@@ -18,8 +18,8 @@ export async function uploadFotoAtendimento(file: File, empresaId: string) {
   return nomeArquivo;
 }
 
-export async function criarUrlFotoAtendimento(caminho: string) {
-  const { data, error } = await supabase.storage
+export async function criarUrlFotoAtendimento(caminho: string, banco = supabase) {
+  const { data, error } = await banco.storage
     .from("fotos-atendimentos")
     .createSignedUrl(caminho, 60 * 60);
 

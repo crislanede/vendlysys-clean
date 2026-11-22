@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import {
+  supabaseMeuEspaco as supabase,
+  telefoneBrasileiroWhatsApp,
+} from "../lib/supabaseMeuEspaco";
 import AssinaturaCanvas from "../components/AssinaturaCanvas";
 import { gerarHash } from "../lib/hash";
 import { gerarPdfBlob } from "../lib/pdfAnamnese";
@@ -25,7 +28,19 @@ import {
 } from "./meu-espaco/utils";
 
 
-const MEU_ESPACO_CLIENTE_STORAGE_KEY = "vendlysys_meu_espaco_cliente";
+type ContextoMeuEspaco = {
+  status: "cliente" | "cadastro" | "link_necessario" | "procurar_estabelecimento";
+  cliente_id?: string | null;
+  agendamento_id?: string | null;
+};
+
+function parametrosMeuEspaco() {
+  const parametros = new URLSearchParams(window.location.search);
+  return {
+    p_slug: parametros.get("empresa") || parametros.get("slug"),
+    p_token: parametros.get("token"),
+  };
+}
 
 type FotoCliente = {
   id: string;
@@ -133,6 +148,11 @@ export default function MeuEspaco() {
   const [aba, setAba] = useState("agenda");
   const [telefone, setTelefone] = useState("");
   const [modoCadastro, setModoCadastro] = useState(false);
+  const [telefoneCodigo, setTelefoneCodigo] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [aguardarReenvioAte, setAguardarReenvioAte] = useState(0);
+  const [segundosReenvio, setSegundosReenvio] = useState(0);
+  const [agendamentoDoLink, setAgendamentoDoLink] = useState<string | null>(null);
   const [cadastro, setCadastro] = useState({
     nome: "",
     telefone: "",
@@ -202,42 +222,39 @@ export default function MeuEspaco() {
 
 
   useEffect(() => {
-    const restaurarSessaoMeuEspaco = async () => {
-      if (cliente || carregando) return;
-
-      const parametros = new URLSearchParams(window.location.search);
-      const tokenAtual = parametros.get("token");
-
+    async function restaurarSessaoMeuEspaco() {
+      setCarregando(true);
       try {
-        const salvo = localStorage.getItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
-        if (!salvo) return;
-
-        const sessao = JSON.parse(salvo);
-
-        if (!sessao?.id) return;
-
-        // Se existe token na URL, ele tem prioridade sobre sessão salva.
-        if (tokenAtual && sessao?.token && tokenAtual !== sessao.token) {
-          return;
+        localStorage.removeItem("vendlysys_meu_espaco_cliente");
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.user.phone) {
+          const numero = telefoneBrasileiroWhatsApp(data.session.user.phone);
+          if (numero) await abrirContextoVerificado(numero);
         }
-
-        setCarregando(true);
-        await carregarCliente(sessao.id);
-
-        if (sessao.telefone) {
-          setTelefone(sessao.telefone);
-        }
-      } catch (error) {
-        console.warn("Não foi possível restaurar sessão do Meu Espaço:", error);
-        localStorage.removeItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
+      } catch {
+        setMensagem("Não foi possível restaurar sua sessão. Entre pelo WhatsApp.");
       } finally {
         setCarregando(false);
       }
-    };
+    }
 
-    restaurarSessaoMeuEspaco();
+    void restaurarSessaoMeuEspaco();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento) => {
+      if (evento === "SIGNED_OUT") setCliente(null);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!aguardarReenvioAte) return;
+    function atualizarContador() {
+      setSegundosReenvio(Math.max(0, Math.ceil((aguardarReenvioAte - Date.now()) / 1000)));
+    }
+
+    atualizarContador();
+    const timer = window.setInterval(atualizarContador, 1000);
+    return () => window.clearInterval(timer);
+  }, [aguardarReenvioAte]);
 
   useEffect(() => {
     const atualizarMobile = () => setIsMobile(window.innerWidth < 640);
@@ -277,11 +294,6 @@ export default function MeuEspaco() {
     useState(false);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (token) carregarPorToken(token);
-  }, []);
-
-  useEffect(() => {
     if (
       cliente &&
       servicosAgendamentoIds.length > 0 &&
@@ -311,110 +323,95 @@ export default function MeuEspaco() {
     }
   }, [cliente, servicoAgendamentoId, servicosAgendamentoIds]);
 
-  async function carregarPorToken(token: string) {
-    setCarregando(true);
-
-    const { data } = await supabase
-      .from("agendamentos")
-      .select("cliente_id")
-      .eq("token_cliente", token)
-      .maybeSingle();
-
-    if (data?.cliente_id) {
-      await carregarCliente(data.cliente_id);
-    } else {
-      setMensagem("Link inválido ou expirado.");
+  async function abrirContextoVerificado(numero: string) {
+    const { data, error } = await supabase.rpc("meu_espaco_contexto", parametrosMeuEspaco());
+    const contexto = data as ContextoMeuEspaco | null;
+    if (error || !contexto) {
+      setMensagem("Não foi possível abrir o Meu Espaço. Tente novamente.");
+      return;
     }
 
-    setCarregando(false);
+    setTelefone(numero);
+    setTelefoneCodigo("");
+    setCodigo("");
+    setAgendamentoDoLink(contexto.agendamento_id || null);
+
+    if (contexto.status === "cliente" && contexto.cliente_id) {
+      setModoCadastro(false);
+      await carregarCliente(contexto.cliente_id, contexto.agendamento_id);
+      return;
+    }
+
+    if (contexto.status === "cadastro") {
+      setCadastro((atual) => ({ ...atual, telefone: numero }));
+      setModoCadastro(true);
+      return;
+    }
+
+    setMensagem(
+      contexto.status === "procurar_estabelecimento"
+        ? "Entre em contato com o estabelecimento para validar seu cadastro."
+        : "Abra o link do estabelecimento ou do seu próprio agendamento para continuar.",
+    );
   }
 
-  async function entrarPorTelefone() {
-    const tel = limparTelefone(telefone);
-
-    if (tel.length < 10) {
-      setMensagem("Informe um telefone válido.");
+  async function enviarCodigoWhatsApp() {
+    if (carregando || Date.now() < aguardarReenvioAte) return;
+    const numero = telefoneCodigo || telefoneBrasileiroWhatsApp(telefone);
+    if (!numero) {
+      setMensagem("Informe o celular com DDD.");
       return;
     }
 
     setCarregando(true);
     setMensagem("");
+    try {
+      const { data: disponivel, error: erroDisponibilidade } =
+        await supabase.rpc("meu_espaco_disponivel");
+      if (erroDisponibilidade || disponivel !== true) {
+        setMensagem("A entrada pelo WhatsApp está indisponível neste ambiente.");
+        return;
+      }
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: numero,
+        options: { channel: "whatsapp" },
+      });
+      if (error) {
+        setMensagem("Não foi possível enviar o código. Confira o número e tente novamente em instantes.");
+        return;
+      }
 
-    const { data, error } = await supabase.from("clientes").select("*");
-
-    if (error) {
-      setMensagem("Erro ao buscar cliente.");
+      setTelefoneCodigo(numero);
+      setCodigo("");
+      setAguardarReenvioAte(Date.now() + 60_000);
+    } catch {
+      setMensagem("Não foi possível solicitar o código. Tente novamente.");
+    } finally {
       setCarregando(false);
-      return;
     }
-
-    const encontrado = (data || []).find((c) => {
-      const telBanco = limparTelefone(c.telefone || "");
-      return telBanco.endsWith(tel) || tel.endsWith(telBanco);
-    });
-
-    if (!encontrado) {
-      setMensagem("Cliente não encontrado.");
-      setCarregando(false);
-      return;
-    }
-
-    await carregarCliente(encontrado.id);
-    setCarregando(false);
   }
 
-  async function obterEmpresaPublica() {
-    const params = new URLSearchParams(window.location.search);
-    const slug = params.get("empresa") || params.get("slug");
+  async function confirmarCodigoWhatsApp() {
+    if (carregando || !telefoneCodigo || !/^\d{6}$/.test(codigo)) return;
+    setCarregando(true);
+    setMensagem("");
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: telefoneCodigo,
+        token: codigo,
+        type: "sms",
+      });
+      if (error || !data.session) {
+        setMensagem("Código inválido ou expirado. Confira o código e tente novamente.");
+        return;
+      }
 
-    if (slug) {
-      const { data } = await supabase
-        .from("empresas")
-        .select("id, nome, slug")
-        .eq("slug", slug)
-        .maybeSingle();
-
-      if (data?.id) return data;
+      await abrirContextoVerificado(telefoneCodigo);
+    } catch {
+      setMensagem("Não foi possível confirmar o código. Tente novamente.");
+    } finally {
+      setCarregando(false);
     }
-
-    // Quando o Meu Espaço está sendo testado sem slug na URL, usamos a empresa
-    // ativa salva no navegador pelo painel administrativo. Isso evita cadastrar
-    // cliente em uma empresa diferente da que possui os serviços.
-    const empresaSalvaId = localStorage.getItem("empresa_id");
-    if (empresaSalvaId) {
-      const { data } = await supabase
-        .from("empresas")
-        .select("id, nome, slug")
-        .eq("id", empresaSalvaId)
-        .maybeSingle();
-
-      if (data?.id) return data;
-    }
-
-    // Fallback mais seguro: escolhe uma empresa que tenha serviços cadastrados.
-    const { data: servicoComEmpresa } = await supabase
-      .from("servicos")
-      .select("empresa_id")
-      .not("empresa_id", "is", null)
-      .limit(1)
-      .maybeSingle();
-
-    if (servicoComEmpresa?.empresa_id) {
-      const { data } = await supabase
-        .from("empresas")
-        .select("id, nome, slug")
-        .eq("id", servicoComEmpresa.empresa_id)
-        .maybeSingle();
-
-      if (data?.id) return data;
-    }
-
-    const { data } = await supabase
-      .from("empresas")
-      .select("id, nome, slug")
-      .limit(1);
-
-    return data?.[0] || null;
   }
 
   async function buscarCepCadastro(cepDigitado: string) {
@@ -562,102 +559,37 @@ export default function MeuEspaco() {
 
   async function cadastrarClienteMeuEspaco() {
     const nome = cadastro.nome.trim();
-    const telefoneCadastro = limparTelefone(cadastro.telefone);
-    const email = cadastro.email.trim();
-
     if (!nome) {
       setMensagem("Informe seu nome completo.");
       return;
     }
 
-    if (telefoneCadastro.length < 10) {
-      setMensagem("Informe um telefone válido.");
-      return;
-    }
-
     setCadastrando(true);
     setMensagem("");
-
-    const empresa = await obterEmpresaPublica();
-
-    if (!empresa?.id) {
-      setMensagem(
-        "Não foi possível identificar a empresa para concluir o cadastro.",
-      );
-      setCadastrando(false);
-      return;
-    }
-
-    const { data: clientesExistentes, error: erroBusca } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("empresa_id", empresa.id);
-
-    if (erroBusca) {
-      setMensagem("Erro ao validar telefone. Tente novamente.");
-      setCadastrando(false);
-      return;
-    }
-
-    const clienteJaExiste = (clientesExistentes || []).find((c) => {
-      const telBanco = limparTelefone(c.telefone || "");
-      return (
-        telBanco.endsWith(telefoneCadastro) ||
-        telefoneCadastro.endsWith(telBanco)
-      );
-    });
-
-    if (clienteJaExiste?.id) {
-      setMensagem(
-        "Este telefone já possui cadastro. Clique em Já tenho cadastro e entre usando esse número.",
-      );
-      setCadastrando(false);
-      return;
-    }
-
-    const { data: novoCliente, error } = await supabase
-      .from("clientes")
-      .insert({
-        nome,
-        telefone: telefoneCadastro,
-        email: email || null,
-        data_nascimento: cadastro.data_nascimento || null,
-        cep: cadastro.cep || null,
-        endereco: cadastro.endereco || null,
-        numero: cadastro.numero || null,
-        bairro: cadastro.bairro || null,
-        cidade: cadastro.cidade || null,
-        estado: cadastro.estado || null,
-        empresa_id: empresa.id,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      setMensagem("Erro ao cadastrar cliente: " + error.message);
-      setCadastrando(false);
-      return;
-    }
-
-    if (novoCliente?.id) {
-      setTelefone(telefoneCadastro);
-      setCadastro({
-        nome: "",
-        telefone: "",
-        email: "",
-        data_nascimento: "",
-        cep: "",
-        endereco: "",
-        numero: "",
-        bairro: "",
-        cidade: "",
-        estado: "",
+    try {
+      const { data: clienteId, error } = await supabase.rpc("meu_espaco_cadastrar", {
+        p_slug: parametrosMeuEspaco().p_slug,
+        p_nome: nome,
+        p_email: cadastro.email.trim(),
+        p_nascimento: cadastro.data_nascimento || null,
+        p_cep: cadastro.cep,
+        p_endereco: cadastro.endereco,
+        p_numero: cadastro.numero,
+        p_bairro: cadastro.bairro,
+        p_cidade: cadastro.cidade,
+        p_estado: cadastro.estado,
       });
+      if (error || !clienteId) {
+        setMensagem("Não foi possível concluir o cadastro. Tente novamente ou fale com o estabelecimento.");
+        return;
+      }
       setModoCadastro(false);
-      await carregarCliente(novoCliente.id);
+      await carregarCliente(clienteId);
+    } catch {
+      setMensagem("Não foi possível concluir o cadastro. Tente novamente.");
+    } finally {
+      setCadastrando(false);
     }
-
-    setCadastrando(false);
   }
 
   async function carregarConfiguracoes(empresaId: string | null) {
@@ -666,11 +598,9 @@ export default function MeuEspaco() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("empresas")
-      .select("*")
-      .eq("id", empresaId)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("meu_espaco_configuracoes", {
+      p_empresa: empresaId,
+    });
 
     if (error) {
       console.warn("Não foi possível carregar banner:", error);
@@ -681,7 +611,7 @@ export default function MeuEspaco() {
     setConfiguracoes(data);
   }
 
-  async function carregarCliente(clienteId: string) {
+  async function carregarCliente(clienteId: string, reservaDoLink?: string | null) {
     const { data } = await supabase
       .from("clientes")
       .select("*")
@@ -695,23 +625,7 @@ export default function MeuEspaco() {
 
     setCliente(data);
 
-    void marcarClienteComoOrigemMeuEspaco(data.id);
-
-    try {
-      localStorage.setItem(
-        MEU_ESPACO_CLIENTE_STORAGE_KEY,
-        JSON.stringify({
-          id: data.id,
-          telefone: data.telefone || telefone || "",
-          token: new URLSearchParams(window.location.search).get("token") || "",
-          salvo_em: new Date().toISOString(),
-        }),
-      );
-    } catch (error) {
-      console.warn("Não foi possível salvar sessão do Meu Espaço:", error);
-    }
-
-    const ags = await carregarAgendamentos(data.id);
+    const ags = await carregarAgendamentos(data.id, reservaDoLink);
     await carregarHistorico(data.id);
     await carregarPacotesCliente(data.id);
     await carregarFotosCliente(data.id);
@@ -723,7 +637,7 @@ export default function MeuEspaco() {
     await carregarConfiguracoes(empresaId);
   }
 
-  async function carregarAgendamentos(clienteId: string) {
+  async function carregarAgendamentos(clienteId: string, reservaDoLink = agendamentoDoLink) {
     const { data } = await supabase
       .from("agendamentos")
       .select("*")
@@ -731,8 +645,10 @@ export default function MeuEspaco() {
       .neq("status", "finalizado")
       .order("data", { ascending: true });
 
-    setAgendamentos(data || []);
-    return data || [];
+    const lista = data || [];
+    lista.sort((a, b) => Number(b.id === reservaDoLink) - Number(a.id === reservaDoLink));
+    setAgendamentos(lista);
+    return lista;
   }
 
   async function carregarHistorico(clienteId: string) {
@@ -794,7 +710,7 @@ export default function MeuEspaco() {
 
           if (caminho) {
             try {
-              signedUrl = await criarUrlFotoAtendimento(caminho);
+              signedUrl = await criarUrlFotoAtendimento(caminho, supabase);
             } catch (erro) {
               console.warn("Não foi possível gerar link da foto:", erro);
             }
@@ -1045,44 +961,6 @@ export default function MeuEspaco() {
     setCarregandoValorAgendamento(false);
   }
 
-  async function criarLancamentoFinanceiroAgendamento(
-    agendamentoId: string | null,
-    servicoSelecionado: ServicoCliente,
-    profissionalSelecionado: ProfissionalCliente,
-    valorFinal: number,
-    especialAplicado: boolean,
-  ) {
-    const payloadFinanceiro = {
-      empresa_id: cliente.empresa_id,
-      tipo: "entrada",
-      descricao: `Agendamento pelo cliente: ${servicoSelecionado.nome}`,
-      valor: valorFinal,
-      data_lancamento: dataAgendamento,
-      status: "pendente",
-      cliente: cliente.nome || null,
-      profissional: profissionalSelecionado.nome || null,
-      servico: servicoSelecionado.nome || null,
-      agendamento_id: agendamentoId,
-      forma_pagamento: null,
-      data_pagamento: null,
-      observacoes: especialAplicado
-        ? "Preço especial por serviço aplicado automaticamente no Meu Espaço."
-        : "Lançamento gerado automaticamente pelo Meu Espaço.",
-    };
-
-    const { error } = await supabase
-      .from("financeiro")
-      .insert([payloadFinanceiro]);
-
-    if (error) {
-      console.error("Erro ao gerar financeiro do agendamento:", error);
-      alert(
-        "Agendamento criado, mas houve erro ao lançar no financeiro: " +
-          error.message,
-      );
-    }
-  }
-
   function duracaoTotalServicos(servicosSelecionados: ServicoCliente[]) {
     if (servicosSelecionados.length === 0) return 0;
 
@@ -1155,12 +1033,11 @@ export default function MeuEspaco() {
 
 
     const { data: agendamentosDia, error } = await supabase
-      .from("agendamentos")
-      .select("id, data, horario, status, duracao_minutos, profissional_id")
-      .eq("empresa_id", cliente.empresa_id)
-      .eq("profissional_id", profissionalAgendamentoId)
-      .eq("data", dataAgendamento)
-      .neq("status", "cancelado");
+      .rpc("meu_espaco_ocupacao", {
+        p_empresa: cliente.empresa_id,
+        p_profissional: profissionalAgendamentoId,
+        p_data: dataAgendamento,
+      });
 
     if (error) {
       console.error("Erro ao buscar horários:", error);
@@ -1340,12 +1217,11 @@ export default function MeuEspaco() {
     }
 
     const { data: agendamentosDia, error: erroConsulta } = await supabase
-      .from("agendamentos")
-      .select("id, horario, status, duracao_minutos")
-      .eq("empresa_id", cliente.empresa_id)
-      .eq("profissional_id", profissionalSelecionado.id)
-      .eq("data", dataAgendamento)
-      .neq("status", "cancelado");
+      .rpc("meu_espaco_ocupacao", {
+        p_empresa: cliente.empresa_id,
+        p_profissional: profissionalSelecionado.id,
+        p_data: dataAgendamento,
+      });
 
     if (erroConsulta) {
       alert("Erro ao validar horário: " + erroConsulta.message);
@@ -1367,87 +1243,19 @@ export default function MeuEspaco() {
 
     setSalvandoAgendamento(true);
 
-    const valoresCalculados = await Promise.all(
-      servicosSelecionados.map((servico) => calcularValorServicoCliente(servico)),
-    );
-    const valorCalculado = {
-      valor: valoresCalculados.reduce((total, item) => total + item.valor, 0),
-      especial: valoresCalculados.some((item) => item.especial),
-    };
-    const nomesServicos = servicosSelecionados.map((servico) => servico.nome).join(" + ");
-
-    let agendamentoCriado: any = null;
-    let error: any = null;
-
-    const payloadAgendamento = {
-      empresa_id: cliente.empresa_id,
-      cliente: cliente.nome,
-      cliente_id: cliente.id,
-      servico: nomesServicos,
-      servico_id: servicoSelecionado.id,
-      profissional: profissionalSelecionado.nome,
-      profissional_id: profissionalSelecionado.id,
-      data: dataAgendamento,
-      horario: horarioAgendamento,
-      duracao_minutos: duracaoTotal,
-      status: "agendado",
-      no_show: false,
-      observacoes: valorCalculado.especial
-        ? `Agendamento realizado pelo Meu Espaço. Serviços: ${nomesServicos}. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
-        : `Agendamento realizado pelo Meu Espaço. Serviços: ${nomesServicos}`,
-    };
-
-    if (agendamentoReagendandoId) {
-      const resultado = await supabase
-        .from("agendamentos")
-        .update({
-          ...payloadAgendamento,
-          observacoes: valorCalculado.especial
-            ? `Agendamento reagendado pelo Meu Espaço. Serviços: ${nomesServicos}. Preço especial aplicado: ${formatarMoeda(valorCalculado.valor)}`
-            : `Agendamento reagendado pelo Meu Espaço. Serviços: ${nomesServicos}`,
-        })
-        .eq("id", agendamentoReagendandoId)
-        .eq("cliente_id", cliente.id)
-        .select("id")
-        .single();
-
-      agendamentoCriado = resultado.data;
-      error = resultado.error;
-    } else {
-      const resultado = await supabase
-        .from("agendamentos")
-        .insert([payloadAgendamento])
-        .select("id")
-        .single();
-
-      agendamentoCriado = resultado.data;
-      error = resultado.error;
-    }
-
-    if (error) {
-      console.error(
-        agendamentoReagendandoId
-          ? "Erro ao reagendar agendamento:"
-          : "Erro ao criar agendamento:",
-        error,
-      );
+    const { data: reservaId, error } = await supabase.rpc("meu_espaco_reservar", {
+      p_cliente: cliente.id,
+      p_profissional: profissionalSelecionado.id,
+      p_servicos: servicosSelecionados.map((item) => item.id),
+      p_data: dataAgendamento,
+      p_horario: horarioAgendamento,
+      p_reserva: agendamentoReagendandoId || null,
+    });
+    if (error || !reservaId) {
       setSalvandoAgendamento(false);
-      alert(
-        agendamentoReagendandoId
-          ? "Erro ao reagendar agendamento: " + error.message
-          : "Erro ao criar agendamento: " + error.message,
-      );
+      alert(error?.message || "Não foi possível gravar o agendamento.");
+      await carregarHorariosLivres();
       return;
-    }
-
-    if (!agendamentoReagendandoId) {
-      await criarLancamentoFinanceiroAgendamento(
-        agendamentoCriado?.id || null,
-        { ...servicoSelecionado, nome: nomesServicos },
-        profissionalSelecionado,
-        valorCalculado.valor,
-        valorCalculado.especial,
-      );
     }
 
     setSalvandoAgendamento(false);
@@ -2017,8 +1825,8 @@ export default function MeuEspaco() {
 
       pdfUrl = await uploadPdfAnamnese(
         pdfBlob,
-        cliente.nome || "cliente",
         anamnesePreenchida.id,
+        supabase,
       );
     } catch (erroPdf) {
       console.warn(
@@ -2248,8 +2056,8 @@ export default function MeuEspaco() {
 
       pdfUrl = await uploadPdfAnamnese(
         pdfBlob,
-        cliente.nome || "cliente",
         anamnese.id,
+        supabase,
       );
 
       const { error: erroPdfUrl } = await supabase
@@ -2293,13 +2101,19 @@ export default function MeuEspaco() {
     setSalvando(false);
   }
 
-  function sair() {
-    try {
-      localStorage.removeItem(MEU_ESPACO_CLIENTE_STORAGE_KEY);
-    } catch (error) {
-      console.warn("Não foi possível limpar sessão do Meu Espaço:", error);
+  async function sair() {
+    setCarregando(true);
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    setCarregando(false);
+    if (error) {
+      setMensagem("Não foi possível encerrar a sessão. Tente novamente.");
+      return;
     }
 
+    setModoCadastro(false);
+    setTelefoneCodigo("");
+    setCodigo("");
+    setAgendamentoDoLink(null);
     setCliente(null);
     setTelefone("");
     setMensagem("");
@@ -2790,25 +2604,6 @@ export default function MeuEspaco() {
 
 
 
-  async function marcarClienteComoOrigemMeuEspaco(clienteId?: string | null) {
-    if (!clienteId) return;
-
-    try {
-      await supabase
-        .from("clientes")
-        .update({
-          origem: "meu_espaco",
-          novo_cliente: true,
-          visualizado: false,
-        })
-        .eq("id", clienteId)
-        .or("origem.is.null,origem.neq.meu_espaco");
-    } catch (error) {
-      console.warn("Não foi possível marcar origem do cliente:", error);
-    }
-  }
-
-
 const botaoAba = (valor: string, label: string) => {
     const abaBloqueada = acessoBloqueadoPorAnamnese && valor !== "anamnese";
 
@@ -2885,79 +2680,71 @@ const botaoAba = (valor: string, label: string) => {
 
           {!modoCadastro ? (
             <>
-              <label style={{ fontWeight: 800 }}>Telefone</label>
-
-              <input
-                value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
-                placeholder="Ex: 11999999999"
-                style={{
-                  width: "100%",
-                  padding: isMobile ? "11px 12px" : "15px 16px",
-                  borderRadius: 16,
-                  border: "1px solid #cbd5e1",
-                  marginTop: isMobile ? 5 : 8,
-                  fontSize: isMobile ? 14 : 16,
-                  boxSizing: "border-box",
-                }}
-              />
-
-              {mensagem && (
-                <div
-                  style={{
-                    background: "#fee2e2",
-                    color: "#991b1b",
-                    borderRadius: isMobile ? 12 : 14,
-                    padding: isMobile ? 10 : 12,
-                    marginTop: 14,
-                  }}
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                void (telefoneCodigo ? confirmarCodigoWhatsApp() : enviarCodigoWhatsApp());
+              }}>
+                {telefoneCodigo ? (
+                  <>
+                    <p>Enviamos um código para {telefoneCodigo}.</p>
+                    <label htmlFor="codigo-whatsapp" className="font-bold">Código do WhatsApp</label>
+                    <input
+                      id="codigo-whatsapp"
+                      value={codigo}
+                      onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      className="mt-2 w-full rounded-2xl border border-slate-300 p-3"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <label htmlFor="telefone-whatsapp" className="font-bold">Celular com WhatsApp</label>
+                    <input
+                      id="telefone-whatsapp"
+                      type="tel"
+                      autoComplete="tel"
+                      value={telefone}
+                      onChange={(e) => setTelefone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      className="mt-2 w-full rounded-2xl border border-slate-300 p-3"
+                    />
+                  </>
+                )}
+                {mensagem && <p role="status" className="mt-3 text-sm text-red-800">{mensagem}</p>}
+                <button
+                  type="submit"
+                  className="mt-4 w-full rounded-2xl bg-[#282663] p-3 font-bold text-white disabled:opacity-60"
+                  disabled={carregando || (telefoneCodigo ? codigo.length !== 6 : segundosReenvio > 0)}
                 >
-                  {mensagem}
+                  {carregando ? "Aguarde..." : telefoneCodigo ? "Confirmar código" : "Receber código pelo WhatsApp"}
+                </button>
+              </form>
+              {telefoneCodigo && (
+                <div className="mt-3 flex flex-wrap justify-between gap-2 text-sm font-semibold">
+                  <button
+                    type="button"
+                    className="text-indigo-800"
+                    disabled={carregando}
+                    onClick={() => {
+                      setTelefoneCodigo("");
+                      setCodigo("");
+                      setMensagem("");
+                    }}
+                  >
+                    Alterar número
+                  </button>
+                  <button
+                    type="button"
+                    className="text-indigo-800 disabled:opacity-50"
+                    disabled={carregando || segundosReenvio > 0}
+                    onClick={() => void enviarCodigoWhatsApp()}
+                  >
+                    {segundosReenvio > 0 ? `Reenviar em ${segundosReenvio}s` : "Reenviar código"}
+                  </button>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={entrarPorTelefone}
-                disabled={carregando}
-                style={{
-                  width: "100%",
-                  marginTop: 18,
-                  padding: isMobile ? 12 : 15,
-                  borderRadius: 16,
-                  border: 0,
-                  background: "#282663",
-                  color: "#fff",
-                  fontWeight: 900,
-                  fontSize: isMobile ? 14 : 16,
-                  cursor: "pointer",
-                }}
-              >
-                {carregando ? "Entrando..." : "Entrar"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMensagem("");
-                  setCadastro((atual) => ({ ...atual, telefone }));
-                  setModoCadastro(true);
-                }}
-                style={{
-                  width: "100%",
-                  marginTop: 12,
-                  padding: 14,
-                  borderRadius: 16,
-                  border: "1px solid #282663",
-                  background: "#fff",
-                  color: "#282663",
-                  fontWeight: 900,
-                  fontSize: 15,
-                  cursor: "pointer",
-                }}
-              >
-                Primeiro acesso? Cadastre-se
-              </button>
             </>
           ) : (
             <>
@@ -2994,10 +2781,8 @@ const botaoAba = (valor: string, label: string) => {
               <label style={{ fontWeight: 800 }}>Telefone *</label>
               <input
                 value={cadastro.telefone}
-                onChange={(e) =>
-                  setCadastro({ ...cadastro, telefone: e.target.value })
-                }
-                placeholder="Ex: 11999999999"
+                readOnly
+                autoComplete="tel"
                 style={{
                   width: "100%",
                   padding: isMobile ? "11px 12px" : "15px 16px",

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { criarUrlPdfAnamnese } from "../../lib/uploadAnamnese";
 import {
   abrirWhatsapp,
-  montarMensagemPdfAnamnese,
+  montarLinkMeuEspaco,
 } from "../../lib/whatsapp";
 
 type Props = {
@@ -49,6 +50,7 @@ export default function HistoricoAnamnese({
   const [anamneses, setAnamneses] = useState<AnamneseCliente[]>([]);
   const [anamneseSelecionadaId, setAnamneseSelecionadaId] = useState<string | null>(null);
   const [respostas, setRespostas] = useState<RespostaItem[]>([]);
+  const [pdfAssinado, setPdfAssinado] = useState<{ referencia: string; link: string } | null>(null);
 
   useEffect(() => {
     if (!clienteId && !clienteNome) {
@@ -118,6 +120,19 @@ export default function HistoricoAnamnese({
     setRespostas((data || []) as unknown as RespostaItem[]);
   }
 
+  const anamneseAtual =
+    anamneses.find((item) => item.id === anamneseSelecionadaId) || null;
+  const referenciaPdf = anamneseAtual?.pdf_url;
+  useEffect(() => {
+    if (!referenciaPdf) return;
+
+    let ativa = true;
+    void criarUrlPdfAnamnese(referenciaPdf).then((link) => {
+      if (ativa && link) setPdfAssinado({ referencia: referenciaPdf, link });
+    }).catch(() => { if (ativa) setPdfAssinado(null); });
+    return () => { ativa = false; };
+  }, [referenciaPdf]);
+
   function reenviarWhatsapp() {
     if (!anamneseAtual?.pdf_url) {
       alert("PDF não encontrado para esta anamnese.");
@@ -129,12 +144,7 @@ export default function HistoricoAnamnese({
       return;
     }
 
-    const mensagem = montarMensagemPdfAnamnese({
-      cliente: clienteNome || anamneseAtual.cliente_nome || "cliente",
-      empresa: empresaNome,
-      pdfUrl: anamneseAtual.pdf_url,
-    });
-
+    const mensagem = `Olá, ${clienteNome || anamneseAtual.cliente_nome || "cliente"}! Sua ficha de anamnese da ${empresaNome} está disponível no Meu Espaço. Entre com o código do WhatsApp para acessar: ${montarLinkMeuEspaco()}`;
     abrirWhatsapp(telefoneCliente, mensagem);
   }
 
@@ -157,8 +167,7 @@ export default function HistoricoAnamnese({
     );
   }
 
-  const anamneseAtual =
-    anamneses.find((item) => item.id === anamneseSelecionadaId) || null;
+
 
   return (
     <div className="space-y-4">
@@ -227,9 +236,9 @@ export default function HistoricoAnamnese({
               </p>
 
               <div className="flex flex-wrap gap-3 pt-3">
-                {anamneseAtual.pdf_url && (
+                {pdfAssinado && pdfAssinado.referencia === referenciaPdf && (
                   <a
-                    href={anamneseAtual.pdf_url}
+                    href={pdfAssinado.link}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
